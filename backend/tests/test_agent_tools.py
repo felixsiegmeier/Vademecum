@@ -5,7 +5,6 @@ from agent_tools import (
     TOOL_FUNCTIONS,
     TOOL_SCHEMAS,
     add_befund,
-    add_prozedur,
     add_therapie,
     add_verlaufseintrag,
     delete_entry,
@@ -39,9 +38,22 @@ def test_add_tools_have_source_quote_required():
 
 
 def test_tool_count():
-    # 7 add + 6 update + 1 delete = 14
-    assert len(TOOL_SCHEMAS) == 14
-    assert len(TOOL_FUNCTIONS) == 14
+    # 6 add + 6 update + 1 delete = 13 (add_prozedur entfernt)
+    assert len(TOOL_SCHEMAS) == 13
+    assert len(TOOL_FUNCTIONS) == 13
+
+
+def test_no_add_prozedur_in_tools():
+    assert "add_prozedur" not in TOOL_FUNCTIONS
+    tool_names = [s["function"]["name"] for s in TOOL_SCHEMAS]
+    assert "add_prozedur" not in tool_names
+
+
+def test_add_therapie_schema_has_8_categories():
+    schema = next(s for s in TOOL_SCHEMAS if s["function"]["name"] == "add_therapie")
+    enum_values = schema["function"]["parameters"]["properties"]["kategorie"]["enum"]
+    expected = {"operativ", "MCS", "RRT", "respiratorisch", "interventionell", "antimikrobiell", "medikamentös", "sonstiges"}
+    assert set(enum_values) == expected
 
 
 # ── Funktion-Akzeptiert-source_quote-Tests ────────────────────────────────────
@@ -50,7 +62,6 @@ _MINIMAL_ARGS: dict[str, dict] = {
     "add_behandlungsdiagnose": {"text": "Test-Diagnose", "datum": None},
     "add_verlaufsdiagnose": {"text": "Test-Verlaufsdiagnose", "datum": "2026-04-15"},
     "add_vorbekannte_diagnose": {"text": "Test-vorbekannt"},
-    "add_prozedur": {"datum": "2026-04-15", "text": "Test-Prozedur"},
     "add_befund": {"datum": "2026-04-15", "art": "TTE", "text": "Test-Befund"},
     "add_therapie": {
         "kategorie": "antimikrobiell",
@@ -158,10 +169,16 @@ def test_update_anamnese_ignores_source_quote(isolated_data):
 
 def test_delete_entry_across_lists(isolated_data):
     _make_test_patient()
-    proz_id = add_prozedur(
-        patient_id="P-0001", datum="2026-04-15", text="CABG 3-fach", source_quote="OP-Bericht"
-    )["id"]
     ther_id = add_therapie(
+        patient_id="P-0001",
+        kategorie="operativ",
+        bezeichnung="CABG 3-fach",
+        beginn="2026-04-15",
+        ende="2026-04-15",
+        indikation=None,
+        source_quote="OP-Bericht",
+    )["id"]
+    ther2_id = add_therapie(
         patient_id="P-0001",
         kategorie="antimikrobiell",
         bezeichnung="Pip/Taz",
@@ -173,12 +190,11 @@ def test_delete_entry_across_lists(isolated_data):
         patient_id="P-0001", datum="2026-04-15", text="Tagesstatus stabil", source_quote="Visite"
     )["id"]
 
-    for entry_id in (proz_id, ther_id, verl_id):
+    for entry_id in (ther_id, ther2_id, verl_id):
         result = delete_entry(patient_id="P-0001", id=entry_id, source_quote="korrektur")
         assert result["ok"] is True, f"delete für {entry_id} fehlgeschlagen: {result}"
 
     p = storage.load_patient("P-0001")
-    assert p.prozeduren == []
     assert p.therapien == []
     assert p.verlaufseintraege == []
 
@@ -193,7 +209,8 @@ def test_delete_entry_unknown_id_errors(isolated_data):
 # ── Therapie-Kategorie-Validierung ────────────────────────────────────────────
 
 @pytest.mark.parametrize("kategorie", [
-    "antimikrobiell", "operativ", "medikamentös", "konservativ", "sonstiges",
+    "operativ", "MCS", "RRT", "respiratorisch",
+    "interventionell", "antimikrobiell", "medikamentös", "sonstiges",
 ])
 def test_add_therapie_accepts_all_categories(kategorie, isolated_data):
     _make_test_patient()
@@ -221,3 +238,62 @@ def test_add_therapie_rejects_invalid_category(isolated_data):
         source_quote="test",
     )
     assert result["ok"] is False
+
+
+# ── Neue Therapie-Tests: Event-Pattern und laufende Therapie ─────────────────
+
+def test_add_therapie_mcs_event_pattern(isolated_data):
+    """MCS-Kategorie mit beginn=ende (einmaliges Event-Pattern, z.B. Impella-Anlage)."""
+    _make_test_patient()
+    result = add_therapie(
+        patient_id="P-0001",
+        kategorie="MCS",
+        bezeichnung="Impella 5.5 via A. axillaris",
+        beginn="2026-04-04",
+        ende="2026-04-04",
+        indikation="Postkardiotomie-Schock",
+        source_quote="Impella 5.5 via A. axillaris rechts am 04.04.",
+    )
+    assert result["ok"] is True
+    p = storage.load_patient("P-0001")
+    t = p.therapien[-1]
+    assert t.kategorie == "MCS"
+    assert str(t.beginn) == "2026-04-04"
+    assert str(t.ende) == "2026-04-04"
+
+
+def test_add_therapie_antimikrobiell_running(isolated_data):
+    """Antimikrobiell mit ende=null (laufende Therapie)."""
+    _make_test_patient()
+    result = add_therapie(
+        patient_id="P-0001",
+        kategorie="antimikrobiell",
+        bezeichnung="Meropenem",
+        beginn="2026-04-14",
+        ende=None,
+        indikation="Nosokomiale Pneumonie",
+        source_quote="Meropenem seit 14.04., noch laufend",
+    )
+    assert result["ok"] is True
+    p = storage.load_patient("P-0001")
+    t = p.therapien[-1]
+    assert t.kategorie == "antimikrobiell"
+    assert str(t.beginn) == "2026-04-14"
+    assert t.ende is None
+
+
+def test_add_therapie_indikation_optional(isolated_data):
+    """indikation darf null sein."""
+    _make_test_patient()
+    result = add_therapie(
+        patient_id="P-0001",
+        kategorie="operativ",
+        bezeichnung="CABG 3-fach",
+        beginn="2026-04-04",
+        ende="2026-04-04",
+        indikation=None,
+        source_quote="CABG am 04.04.",
+    )
+    assert result["ok"] is True
+    p = storage.load_patient("P-0001")
+    assert p.therapien[-1].indikation is None

@@ -5,7 +5,6 @@ from typing import Callable
 from models.patient import (
     Befund,
     Diagnose,
-    Prozedur,
     Therapie,
     VerlaufsEintrag,
 )
@@ -37,7 +36,6 @@ _LIST_FIELDS = (
     "behandlungsdiagnosen",
     "verlaufsdiagnosen",
     "vorbekannte_diagnosen",
-    "prozeduren",
     "befunde",
     "therapien",
     "verlaufseintraege",
@@ -85,17 +83,6 @@ def add_vorbekannte_diagnose(patient_id: str, text: str, source_quote: str = "")
         return {"ok": False, "error": f"{type(e).__name__}: {e}"}
 
 
-def add_prozedur(patient_id: str, datum: str, text: str, source_quote: str = "") -> dict:
-    try:
-        patient = load_patient(patient_id)
-        eintrag = Prozedur(id=generate_ulid(), datum=datum, text=text, source_quote=source_quote)
-        patient.prozeduren.append(eintrag)
-        save_patient(patient)
-        return {"ok": True, "id": eintrag.id, "summary": f"Prozedur '{text}' ({datum}) ergänzt."}
-    except Exception as e:
-        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
-
-
 def add_befund(patient_id: str, datum: str, art: str, text: str, source_quote: str = "") -> dict:
     # Befund-Modell hat kein art-Feld → art wird als Präfix in text eingebettet
     try:
@@ -114,7 +101,7 @@ def add_therapie(
     kategorie: str,
     bezeichnung: str,
     beginn: str,
-    indikation: str,
+    indikation: str | None = None,
     ende: str | None = None,
     source_quote: str = "",
 ) -> dict:
@@ -325,20 +312,6 @@ ADD_VORBEKANNTE_DIAGNOSE_SCHEMA = _wrap(
     ["text", "source_quote"],
 )
 
-ADD_PROZEDUR_SCHEMA = _wrap(
-    "add_prozedur",
-    (
-        "Fügt einen Eingriff oder eine Prozedur hinzu (OP, Intervention, Anlage). "
-        "Beispiele: 'CABG 3-fach', 'Implantation Impella CP', 'CRRT-Anlage'."
-    ),
-    {
-        "datum": {"type": "string", "format": "date", "description": "Datum der Prozedur (YYYY-MM-DD)."},
-        "text": {"type": "string", "description": "Klinisch knappe Beschreibung der Prozedur."},
-        "source_quote": _SOURCE_QUOTE_PROPERTY,
-    },
-    ["datum", "text", "source_quote"],
-)
-
 ADD_BEFUND_SCHEMA = _wrap(
     "add_befund",
     (
@@ -357,26 +330,35 @@ ADD_BEFUND_SCHEMA = _wrap(
 ADD_THERAPIE_SCHEMA = _wrap(
     "add_therapie",
     (
-        "Fügt eine Therapie hinzu (antimikrobielle, operative, medikamentöse, konservative oder sonstige). "
-        "Beispiele: Tazobac (antimikrobiell), VAC-Anlage Sternum (operativ), NIV (konservativ), Bauchlage (sonstiges)."
+        "Fügt einen Eingriff oder eine Therapie hinzu. "
+        "kategorie ist eines der 8 Werte: operativ, MCS, RRT, respiratorisch, "
+        "interventionell, antimikrobiell, medikamentös, sonstiges. "
+        "Einmaliges Event (z.B. CABG): beginn = ende = Datum. "
+        "Laufend: ende = null."
     ),
     {
         "kategorie": {
             "type": "string",
-            "enum": ["antimikrobiell", "operativ", "medikamentös", "konservativ", "sonstiges"],
-            "description": "Kategorie der Therapie.",
+            "enum": [
+                "operativ", "MCS", "RRT", "respiratorisch",
+                "interventionell", "antimikrobiell", "medikamentös", "sonstiges",
+            ],
+            "description": "Klinische Kategorie des Eingriffs oder der Therapie.",
         },
         "bezeichnung": {
             "type": "string",
-            "description": "Name/Beschreibung, z.B. 'Piperacillin/Tazobactam', 'VAC-Anlage Sternum'.",
+            "description": "Name/Beschreibung, z.B. 'CABG 3-fach', 'Impella 5.5', 'Meropenem'.",
         },
-        "beginn": {"type": "string", "format": "date", "description": "Startdatum (YYYY-MM-DD)."},
+        "beginn": {"type": "string", "format": "date", "description": "Startdatum (YYYY-MM-DD). Bei Einmalereignis = ende."},
         "ende": {
             "type": ["string", "null"],
             "format": "date",
-            "description": "Enddatum (YYYY-MM-DD) oder null falls noch laufend.",
+            "description": "Enddatum (YYYY-MM-DD) oder null falls noch laufend. Bei Einmalereignis = beginn.",
         },
-        "indikation": {"type": "string", "description": "Klinische Indikation, eine Zeile."},
+        "indikation": {
+            "type": ["string", "null"],
+            "description": "Klinische Indikation, eine Zeile. null wenn aus Kontext offensichtlich.",
+        },
         "source_quote": _SOURCE_QUOTE_PROPERTY,
     },
     ["kategorie", "bezeichnung", "beginn", "ende", "indikation", "source_quote"],
@@ -480,7 +462,7 @@ UPDATE_STAMMDATEN_SCHEMA = _wrap(
 DELETE_ENTRY_SCHEMA = _wrap(
     "delete_entry",
     (
-        "Löscht einen Listen-Eintrag (Diagnose, Prozedur, Befund, Therapie, Verlaufseintrag) "
+        "Löscht einen Listen-Eintrag (Diagnose, Befund, Therapie, Verlaufseintrag) "
         "anhand der ULID. Backend findet die richtige Liste anhand der ID automatisch."
     ),
     {
@@ -497,7 +479,6 @@ TOOL_SCHEMAS: list[dict] = [
     ADD_BEHANDLUNGSDIAGNOSE_SCHEMA,
     ADD_VERLAUFSDIAGNOSE_SCHEMA,
     ADD_VORBEKANNTE_DIAGNOSE_SCHEMA,
-    ADD_PROZEDUR_SCHEMA,
     ADD_BEFUND_SCHEMA,
     ADD_THERAPIE_SCHEMA,
     ADD_VERLAUFSEINTRAG_SCHEMA,
@@ -514,7 +495,6 @@ TOOL_FUNCTIONS: dict[str, Callable] = {
     "add_behandlungsdiagnose": add_behandlungsdiagnose,
     "add_verlaufsdiagnose": add_verlaufsdiagnose,
     "add_vorbekannte_diagnose": add_vorbekannte_diagnose,
-    "add_prozedur": add_prozedur,
     "add_befund": add_befund,
     "add_therapie": add_therapie,
     "add_verlaufseintrag": add_verlaufseintrag,

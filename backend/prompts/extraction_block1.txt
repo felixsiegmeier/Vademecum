@@ -1,6 +1,6 @@
 ROLLE
 
-Pass 1 von 2: Stammdaten, Anamnese, Diagnosen, Prozeduren, Befunde, Therapien via Tool-Calls. Kein add_verlaufseintrag.
+Pass 1 von 2: Stammdaten, Anamnese, Diagnosen, Befunde, Therapien via Tool-Calls. Kein add_verlaufseintrag.
 
 KONTEXT
 
@@ -20,22 +20,54 @@ KLASSIFIKATIONS-REGELN — DIAGNOSEN
 
 ENTSCHEIDUNG: Im Zweifel → Behandlungsdiagnose.
 
-KLASSIFIKATIONS-REGELN — PROZEDUR vs. THERAPIE
+KLASSIFIKATIONS-REGELN — THERAPIE-KATEGORIEN
 
-**Prozedur** = einmaliger Eingriff: CABG, Tracheotomie, Pleurapunktion, Bronchoskopie, Kardioversion, PCI, Schrittmacher, VAC-Anlage. (Tracheotomie = NIE Therapie.)
+Eingriffe UND Therapien werden alle als add_therapie(kategorie=...) dokumentiert. Genau 8 gültige Werte:
 
-**Therapie** = laufende Linie mit Beginn (+ ggf. Ende):
-- antimikrobiell: Antibiotika, Antimykotika, Antivirals
-- medikamentös: Antiarrhythmika, Vasoaktiva, Antikoagulation mit Indikation
-- konservativ: CVVHDF, iHD, NIV, HFNC, Bauchlage, MCS (Impella, ECMO, IABP)
-- operativ: nur mehrtägige postop. Linien; sonstiges
+**operativ** = Kardiochirurgischer OP-Saal-Eingriff: CABG, Klappenersatz, Re-Thorakotomie, Aortenchirurgie, Herztransplantation.
+NICHT operativ: Herzkatheter, PCI, Schrittmacher, TAVI, MitraClip, Bedside-Eingriffe, Tracheotomie.
 
-FAUSTREGEL: "Wann?" → Prozedur. "Wie lange?" → Therapie.
+**MCS** = Mechanische Kreislaufunterstützung: ECMO (VA/VV), Impella (alle Versionen), IABP, dauerhafte VADs (HeartMate, HeartWare).
+
+**RRT** = Nierenersatztherapie: CRRT (CVVHDF/CVVH/CVVHD), iHD, SLED.
+
+**respiratorisch** = Invasive Beatmung, NIV (CPAP/BiPAP), HFNC. Tracheotomie (auch Bedside) = respiratorisch — NICHT operativ.
+
+**interventionell** = Herzkatheter (diagnostisch/PCI), EPU/RFA, Schrittmacher-/ICD-/CRT-Implantation, TAVI, MitraClip, TriClip, therapeutische Endoskopie (Hämostase-Clip, Polypektomie, Stent, ERCP), Shaldon-Anlage.
+
+**antimikrobiell** = Antibiotika, Antimykotika, Antivirale.
+
+**medikamentös** = Katecholamine, Diuretika, Antikoagulation, Sedierung, Analgesie, Antiarrhythmika, Substitution, Insulin, Vasoaktiva. Alles Pharmakologische, das nicht antimikrobiell ist.
+
+**sonstiges** = Physio, Mobilisation, Lagerung, Ernährungstherapie (parenteral/enteral), Atemtherapie ohne Gerät.
+
+ABGRENZUNG ENDOSKOPIE: Diagnostische Gastroskopie/Koloskopie ohne Intervention → add_befund. Therapeutische Endoskopie (Clip, Polypektomie, Stent) → add_therapie(interventionell).
+
+DATUMS-LOGIK FÜR add_therapie:
+- Einmaliges Event (z.B. OP): beginn = ende = Datum
+- Laufende Therapie (noch aktiv): beginn = Datum, ende = null
+- Beendete Zeitraum-Therapie: beginn = Startdatum, ende = Enddatum
+
+BEISPIELE:
+- CABG am 04.04. → add_therapie(kategorie="operativ", bezeichnung="CABG 3-fach", beginn="2026-04-04", ende="2026-04-04", ...)
+- Impella 5.5 seit 04.04., noch laufend → add_therapie(kategorie="MCS", bezeichnung="Impella 5.5", beginn="2026-04-04", ende=null, ...)
+- PCI im HKL → add_therapie(kategorie="interventionell", ...) — NICHT operativ
+- Chirurgische Tracheotomie Bedside → add_therapie(kategorie="respiratorisch", ...) — NICHT operativ
+- Meropenem 14.–21.04. → add_therapie(kategorie="antimikrobiell", bezeichnung="Meropenem", beginn="2026-04-14", ende="2026-04-21", ...)
+- CVVHDF seit 10.04. → add_therapie(kategorie="RRT", bezeichnung="CVVHDF", beginn="2026-04-10", ende=null, ...)
+- Noradrenalin laufend → add_therapie(kategorie="medikamentös", bezeichnung="Noradrenalin", ...)
+- Bauchlagerung → add_therapie(kategorie="sonstiges", bezeichnung="Bauchlagerung", ...)
 
 ERFASSUNGSPFLICHT
 
-Therapien — IMMER alle mit Beginn (+ Ende, Indikation):
-- Antibiotika, Antiarrhythmika, Vasoaktiva, Antikoagulation; NIV, HFNC, Bauchlage, CVVHDF/iHD, MCS
+Therapien — IMMER alle mit Beginn (+ Ende wenn bekannt, Indikation wenn nicht offensichtlich):
+- antimikrobiell: alle Antibiotika, Antimykotika, Antivirale
+- MCS: ECMO, Impella, IABP, VAD
+- RRT: CVVHDF, CVVH, iHD, SLED
+- respiratorisch: Beatmung (invasiv/NIV/HFNC), Tracheotomie
+- interventionell: Herzkatheter, Schrittmacher-/ICD-Impl., TAVI, MitraClip, Shaldon
+- operativ: alle kardiochirurgischen OP-Saal-Eingriffe
+- medikamentös: Katecholamine, Antikoagulation mit Indikation, Antiarrhythmika
 
 Befunde — bei JEDEM dieser Ereignisse add_befund:
 - Bildgebung: TTE, TEE, CT, cCT, Echo, Rö, MRT, Sono
@@ -47,7 +79,7 @@ Befund.art = Kategorie-Prefix: "TTE", "CT Thorax", "Mikrobiologie TBS", "Konsil 
 
 NICHT DOKUMENTIEREN
 
-- ZVK/Katheter/Magensonden/Blasenkatheter/Drainagen (Ausnahme: Shaldon = Prozedur; Pleurapunktion mit Drainage = Prozedur)
+- ZVK/Katheter/Magensonden/Blasenkatheter/Drainagen (Ausnahme: Shaldon = add_therapie(interventionell); Pleurapunktion mit Drainage = add_therapie(interventionell))
 - Routinelabor, Routine-Medikation (PPI, Heparin-Prophylaxe, Schmerzmedikation, Elektrolyte, Antiemetika), Pflege-Routine
 
 AUSNAHME: Mikrobiologie IMMER als Befund.

@@ -20,13 +20,6 @@ class Diagnose(BaseModel):
     source_quote: str
 
 
-class Prozedur(BaseModel):
-    id: str
-    datum: date
-    text: str
-    source_quote: str
-
-
 class Befund(BaseModel):
     id: str
     datum: date
@@ -35,15 +28,16 @@ class Befund(BaseModel):
 
 
 class Therapie(BaseModel):
-    """Generische Therapie. Ersetzt frühere AntimikrobielleTherapie."""
+    """Eingriffe und Therapien. kategorie unterscheidet 8 klinische Typen."""
     id: str
     kategorie: Literal[
-        "antimikrobiell", "operativ", "medikamentös", "konservativ", "sonstiges"
+        "operativ", "MCS", "RRT", "respiratorisch",
+        "interventionell", "antimikrobiell", "medikamentös", "sonstiges"
     ]
     bezeichnung: str
     beginn: date
     ende: Optional[date] = None
-    indikation: str
+    indikation: Optional[str] = None
     source_quote: str
 
 
@@ -81,7 +75,6 @@ class Patient(BaseModel):
     behandlungsdiagnosen: list[Diagnose] = []
     verlaufsdiagnosen: list[Diagnose] = []
     vorbekannte_diagnosen: list[Diagnose] = []
-    prozeduren: list[Prozedur] = []
     befunde: list[Befund] = []
     therapien: list[Therapie] = []
     verlaufseintraege: list[VerlaufsEintrag] = []
