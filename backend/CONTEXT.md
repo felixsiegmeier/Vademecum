@@ -1,4 +1,4 @@
-# Backend Context — Stand 2026-05-02 (V1.6 Phase 2)
+# Backend Context — Stand 2026-05-02 (V1.6 Phase 3)
 
 ## Pydantic-Modelle (kompakt)
 
@@ -86,6 +86,14 @@
 POST /api/patients/{id}/apply-proposals
 - Transactional: delete fail → add skip in Update-Gruppe
 - Proposal-Types: add | update_singleton | update (delete+add-pair)
+- Request-Body: `{ proposals: [...], force: bool = False }`
+
+### Mismatch-Detection (V1.6 Phase 3)
+- Identitätsfelder: `name`, `geburtsdatum`, `geschlecht`
+- Trigger: update_stammdaten auf ein Identitätsfeld, current != null/leer, current != proposed
+- Antwort bei Konflikt: HTTP 409 `{ mismatch_warning: true, conflicting_fields: [{feld, current, proposed}] }`
+- Keine YAML-Änderung bei 409 (atomar)
+- `force: true` im Request überspringt den Check komplett
 
 ## Test-Stand
-78 passed in 0.46s
+85 passed in 0.37s
