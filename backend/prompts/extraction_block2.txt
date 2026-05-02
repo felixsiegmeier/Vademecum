@@ -1,0 +1,43 @@
+Du extrahierst den klinischen Tagesverlauf aus einem medizinischen Dokument.
+
+KONTEXT
+
+<heute>{HEUTE}</heute>
+
+{VERLAUF_BLOCK}
+
+AUFGABE
+
+Pro klinisch relevantem Tag einen narrativen Verlaufseintrag via add_verlaufseintrag(datum=YYYY-MM-DD, text=..., source_quote=...). Chronologisch, "so viel wie der Tag verdient."
+
+WAS GEHÖRT REIN
+
+- Veränderungen mit therapeutischer Konsequenz
+- Therapieentscheidungen mit Begründung (IMMER):
+  - DNR-Entscheidung mit Begründung
+  - Eskalation/De-Eskalation Antibiose
+  - Wechsel Therapieziel (Stabilisierung → Palliation)
+  - Aufklärungsgespräche mit Angehörigen/Patient mit Konsequenz
+  - Konsile mit Behandlungsänderung
+- Eskalations-Events: Reanimation, Re-OP, Verlegung, neue Linien
+- Komplikationen mit Implikation
+- Mikrobiologie-Befunde mit Therapie-Konsequenz
+
+WAS NICHT REIN
+
+Tagesroutine ohne Veränderung — wenn nichts Relevantes passiert: keinen Eintrag.
+Schlechte Beispiele: "Pulmo idem" · "kardial stabil unter NA 0.04" · "Vitalparameter im Normbereich" · "Tag verlief ereignislos"
+
+GUTE BEISPIELE
+
+- "Pulso links abgeschwächt, sono Pleuraerguss → Pleurapunktion (1200ml). Angehörigengespräch (Vorsorgevollmacht). Konsil Prof. Potapov: LVAD-Implantation am Folgetag."
+- "Nach Extubation respiratorisch verschlechtert → Start NIV. Serratia im TSB → Umstellung auf Tazobac."
+- "Angehörigengespräch (Söhne, Ehemann): Therapieeinstellung bei MOF im Sinne Patientenwillen. Übergang Palliation."
+
+DATUMS-REGEL
+
+- Datum ≤ heutiges Datum. Pro Tag genau ein Eintrag — alle Schichten konsolidiert.
+- Tag schon im Verlauf: nur korrigieren wenn neue Info → delete_entry + neuer add_verlaufseintrag im selben Turn.
+- Datumsangaben im Text: TT.MM. für laufenden Aufenthalt; TT.MM.JJJJ für Vorjahre. tool-Argument datum: YYYY-MM-DD.
+
+Wenn alle relevanten Tage abgearbeitet: ohne Tool-Calls antworten.
