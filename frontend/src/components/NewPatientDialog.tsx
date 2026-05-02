@@ -44,7 +44,6 @@ const TOOL_DISPLAY_NAMES: Record<string, string> = {
   add_behandlungsdiagnose: "Behandlungsdiagnose",
   add_verlaufsdiagnose: "Verlaufsdiagnose",
   add_vorbekannte_diagnose: "Vorbekannte Diagnose",
-  add_prozedur: "Prozedur",
   add_befund: "Befund",
   add_therapie: "Therapie",
   add_verlaufseintrag: "Verlaufseintrag",
