@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from agent_tools import TOOL_FUNCTIONS
 from agent_document_extraction import extract_proposals
 from agent_extraction_core import Proposal
+from agent_stammdaten_extraction import StammdatenExtractResult, extract_stammdaten
 from llm_client import LLMClient
 from models.patient import Patient, PatientSummary, Stammdaten
 from storage import (
@@ -664,6 +665,34 @@ async def upload_document(
 
 
 
+@app.post("/api/extract-stammdaten")
+async def extract_stammdaten_endpoint(file: UploadFile = File(...)):
+    """
+    Single-Pass LLM-Extraktion der Patientenstammdaten aus einem Dokument.
+    Alle Felder sind nullable — nicht erkannte Felder kommen als null.
+    Kein Error bei Nicht-Patientendokumenten, nur leeres Ergebnis.
+    """
+    mime_type = file.content_type or "application/octet-stream"
+    if mime_type not in ALLOWED_UPLOAD_MIMES:
+        raise HTTPException(400, f"Nicht unterstützter Dateityp: {mime_type}")
+
+    file_bytes = await file.read()
+
+    try:
+        result = await extract_stammdaten(llm, file_bytes, mime_type)
+    except RateLimitError:
+        raise HTTPException(429, "LLM Rate-Limit erreicht. Bitte kurz warten.")
+    except APIConnectionError as e:
+        raise HTTPException(503, f"LLM nicht erreichbar: {e}")
+    except APIStatusError as e:
+        raise HTTPException(502, f"LLM API Fehler {e.status_code}: {e.message}")
+
+    return JSONResponse(
+        content=result.model_dump(mode="json"),
+        media_type="application/json; charset=utf-8",
+    )
+
+
 @app.post("/api/patients/{patient_id}/apply-tools")
 async def apply_tools(patient_id: str, req: ApplyToolsRequest):
     """
@@ -713,13 +742,29 @@ def _run_tool(patient_id: str, tool: str, args: dict) -> dict:
         return {"ok": False, "error": str(e)}
 
 
+def _to_apply_result(proposal_type: str, run_result: dict, summary_override: str | None = None) -> dict:
+    """Normalisiert das Tool-Ergebnis auf das ApplyResult-Schema (immer `summary`, nie `error`)."""
+    out: dict[str, Any] = {"type": proposal_type, "ok": run_result.get("ok", False)}
+    if "id" in run_result:
+        out["id"] = run_result["id"]
+    out["summary"] = summary_override or run_result.get("summary") or run_result.get("error", "")
+    return out
+
+
+# delete_entry meldet eine fehlende ULID mit dieser Fehlermeldung — bei "update"
+# behandeln wir das als Erfolg (gewünschter Endzustand: alter weg, neuer da).
+_DELETE_ID_NOT_FOUND_MARKER = "Keine Liste enthält Eintrag mit id="
+
+
 @app.post("/api/patients/{patient_id}/apply-proposals")
 async def apply_proposals_endpoint(patient_id: str, req: ApplyProposalsRequest):
     """
     Führt eine Liste von Proposals aus — versteht Update-Gruppen (delete + add).
 
-    Update-Proposals sind transaktional: schlägt das delete fehl, wird add nicht ausgeführt.
-    Neue ULID wird beim Add vom Backend generiert (altes Item weg, neues Item drin).
+    Bei type="update" wird ZUERST `add_call` ausgeführt, danach `delete_call`.
+    Schlägt add fehl → kein delete (Datenverlust ausgeschlossen).
+    Schlägt delete fehl, weil die ID schon weg ist → wird als Erfolg gewertet.
+    Schlägt delete aus anderen Gründen fehl → ok=false mit Hinweis auf manuelle Prüfung.
     """
     try:
         load_patient(patient_id)
@@ -730,20 +775,39 @@ async def apply_proposals_endpoint(patient_id: str, req: ApplyProposalsRequest):
     for proposal in req.proposals:
         if proposal.type == "update":
             if proposal.delete_call is None or proposal.add_call is None:
-                results.append({"type": "update", "ok": False, "error": "Fehlende delete_call oder add_call"})
-                continue
-            del_result = _run_tool(patient_id, proposal.delete_call.tool, proposal.delete_call.args)
-            if not del_result.get("ok"):
-                results.append({"type": "update", **del_result})
+                results.append({
+                    "type": "update",
+                    "ok": False,
+                    "summary": "Fehlende delete_call oder add_call",
+                })
                 continue
             add_result = _run_tool(patient_id, proposal.add_call.tool, proposal.add_call.args)
-            results.append({"type": "update", **add_result})
+            if not add_result.get("ok"):
+                results.append(_to_apply_result("update", add_result))
+                continue
+            del_result = _run_tool(patient_id, proposal.delete_call.tool, proposal.delete_call.args)
+            if del_result.get("ok"):
+                results.append(_to_apply_result("update", add_result))
+                continue
+            err = del_result.get("error", "") or ""
+            if _DELETE_ID_NOT_FOUND_MARKER in err:
+                results.append(_to_apply_result("update", add_result))
+            else:
+                id_suffix = (proposal.delete_call.args.get("id") or "")[-6:]
+                results.append(_to_apply_result(
+                    "update",
+                    {"ok": False, "id": add_result.get("id")},
+                    summary_override=(
+                        f"Update teilweise — Eintrag {id_suffix} konnte nicht entfernt werden, "
+                        f"manuell prüfen."
+                    ),
+                ))
         else:
             if proposal.call is None:
-                results.append({"type": proposal.type, "ok": False, "error": "Fehlende call"})
+                results.append({"type": proposal.type, "ok": False, "summary": "Fehlende call"})
                 continue
-            result = _run_tool(patient_id, proposal.call.tool, proposal.call.args)
-            results.append({"type": proposal.type, **result})
+            run_result = _run_tool(patient_id, proposal.call.tool, proposal.call.args)
+            results.append(_to_apply_result(proposal.type, run_result))
 
     return JSONResponse(
         content={"results": results},
