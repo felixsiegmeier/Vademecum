@@ -135,6 +135,7 @@ class ApplyToolsRequest(BaseModel):
 
 class ApplyProposalsRequest(BaseModel):
     proposals: list[Proposal]
+    force: bool = False
 
 
 class AktivRequest(BaseModel):
@@ -729,6 +730,45 @@ async def apply_tools(patient_id: str, req: ApplyToolsRequest):
     )
 
 
+_IDENTITY_FIELDS: frozenset[str] = frozenset({"name", "geburtsdatum", "geschlecht"})
+
+
+def _detect_mismatch(patient: Patient, proposals: list[Proposal]) -> list[dict]:
+    """Checks update_stammdaten proposals against current patient identity fields.
+
+    Returns a list of {feld, current, proposed} for fields where the current
+    value is non-empty and differs from the proposed value. Empty list = no conflict.
+    When multiple proposals target the same field, the last one wins.
+    """
+    proposed: dict[str, object] = {}
+    for p in proposals:
+        if (
+            p.type == "update_singleton"
+            and p.call is not None
+            and p.call.tool == "update_stammdaten"
+        ):
+            feld = p.call.args.get("feld")
+            if feld in _IDENTITY_FIELDS:
+                proposed[str(feld)] = p.call.args.get("wert")
+
+    if not proposed:
+        return []
+
+    conflicts = []
+    for feld, proposed_raw in proposed.items():
+        current_raw = getattr(patient.stammdaten, feld, None)
+        if current_raw is None:
+            continue
+        current_str = str(current_raw)
+        if not current_str:
+            continue
+        proposed_str = str(proposed_raw) if proposed_raw is not None else ""
+        if current_str != proposed_str:
+            conflicts.append({"feld": feld, "current": current_str, "proposed": proposed_str})
+
+    return conflicts
+
+
 def _run_tool(patient_id: str, tool: str, args: dict) -> dict:
     """Führt ein einzelnes Tool aus und gibt das Ergebnis zurück."""
     fn = TOOL_FUNCTIONS.get(tool)
@@ -767,9 +807,18 @@ async def apply_proposals_endpoint(patient_id: str, req: ApplyProposalsRequest):
     Schlägt delete aus anderen Gründen fehl → ok=false mit Hinweis auf manuelle Prüfung.
     """
     try:
-        load_patient(patient_id)
+        patient_snapshot = load_patient(patient_id)
     except FileNotFoundError:
         raise HTTPException(404, f"Patient {patient_id} nicht gefunden")
+
+    if not req.force:
+        conflicts = _detect_mismatch(patient_snapshot, req.proposals)
+        if conflicts:
+            return JSONResponse(
+                status_code=409,
+                content={"mismatch_warning": True, "conflicting_fields": conflicts},
+                media_type="application/json; charset=utf-8",
+            )
 
     results = []
     for proposal in req.proposals:

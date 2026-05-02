@@ -228,3 +228,119 @@ def test_extract_stammdaten_bad_mime_returns_400(isolated_data):
         files={"file": ("notes.txt", b"plain text", "text/plain")},
     )
     assert res.status_code == 400
+
+
+# ── apply-proposals: Mismatch-Detection ──────────────────────────────────────
+
+
+def _make_patient_with_identity(pid: str = "P-0001") -> None:
+    from datetime import date as _date
+    pat = Patient(
+        stammdaten=Stammdaten(
+            id=pid,
+            name="Celik, Sadik",
+            geburtsdatum=_date(1966, 8, 10),
+            geschlecht="m",
+            aufnahmedatum=_date(2026, 4, 3),
+        ),
+    )
+    storage.save_patient(pat)
+
+
+def _stammdaten_proposal(feld: str, wert: str) -> dict:
+    return {
+        "type": "update_singleton",
+        "call": {"tool": "update_stammdaten", "args": {"feld": feld, "wert": wert, "source_quote": "test"}},
+        "delete_call": None,
+        "add_call": None,
+    }
+
+
+def test_mismatch_name_returns_409(isolated_data):
+    """update_stammdaten feld=name mit abweichendem Wert → HTTP 409."""
+    _make_patient_with_identity("P-0001")
+    proposal = _stammdaten_proposal("name", "Schmidt, Erika")
+    res = client.post("/api/patients/P-0001/apply-proposals", json={"proposals": [proposal]})
+    assert res.status_code == 409
+    body = res.json()
+    assert body["mismatch_warning"] is True
+    conflicts = body["conflicting_fields"]
+    assert any(c["feld"] == "name" and c["current"] == "Celik, Sadik" and c["proposed"] == "Schmidt, Erika" for c in conflicts)
+
+
+def test_mismatch_geburtsdatum_returns_409(isolated_data):
+    """update_stammdaten feld=geburtsdatum mit abweichendem Wert → HTTP 409."""
+    _make_patient_with_identity("P-0001")
+    proposal = _stammdaten_proposal("geburtsdatum", "1980-03-15")
+    res = client.post("/api/patients/P-0001/apply-proposals", json={"proposals": [proposal]})
+    assert res.status_code == 409
+    body = res.json()
+    assert body["mismatch_warning"] is True
+    conflicts = body["conflicting_fields"]
+    assert any(c["feld"] == "geburtsdatum" and c["current"] == "1966-08-10" for c in conflicts)
+
+
+def test_mismatch_geschlecht_returns_409(isolated_data):
+    """update_stammdaten feld=geschlecht mit abweichendem Wert → HTTP 409."""
+    _make_patient_with_identity("P-0001")
+    proposal = _stammdaten_proposal("geschlecht", "w")
+    res = client.post("/api/patients/P-0001/apply-proposals", json={"proposals": [proposal]})
+    assert res.status_code == 409
+    body = res.json()
+    assert body["mismatch_warning"] is True
+
+
+def test_mismatch_initial_null_no_conflict(isolated_data):
+    """Kein Mismatch wenn current null — Initialwert wird ohne Friktion übernommen."""
+    from models.patient import Patient, Stammdaten
+    from datetime import date as _date
+    # Patient ohne geburtsdatum und ohne geschlecht
+    pat = Patient(
+        stammdaten=Stammdaten(id="P-0001", name="Test, Patient", aufnahmedatum=_date(2026, 4, 1)),
+    )
+    storage.save_patient(pat)
+    proposal = _stammdaten_proposal("geburtsdatum", "1980-01-01")
+    res = client.post("/api/patients/P-0001/apply-proposals", json={"proposals": [proposal]})
+    assert res.status_code == 200
+    assert res.json()["results"][0]["ok"] is True
+
+
+def test_force_override_bypasses_mismatch(isolated_data):
+    """force=True überspringt den Mismatch-Check — Apply läuft durch."""
+    _make_patient_with_identity("P-0001")
+    proposal = _stammdaten_proposal("name", "Schmidt, Erika")
+    res = client.post(
+        "/api/patients/P-0001/apply-proposals",
+        json={"proposals": [proposal], "force": True},
+    )
+    assert res.status_code == 200
+    result = res.json()["results"][0]
+    assert result["ok"] is True
+    pat = storage.load_patient("P-0001")
+    assert pat.stammdaten.name == "Schmidt, Erika"
+
+
+def test_mismatch_multifield_all_conflicts_returned(isolated_data):
+    """Beide Identitätsfelder kollidieren → beide in conflicting_fields."""
+    _make_patient_with_identity("P-0001")
+    proposals = [
+        _stammdaten_proposal("name", "Schmidt, Erika"),
+        _stammdaten_proposal("geburtsdatum", "1980-03-15"),
+    ]
+    res = client.post("/api/patients/P-0001/apply-proposals", json={"proposals": proposals})
+    assert res.status_code == 409
+    body = res.json()
+    assert body["mismatch_warning"] is True
+    felder = {c["feld"] for c in body["conflicting_fields"]}
+    assert "name" in felder
+    assert "geburtsdatum" in felder
+
+
+def test_non_identity_stammdaten_field_no_mismatch(isolated_data):
+    """update_stammdaten feld=aufnahmedatum (kein Identitätsfeld) → kein Mismatch, normaler 200."""
+    _make_patient_with_identity("P-0001")
+    proposal = _stammdaten_proposal("aufnahmedatum", "2026-05-01")
+    res = client.post("/api/patients/P-0001/apply-proposals", json={"proposals": [proposal]})
+    assert res.status_code == 200
+    result = res.json()["results"][0]
+    assert result["ok"] is True
