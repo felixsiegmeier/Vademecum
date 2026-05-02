@@ -7,6 +7,7 @@ import type {
   Proposal,
   UploadResponse,
 } from "../types";
+import { STAMMDATEN_FELD_LABELS } from "../types";
 import { takePendingFile } from "../pendingFileStore";
 import ProposalCard from "./ProposalCard";
 import Toast, { type ToastMessage } from "./Toast";
@@ -96,6 +97,9 @@ export function PatientChatPanel({ patientId, patient, refreshPatient, onPatient
   const [chatBusy, setChatBusy] = useState(false);
   const [applying, setApplying] = useState(false);
   const [toast, setToast] = useState<ToastMessage | null>(null);
+  const [mismatchModal, setMismatchModal] = useState<
+    Array<{ feld: string; current: string; proposed: string }>
+  | null>(null);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -279,9 +283,14 @@ export function PatientChatPanel({ patientId, patient, refreshPatient, onPatient
     updateProposalsEntry(activeProposals.id, (e) => ({ ...e, discarded: true }));
   }
 
+  async function handleForceApply() {
+    setMismatchModal(null);
+    await handleApply(true);
+  }
+
   // ── Apply-Flow ────────────────────────────────────────────────────────────
 
-  async function handleApply() {
+  async function handleApply(force = false) {
     if (!activeProposals || applying) return;
     const entry = activeProposals;
     const indicesToApply: number[] = [];
@@ -299,8 +308,15 @@ export function PatientChatPanel({ patientId, patient, refreshPatient, onPatient
       const res = await fetch(`/api/patients/${patientId}/apply-proposals`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ proposals: proposalsToApply }),
+        body: JSON.stringify({ proposals: proposalsToApply, force }),
       });
+      if (res.status === 409) {
+        const body = await res.json().catch(() => ({}));
+        if (body.mismatch_warning) {
+          setMismatchModal(body.conflicting_fields ?? []);
+          return;
+        }
+      }
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body?.detail ?? `HTTP ${res.status}`);
@@ -476,7 +492,7 @@ export function PatientChatPanel({ patientId, patient, refreshPatient, onPatient
               <span className="font-medium">{selectedActiveCount}</span> von {totalActive} anwenden
             </span>
             <button
-              onClick={handleApply}
+              onClick={() => handleApply()}
               disabled={applying || selectedActiveCount === 0}
               className="rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed"
             >
@@ -527,6 +543,57 @@ export function PatientChatPanel({ patientId, patient, refreshPatient, onPatient
       </div>
 
       <Toast toast={toast} onDismiss={() => setToast(null)} />
+
+      {/* Mismatch-Modal */}
+      {mismatchModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm mx-4 p-6">
+            <h2 className="text-base font-semibold text-gray-900 mb-2">
+              Identitätsfelder geändert
+            </h2>
+            <p className="text-sm text-gray-600 mb-4">
+              Dieses Dokument schlägt Änderungen an Patienten-Identitätsfeldern vor.
+              Möglicherweise gehört es zu einem anderen Patienten.
+            </p>
+            <table className="w-full text-xs mb-6 border-collapse">
+              <thead>
+                <tr className="text-gray-500 border-b border-gray-200">
+                  <th className="text-left py-1 pr-3 font-medium">Feld</th>
+                  <th className="text-left py-1 pr-3 font-medium">Aktuell</th>
+                  <th className="text-left py-1 font-medium">Vorschlag</th>
+                </tr>
+              </thead>
+              <tbody>
+                {mismatchModal.map((c) => (
+                  <tr key={c.feld} className="border-b border-gray-100">
+                    <td className="py-1.5 pr-3 text-gray-700 font-medium">
+                      {STAMMDATEN_FELD_LABELS[c.feld] ?? c.feld}
+                    </td>
+                    <td className="py-1.5 pr-3 text-gray-500">{c.current}</td>
+                    <td className="py-1.5 text-gray-900 font-medium">{c.proposed}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setMismatchModal(null)}
+                disabled={applying}
+                className="px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-lg disabled:opacity-50"
+              >
+                Abbrechen
+              </button>
+              <button
+                onClick={handleForceApply}
+                disabled={applying}
+                className="px-4 py-2 text-sm font-medium text-white bg-orange-600 hover:bg-orange-700 rounded-lg disabled:opacity-50"
+              >
+                {applying ? "Wird angewendet…" : "Trotzdem anwenden"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
