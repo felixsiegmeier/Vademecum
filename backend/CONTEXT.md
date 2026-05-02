@@ -1,4 +1,4 @@
-# Backend Context — Stand 2026-05-02 (V1.6 Phase 1)
+# Backend Context — Stand 2026-05-02 (V1.6 Phase 2)
 
 ## Pydantic-Modelle (kompakt)
 
@@ -66,10 +66,26 @@
 - _BLOCK1_PROMPT_CACHE / _BLOCK2_PROMPT_CACHE laden Prompts einmal beim
   ersten Request. Bei Prompt-Änderung: Backend-Restart nötig.
 
+## Stammdaten-Extraktion (V1.6 Phase 2)
+
+### StammdatenExtractResult
+- name?, geburtsdatum? (YYYY-MM-DD), geschlecht? (m|w|d),
+  bettplatz?, aufnahmedatum? (YYYY-MM-DD), aufnahme_quelle? (elektiv|notfall|extern)
+- Alle Felder Optional/nullable
+- Service: `agent_stammdaten_extraction.extract_stammdaten(client, file_bytes, mime_type)`
+
+### POST /api/extract-stammdaten
+- multipart/form-data, akzeptiert PDF + Bilder (gleiche MIME-Allowlist wie /api/uploads)
+- Single-LLM-Call, JSON-Mode, temperature=0
+- Response: StammdatenExtractResult (alle Felder null wenn kein Patientendokument)
+- Kein Error bei unerkannten Dokumenten — nur null-Felder
+- Prompt: `prompts/extract_stammdaten.txt`
+- PDF-Fallback: bei APIStatusError → Konversion zu PNG-Seiten (wie /api/uploads)
+
 ## Apply-Endpoint
 POST /api/patients/{id}/apply-proposals
 - Transactional: delete fail → add skip in Update-Gruppe
 - Proposal-Types: add | update_singleton | update (delete+add-pair)
 
 ## Test-Stand
-74 passed in 0.40s
+78 passed in 0.46s
