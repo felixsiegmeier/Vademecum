@@ -1,269 +1,177 @@
-import { useRef, useState, useEffect } from "react";
-import UploadResultPanel, { type Proposal, type ToolResult } from "./UploadResultPanel";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type {
+  ApplyResponse,
+  ApplyResult,
+  ArgsRecord,
+  Patient,
+  Proposal,
+  UploadResponse,
+} from "../types";
+import { takePendingFile } from "../pendingFileStore";
+import ProposalCard from "./ProposalCard";
+import Toast, { type ToastMessage } from "./Toast";
 
-// ── API-Typen (was ans Backend geht / was zurückkommt) ────────────────────────
+// ── Anzeige-Typen für die Chat-History ───────────────────────────────────────
 
-type ToolCall = {
-  id: string;
-  type: "function";
-  function: { name: string; arguments: string };
-};
-
-type ApiMessage = {
-  role: "user" | "assistant" | "tool";
-  content: string | null;
-  tool_calls?: ToolCall[];
-  tool_call_id?: string;
-  name?: string;
-};
-
-// ── Anzeigetypen (nur im Frontend, nie ans Backend) ──────────────────────────
-
-// Upload-Ergebnis wartet auf Bestätigung des Arztes ("pending"),
-// wurde angewendet ("applied") oder verworfen ("discarded")
-type UploadResultEntry = {
-  kind: "upload-result";
-  id: string;
-  fileName: string;
-  summary: string;
-  proposals: Proposal[];
-  status: "pending" | "applied" | "discarded";
-};
-
-// Zeigt das Ergebnis eines einzelnen angewendeten Tool-Calls an (z.B. "Diagnose ergänzt")
-type ToolMarkerEntry = {
-  kind: "tool-marker";
-  tool: string;
-  ok: boolean;
-  summary: string;
-};
-
-// Die Chat-History enthält sowohl echte API-Nachrichten als auch reine Anzeige-Einträge
-type HistoryEntry = ApiMessage | UploadResultEntry | ToolMarkerEntry;
-
-function isApiMessage(e: HistoryEntry): e is ApiMessage {
-  return "role" in e;
+interface ChatTextEntry {
+  kind: "chat-text";
+  role: "user" | "assistant";
+  content: string;
 }
 
-// ── Globaler History-Store ────────────────────────────────────────────────────
-// Chat-History wird pro Patient in einer Map gehalten (nicht in React-State),
-// damit sie beim Tab-Wechsel erhalten bleibt ohne Backend-Persistenz.
-// Zurücksetzen passiert nur durch explizites Löschen (aktuell nicht implementiert).
+interface ProposalsEntry {
+  kind: "proposals";
+  id: string;
+  source: "upload" | "chat";
+  fileName?: string;
+  proposals: Proposal[];
+  selectedIndices: Set<number>;
+  editedArgs: Map<number, ArgsRecord>;
+  failedIndices: Set<number>;
+  failedSummaries: Map<number, string>;
+  appliedIndices: Set<number>;  // erfolgreich angewendete Indizes
+  fullyApplied: boolean;        // alle Cards entweder applied oder abgewählt → Bar weg
+  discarded: boolean;           // User hat Vorschläge verworfen → Bar weg
+}
+
+interface AutoSkipEntry {
+  kind: "auto-skip";
+  id: string;
+  fileName?: string;
+}
+
+type HistoryEntry = ChatTextEntry | ProposalsEntry | AutoSkipEntry;
+
+// Chat-History pro Patient — bleibt beim Tab-Wechsel erhalten
 const historyStore = new Map<string, HistoryEntry[]>();
 
-// ── Hilfsfunktionen ───────────────────────────────────────────────────────────
-
-// Wandelt einen Tool-Call in eine menschenlesbare Zusammenfassung um (für die Chat-Bubbles)
-function summarizeToolCall(name: string, argsJson: string): string {
-  let args: Record<string, string> = {};
-  try {
-    args = JSON.parse(argsJson);
-  } catch {
-    /* ignore */
-  }
-  switch (name) {
-    case "add_behandlungsdiagnose":
-      return `Behandlungsdiagnose: ${args.text}`;
-    case "add_verlaufsdiagnose":
-      return `Verlaufsdiagnose: ${args.text}`;
-    case "add_vorbekannte_diagnose":
-      return `Vorbekannte Diagnose: ${args.text}`;
-    case "add_prozedur":
-      return `Prozedur (${args.datum}): ${args.text}`;
-    case "add_befund":
-      return `Befund (${args.art}, ${args.datum}): ${args.text}`;
-    case "add_therapie":
-      return `Therapie [${args.kategorie}]: ${args.bezeichnung} ab ${args.beginn}${args.indikation ? ` (${args.indikation})` : ""}`;
-    case "add_verlaufseintrag":
-      return `Verlaufseintrag (${args.datum})`;
-    case "update_anamnese":
-      return `Anamnese aktualisiert`;
-    case "delete_entry":
-      return `Eintrag gelöscht (id=${args.id})`;
-    case "update_therapieziel":
-      return `Therapieziel: ${args.text}`;
-    case "update_status":
-      return `Aktivstatus: ${args.aktiv ? "aktiv" : "inaktiv"}`;
-    case "update_bettplatz":
-      return `Bettplatz: ${args.bettplatz}`;
-    case "update_verlegungsziel":
-      return `Verlegungsziel: ${args.verlegungsziel}`;
-    default:
-      return `${name}(${argsJson})`;
-  }
-}
-
-// Rendert einen einzelnen Chat-Eintrag — unterscheidet zwischen API-Messages und Display-Entries
-function renderEntry(
-  entry: HistoryEntry,
-  index: number,
-  patientId: string,
-  onUploadComplete: (id: string, results: ToolResult[]) => void,
-  onUploadDiscard: (id: string) => void,
-) {
-  // Tool-Marker: kleines Badge nach Upload-Apply (Erfolg = amber, Fehler = rot)
-  if ("kind" in entry && entry.kind === "tool-marker") {
-    return (
-      <div key={index} className="flex justify-start">
-        <div className={`max-w-[80%] rounded-xl border px-3 py-2 text-sm ${
-          entry.ok
-            ? "bg-amber-50 border-amber-200 text-amber-800"
-            : "bg-red-50 border-red-200 text-red-800"
-        }`}>
-          <div className="flex items-start gap-1.5">
-            <span className="mt-0.5 shrink-0">{entry.ok ? "🔧" : "⚠️"}</span>
-            <span>{entry.summary}</span>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Upload-Ergebnis: interaktive Karte mit Proposals (pending) oder Status-Badge
-  if ("kind" in entry && entry.kind === "upload-result") {
-    if (entry.status === "pending") {
-      return (
-        <div key={index} className="flex justify-start">
-          <UploadResultPanel
-            fileName={entry.fileName}
-            summary={entry.summary}
-            proposals={entry.proposals}
-            patientId={patientId}
-            onComplete={(results) => onUploadComplete(entry.id, results)}
-            onDiscard={() => onUploadDiscard(entry.id)}
-          />
-        </div>
-      );
-    }
-    if (entry.status === "applied") {
-      return (
-        <div key={index} className="flex justify-start">
-          <div className="max-w-[80%] rounded-xl bg-green-50 border border-green-200 px-3 py-2 text-sm text-green-700">
-            📎 {entry.fileName} — Vorschläge angewendet
-          </div>
-        </div>
-      );
-    }
-    // discarded
-    return (
-      <div key={index} className="flex justify-start">
-        <div className="max-w-[80%] rounded-xl bg-gray-50 border border-gray-200 px-3 py-2 text-sm text-gray-400">
-          📎 {entry.fileName} — Verworfen
-        </div>
-      </div>
-    );
-  }
-
-  // Echte API-Nachrichten
-  const m = entry as ApiMessage;
-
-  // Tool-Antworten (role: "tool") werden nicht angezeigt — nur für das LLM relevant
-  if (m.role === "tool") return null;
-
-  if (m.role === "user") {
-    return (
-      <div key={index} className="flex justify-end">
-        <div className="max-w-[80%] rounded-xl bg-blue-600 px-3 py-2 text-sm text-white">
-          {m.content}
-        </div>
-      </div>
-    );
-  }
-
-  if (m.role === "assistant") {
-    // Tool-Calls des Assistenten: Liste der ausgeführten Aktionen anzeigen
-    if (m.tool_calls && m.tool_calls.length > 0) {
-      return (
-        <div key={index} className="flex justify-start">
-          <div className="max-w-[80%] rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-800 space-y-1">
-            {m.tool_calls.map((tc) => (
-              <div key={tc.id} className="flex items-start gap-1.5">
-                <span className="mt-0.5 shrink-0">🔧</span>
-                <span>{summarizeToolCall(tc.function.name, tc.function.arguments)}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      );
-    }
-    // Normale Text-Antwort des Assistenten
-    if (m.content) {
-      return (
-        <div key={index} className="flex justify-start">
-          <div className="max-w-[80%] rounded-xl bg-white border border-gray-200 px-3 py-2 text-sm text-gray-800">
-            {m.content}
-          </div>
-        </div>
-      );
-    }
-  }
-
-  return null;
-}
-
-// ── Komponente ────────────────────────────────────────────────────────────────
+// ── Hilfsfunktionen ──────────────────────────────────────────────────────────
 
 const ACCEPTED_MIME = ["application/pdf", "image/jpeg", "image/png"];
 
-export function PatientChatPanel({ patientId }: { patientId: string }) {
-  const [history, setHistory] = useState<HistoryEntry[]>(
-    () => historyStore.get(patientId) ?? []
-  );
+function makeProposalsEntry(
+  source: "upload" | "chat",
+  proposals: Proposal[],
+  fileName?: string,
+): ProposalsEntry {
+  return {
+    kind: "proposals",
+    id: `prop-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    source,
+    fileName,
+    proposals,
+    selectedIndices: new Set(proposals.map((_, i) => i)),
+    editedArgs: new Map(),
+    failedIndices: new Set(),
+    failedSummaries: new Map(),
+    appliedIndices: new Set(),
+    fullyApplied: false,
+    discarded: false,
+  };
+}
+
+/** Mergt edited args in das passende Tool-Call-Slot eines Proposals (call oder add_call). */
+function mergeEditedArgs(p: Proposal, edited: ArgsRecord | undefined): Proposal {
+  if (!edited) return p;
+  if (p.type === "update" && p.add_call) {
+    return { ...p, add_call: { ...p.add_call, args: { ...p.add_call.args, ...edited } } };
+  }
+  if ((p.type === "add" || p.type === "update_singleton") && p.call) {
+    return { ...p, call: { ...p.call, args: { ...p.call.args, ...edited } } };
+  }
+  return p;
+}
+
+interface Props {
+  patientId: string;
+  patient: Patient | null;
+  refreshPatient: () => Promise<void>;
+  onPatientChanged: () => void;
+}
+
+export function PatientChatPanel({ patientId, patient, refreshPatient, onPatientChanged }: Props) {
+  const [history, setHistory] = useState<HistoryEntry[]>(() => historyStore.get(patientId) ?? []);
   const [input, setInput] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [uploading, setUploading] = useState(false);   // F5: globaler Upload-Guard
+  const [chatBusy, setChatBusy] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const [toast, setToast] = useState<ToastMessage | null>(null);
+
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Bei Patient-Wechsel: History aus dem Store laden (erhalten Tab-Wechsel)
   useEffect(() => {
     setHistory(historyStore.get(patientId) ?? []);
   }, [patientId]);
 
-  // Automatisch nach unten scrollen wenn neue Nachrichten kommen
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [history, busy]);
+  }, [history, chatBusy, uploading]);
+
+  function persist(next: HistoryEntry[]) {
+    historyStore.set(patientId, next);
+    setHistory(next);
+  }
+
+  function showToast(kind: ToastMessage["kind"], text: string) {
+    setToast({ id: Date.now(), kind, text });
+  }
+
+  // Letzten noch nicht vollständig angewendeten proposals-Block finden — dieser steuert die Bar
+  const activeProposalsIdx = useMemo(() => {
+    for (let i = history.length - 1; i >= 0; i--) {
+      const e = history[i];
+      if (e.kind === "proposals" && !e.fullyApplied && !e.discarded) return i;
+    }
+    return -1;
+  }, [history]);
+
+  const activeProposals = activeProposalsIdx >= 0 ? (history[activeProposalsIdx] as ProposalsEntry) : null;
+
+  // ── Chat-Send (Text) ──────────────────────────────────────────────────────
 
   async function handleSubmit() {
-    if (!input.trim() || busy) return;
-
-    // Optimistic UI: Nutzer-Nachricht sofort anzeigen, bevor Backend antwortet
-    const userMsg: ApiMessage = { role: "user", content: input };
-    const optimistic = [...history, userMsg];
-    setHistory(optimistic);
-    historyStore.set(patientId, optimistic);
+    if (!input.trim() || chatBusy || uploading) return;
+    const text = input;
+    const userEntry: ChatTextEntry = { kind: "chat-text", role: "user", content: text };
+    const optimistic = [...history, userEntry];
+    persist(optimistic);
     setInput("");
-    setBusy(true);
-
+    setChatBusy(true);
     try {
-      // Nur ApiMessages ans Backend schicken (keine Display-Only-Einträge)
-      const apiMessages = optimistic.filter(isApiMessage);
       const res = await fetch(`/api/patients/${patientId}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: apiMessages }),
+        body: JSON.stringify({ messages: [{ role: "user", content: text }] }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => null);
         const detail = body?.detail ?? `HTTP ${res.status}`;
         throw new Error(typeof detail === "string" ? detail : `HTTP ${res.status}`);
       }
-      const data = await res.json();
-      // Backend gibt nur neue Nachrichten zurück (assistant + tool), nicht die ganze History
-      const next = [...optimistic, ...(data.messages as ApiMessage[])];
-      setHistory(next);
-      historyStore.set(patientId, next);
+      const data = (await res.json()) as { proposals: Proposal[]; auto_skipped: boolean; message?: string };
+      if (data.auto_skipped || data.proposals.length === 0) {
+        const msgEntry: ChatTextEntry = {
+          kind: "chat-text",
+          role: "assistant",
+          content: data.message ?? "Keine Änderungen am Patienten vorgeschlagen.",
+        };
+        persist([...optimistic, msgEntry]);
+      } else {
+        const propEntry = makeProposalsEntry("chat", data.proposals);
+        persist([...optimistic, propEntry]);
+      }
     } catch (e) {
-      const errMsg: ApiMessage = {
+      const err: ChatTextEntry = {
+        kind: "chat-text",
         role: "assistant",
         content: `Fehler: ${(e as Error).message}`,
       };
-      const next = [...optimistic, errMsg];
-      setHistory(next);
-      historyStore.set(patientId, next);
+      persist([...optimistic, err]);
+      showToast("error", "Verbindung zum Backend verloren");
     } finally {
-      setBusy(false);
+      setChatBusy(false);
       textareaRef.current?.focus();
     }
   }
@@ -275,141 +183,311 @@ export function PatientChatPanel({ patientId }: { patientId: string }) {
     }
   }
 
-  async function handleFileSelected(file: File) {
+  // ── Auto-Upload bei Navigation vom NewPatientDialog ──────────────────────
+  // PatientChatPanel wird bei Patientenwechsel nicht neu gemountet (gleiche Route).
+  // Um stale-history-Probleme zu vermeiden, wird historyStore direkt gelesen.
+
+  useEffect(() => {
+    const file = takePendingFile();
+    if (!file) return;
+    handleFileSelected(file, historyStore.get(patientId) ?? []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [patientId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Datei-Upload ──────────────────────────────────────────────────────────
+
+  async function handleFileSelected(file: File, baseHistory?: HistoryEntry[]) {
+    if (uploading) return;  // F5: Concurrent-Schutz
     if (!ACCEPTED_MIME.includes(file.type)) {
-      const errMsg: ApiMessage = {
+      const err: ChatTextEntry = {
+        kind: "chat-text",
         role: "assistant",
         content: `Nicht unterstützter Dateityp: ${file.type || file.name}. Bitte PDF, JPG oder PNG wählen.`,
       };
-      const next = [...history, errMsg];
-      setHistory(next);
-      historyStore.set(patientId, next);
+      persist([...(baseHistory ?? history), err]);
       return;
     }
-
-    // Datei-Nachricht sofort anzeigen
-    const userMsg: ApiMessage = { role: "user", content: `[Datei: ${file.name}]` };
-    const withUserMsg = [...history, userMsg];
-    setHistory(withUserMsg);
-    historyStore.set(patientId, withUserMsg);
-    setBusy(true);
-
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("patient_id", patientId);
-
+    const userEntry: ChatTextEntry = {
+      kind: "chat-text",
+      role: "user",
+      content: `[Datei: ${file.name}]`,
+    };
+    const optimistic = [...(baseHistory ?? history), userEntry];
+    persist(optimistic);
+    setUploading(true);
     try {
-      // Backend analysiert Dokument und gibt summary + proposals zurück
-      const res = await fetch("/api/uploads", {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("patient_id", patientId);
+      const res = await fetch("/api/uploads", { method: "POST", body: formData });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.detail ?? `HTTP ${res.status}`);
+      }
+      const data = (await res.json()) as UploadResponse & { message?: string };
+      if (data.auto_skipped || data.proposals.length === 0) {
+        const skip: AutoSkipEntry = {
+          kind: "auto-skip",
+          id: `skip-${Date.now()}`,
+          fileName: file.name,
+        };
+        persist([...optimistic, skip]);
+      } else {
+        const propEntry = makeProposalsEntry("upload", data.proposals, file.name);
+        persist([...optimistic, propEntry]);
+      }
+    } catch (e) {
+      const err: ChatTextEntry = {
+        kind: "chat-text",
+        role: "assistant",
+        content: `Upload-Fehler: ${(e as Error).message}`,
+      };
+      persist([...optimistic, err]);
+      showToast("error", "Verbindung zum Backend verloren");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  // ── Per-Proposal-Card-Interaktion ─────────────────────────────────────────
+
+  function updateProposalsEntry(entryId: string, fn: (e: ProposalsEntry) => ProposalsEntry) {
+    const next = history.map((e) =>
+      e.kind === "proposals" && e.id === entryId ? fn(e) : e,
+    );
+    persist(next);
+  }
+
+  function toggleProposal(entryId: string, idx: number) {
+    updateProposalsEntry(entryId, (e) => {
+      const sel = new Set(e.selectedIndices);
+      if (sel.has(idx)) sel.delete(idx);
+      else sel.add(idx);
+      return { ...e, selectedIndices: sel };
+    });
+  }
+
+  function setProposalArgs(entryId: string, idx: number, args: ArgsRecord) {
+    updateProposalsEntry(entryId, (e) => {
+      const map = new Map(e.editedArgs);
+      map.set(idx, args);
+      return { ...e, editedArgs: map };
+    });
+  }
+
+  function handleDiscard() {
+    if (!activeProposals || applying) return;
+    updateProposalsEntry(activeProposals.id, (e) => ({ ...e, discarded: true }));
+  }
+
+  // ── Apply-Flow ────────────────────────────────────────────────────────────
+
+  async function handleApply() {
+    if (!activeProposals || applying) return;
+    const entry = activeProposals;
+    const indicesToApply: number[] = [];
+    const proposalsToApply: Proposal[] = [];
+    entry.proposals.forEach((p, i) => {
+      if (!entry.selectedIndices.has(i)) return;
+      if (entry.appliedIndices.has(i)) return;  // schon erfolgreich angewendet
+      indicesToApply.push(i);
+      proposalsToApply.push(mergeEditedArgs(p, entry.editedArgs.get(i)));
+    });
+    if (proposalsToApply.length === 0) return;
+
+    setApplying(true);
+    try {
+      const res = await fetch(`/api/patients/${patientId}/apply-proposals`, {
         method: "POST",
-        body: formData,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ proposals: proposalsToApply }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body?.detail ?? `HTTP ${res.status}`);
       }
-      const data = await res.json();
+      const data = (await res.json()) as ApplyResponse;
+      const results: ApplyResult[] = data.results;
 
-      // source_quote lebt in args — für ProposalCard auf Top-Level heben
-      const proposals: Proposal[] = (
-        data.proposals as Array<{ tool: string; args: Record<string, string> }>
-      ).map((p, i) => ({
-        id: `proposal-${Date.now()}-${i}`,
-        tool: p.tool,
-        args: p.args,
-        source_quote: p.args.source_quote ?? "",
+      const failedIndices = new Set(entry.failedIndices);
+      const failedSummaries = new Map(entry.failedSummaries);
+      const appliedIndices = new Set(entry.appliedIndices);
+      let okCount = 0;
+      let failCount = 0;
+      results.forEach((r, k) => {
+        const proposalIdx = indicesToApply[k];
+        if (r.ok) {
+          okCount++;
+          appliedIndices.add(proposalIdx);
+          failedIndices.delete(proposalIdx);
+          failedSummaries.delete(proposalIdx);
+        } else {
+          failCount++;
+          failedIndices.add(proposalIdx);
+          failedSummaries.set(proposalIdx, r.summary || "Fehler");
+        }
+      });
+
+      // Auto-deselect failed indices so bar disappears by default after partial failure
+      const newSelectedIndices = new Set(entry.selectedIndices);
+      failedIndices.forEach((i) => newSelectedIndices.delete(i));
+
+      // fullyApplied only when no failures and all selected entries are applied
+      const fullyApplied = failedIndices.size === 0 && entry.proposals.every((_, i) => {
+        if (!newSelectedIndices.has(i)) return true;
+        return appliedIndices.has(i);
+      });
+
+      updateProposalsEntry(entry.id, (e) => ({
+        ...e,
+        selectedIndices: newSelectedIndices,
+        failedIndices,
+        failedSummaries,
+        appliedIndices,
+        fullyApplied,
       }));
 
-      // Proposal-Karte in den Chat einbetten (Arzt muss bestätigen)
-      const uploadEntry: UploadResultEntry = {
-        kind: "upload-result",
-        id: `upload-${Date.now()}`,
-        fileName: file.name,
-        summary: data.summary,
-        proposals,
-        status: "pending",
-      };
-      const next = [...withUserMsg, uploadEntry];
-      setHistory(next);
-      historyStore.set(patientId, next);
+      await refreshPatient();
+      onPatientChanged();
+
+      if (failCount === 0) {
+        showToast("success", `${okCount} ${okCount === 1 ? "Vorschlag" : "Vorschläge"} angewendet.`);
+      } else {
+        showToast("warning", `${okCount} angewendet, ${failCount} fehlgeschlagen — bitte prüfen.`);
+      }
     } catch (e) {
-      const errMsg: ApiMessage = {
-        role: "assistant",
-        content: `Upload-Fehler: ${(e as Error).message}`,
-      };
-      const next = [...withUserMsg, errMsg];
-      setHistory(next);
-      historyStore.set(patientId, next);
+      showToast("error", `Verbindung zum Backend verloren: ${(e as Error).message}`);
     } finally {
-      setBusy(false);
+      setApplying(false);
     }
   }
 
-  // Arzt hat "Übernehmen" geklickt: Upload-Karte auf "applied" setzen + Ergebnis-Marker anzeigen
-  function handleUploadComplete(entryId: string, results: ToolResult[]) {
-    setHistory((prev) => {
-      const updated = prev.map((e) =>
-        "kind" in e && e.kind === "upload-result" && e.id === entryId
-          ? { ...e, status: "applied" as const }
-          : e
+  // ── Render-Helfer ─────────────────────────────────────────────────────────
+
+  function renderEntry(entry: HistoryEntry, idx: number) {
+    if (entry.kind === "chat-text") {
+      const isUser = entry.role === "user";
+      return (
+        <div key={idx} className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
+          <div
+            className={`max-w-[80%] rounded-xl px-3 py-2 text-sm whitespace-pre-wrap ${
+              isUser ? "bg-blue-600 text-white" : "bg-white border border-gray-200 text-gray-800"
+            }`}
+          >
+            {entry.content}
+          </div>
+        </div>
       );
-      const markers: ToolMarkerEntry[] = results.map((r) => ({
-        kind: "tool-marker" as const,
-        tool: r.tool,
-        ok: r.ok,
-        summary: r.ok ? (r.summary ?? r.tool) : (r.error ?? "Fehler"),
-      }));
-      const applied = results.filter((r) => r.ok).length;
-      const finalMsg: ApiMessage = {
-        role: "assistant",
-        content: `${applied} von ${results.length} Einträgen übernommen.`,
-      };
-      const next = [...updated, ...markers, finalMsg];
-      historyStore.set(patientId, next);
-      return next;
-    });
+    }
+    if (entry.kind === "auto-skip") {
+      return (
+        <div key={idx} className="flex justify-start">
+          <div className="max-w-[80%] rounded-xl bg-gray-50 border border-gray-200 px-3 py-2 text-sm text-gray-500">
+            {entry.fileName ? (
+              <>📎 <span className="font-medium">{entry.fileName}</span> — </>
+            ) : null}
+            PDF identisch zum letzten Upload — keine Änderungen gefunden.
+          </div>
+        </div>
+      );
+    }
+    // proposals block
+    return (
+      <div key={idx} className="flex justify-start">
+        <div className={`rounded-xl border border-gray-200 bg-white text-sm overflow-hidden w-full max-w-[90%] ${entry.discarded ? "opacity-50 pointer-events-none" : ""}`}>
+          <div className="px-3 py-2 border-b border-gray-100 bg-gray-50 flex items-center justify-between gap-2">
+            <p className="font-medium text-gray-800 truncate">
+              {entry.source === "upload" ? "📎 " : "💬 "}
+              {entry.fileName ?? (entry.source === "chat" ? "Chat-Vorschläge" : "Upload")}
+            </p>
+            <span className="text-xs text-gray-500 shrink-0">
+              {entry.proposals.length} {entry.proposals.length === 1 ? "Vorschlag" : "Vorschläge"}
+              {entry.appliedIndices.size > 0 && ` · ${entry.appliedIndices.size} angewendet`}
+            </span>
+          </div>
+          <div className="px-3 py-2 space-y-2 max-h-[28rem] overflow-y-auto">
+            {entry.proposals.map((p, i) => {
+              const applied = entry.appliedIndices.has(i);
+              return (
+                <div key={i} className={applied ? "opacity-50 pointer-events-none" : ""}>
+                  <ProposalCard
+                    proposal={p}
+                    patient={patient}
+                    selected={entry.selectedIndices.has(i) && !applied}
+                    onToggle={() => toggleProposal(entry.id, i)}
+                    onArgsChange={(args) => setProposalArgs(entry.id, i, args)}
+                    failedSummary={entry.failedSummaries.get(i) ?? null}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
   }
 
-  // Arzt hat "Verwerfen" geklickt
-  function handleUploadDiscard(entryId: string) {
-    setHistory((prev) => {
-      const updated = prev.map((e) =>
-        "kind" in e && e.kind === "upload-result" && e.id === entryId
-          ? { ...e, status: "discarded" as const }
-          : e
-      );
-      const discardMsg: ApiMessage = { role: "assistant", content: "Vorschläge verworfen." };
-      const next = [...updated, discardMsg];
-      historyStore.set(patientId, next);
-      return next;
-    });
-  }
+  // ── Sticky-Apply-Bar (F6) ────────────────────────────────────────────────
+
+  const totalActive = activeProposals?.proposals.length ?? 0;
+  const selectedActiveCount = activeProposals
+    ? Array.from(activeProposals.selectedIndices).filter(
+        (i) => !activeProposals.appliedIndices.has(i),
+      ).length
+    : 0;
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Nachrichtenliste */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+    <div className="flex flex-col h-full relative">
+      <div className="flex-1 overflow-y-auto p-4 space-y-3 pb-2">
         {history.length === 0 && (
           <p className="text-center text-sm text-gray-400 mt-8">
             Visite, Befunde oder Fragen eingeben…
           </p>
         )}
-        {history.map((entry, i) =>
-          renderEntry(entry, i, patientId, handleUploadComplete, handleUploadDiscard)
-        )}
-        {busy && (
+        {history.map((e, i) => renderEntry(e, i))}
+        {chatBusy && (
           <div className="flex justify-start">
             <div className="rounded-xl bg-white border border-gray-200 px-3 py-2 text-sm text-gray-400">
               Denkt nach…
             </div>
           </div>
         )}
+        {uploading && (
+          <div className="flex justify-start">
+            <div className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-800">
+              Verarbeitung läuft, kann 30–60 Sekunden dauern…
+            </div>
+          </div>
+        )}
         <div ref={bottomRef} />
       </div>
 
+      {/* Sticky-Apply-Bar */}
+      {activeProposals && (
+        <div className="border-t border-blue-100 bg-blue-50/80 backdrop-blur px-4 py-2 flex items-center justify-between gap-2">
+          <button
+            onClick={handleDiscard}
+            disabled={applying}
+            className="rounded-lg bg-gray-100 px-4 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Verwerfen
+          </button>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-blue-900">
+              <span className="font-medium">{selectedActiveCount}</span> von {totalActive} anwenden
+            </span>
+            <button
+              onClick={handleApply}
+              disabled={applying || selectedActiveCount === 0}
+              className="rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {applying ? "Wird übernommen…" : "Anwenden"}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Eingabezeile */}
       <div className="border-t bg-white px-4 py-3 flex gap-2 items-end">
-        {/* Datei-Upload: verstecktes Input, getriggert durch den 📎-Button */}
         <input
           ref={fileInputRef}
           type="file"
@@ -418,13 +496,13 @@ export function PatientChatPanel({ patientId }: { patientId: string }) {
           onChange={(e) => {
             const file = e.target.files?.[0];
             if (file) handleFileSelected(file);
-            e.target.value = "";  // Input zurücksetzen damit dieselbe Datei nochmal gewählt werden kann
+            e.target.value = "";
           }}
         />
         <button
           onClick={() => fileInputRef.current?.click()}
-          disabled={busy}
-          title="Dokument hochladen"
+          disabled={uploading || chatBusy}
+          title={uploading ? "Upload läuft…" : "Dokument hochladen"}
           className="shrink-0 rounded-lg border border-gray-300 px-3 py-2 text-gray-500 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
         >
           📎
@@ -434,19 +512,21 @@ export function PatientChatPanel({ patientId }: { patientId: string }) {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          disabled={busy}
+          disabled={chatBusy || uploading}
           placeholder="Visite, Befunde, Fragen… (Enter = Senden, Shift+Enter = Zeilenumbruch)"
           rows={2}
           className="flex-1 resize-none rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
         />
         <button
           onClick={handleSubmit}
-          disabled={busy || !input.trim()}
+          disabled={chatBusy || uploading || !input.trim()}
           className="shrink-0 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed"
         >
           Senden
         </button>
       </div>
+
+      <Toast toast={toast} onDismiss={() => setToast(null)} />
     </div>
   );
 }
