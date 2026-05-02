@@ -26,8 +26,11 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# Test data
-test data/
+# Patient data content — Verzeichnisstruktur via .gitkeep behalten, Inhalt ignorieren
+backend/data/patients/*.yml
+backend/data/meilensteine/*.md
+backend/data/meilensteine/*.meta.json
+backend/data/briefe/*.json
 
 # Editor
 .vscode/
