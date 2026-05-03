@@ -1,4 +1,4 @@
-# Backend Context — Stand 2026-05-02 (V1.6 Phase 3)
+# Backend Context — Stand 2026-05-03 (V1.6 Phase 3.5 + 4)
 
 ## Pydantic-Modelle (kompakt)
 
@@ -95,5 +95,48 @@ POST /api/patients/{id}/apply-proposals
 - Keine YAML-Änderung bei 409 (atomar)
 - `force: true` im Request überspringt den Check komplett
 
+## Block-2 State-Aware (V1.6 Phase 3.5)
+
+- Block 2 bekommt ALLE existierenden Verlaufseinträge im System-Prompt
+- Format: `[YYYY-MM-DD] (id=...) Preview` (max. 250 Zeichen pro Eintrag)
+- XML-Tag: `<existierende_verlaufseintraege>` (kein Eintrag → `keine`)
+- Helper: `_compact_verlauf_overview(patient)` in `agent_document_extraction.py`
+- Prompt (extraction_block2.txt): Skip/Update/Add-Logik mit klinischen Beispielen
+  - SKIP: Tag bereits vollständig erfasst, keine neue klinische Info
+  - UPDATE: `delete_entry` + `add_verlaufseintrag` ZWINGEND im selben Turn
+  - ADD: Tag noch kein Eintrag
+- Übergangstag (Früh+Spät): automatisch als UPDATE-Gruppe abgebildet
+
+## Chat-Endpoint (V1.6 Phase 4)
+
+### POST /api/patients/{id}/chat — neues Routing
+
+**Kurze Inputs (≤ 2000 Zeichen, `CHAT_2PASS_CUTOFF`):**
+- Single-Pass via `run_single_pass_chat()` in `agent_patient_chat.py`
+- LLM-natives Routing: Tool-Call → `proposals`, Text-Antwort → `reply`
+- Kein vorgeschaltetes Klassifizierungsmodell
+
+**Lange Inputs (> 2000 Zeichen):**
+- 2-Pass-Pipeline wie Upload-Endpoint (profitiert von Phase-3.5-Idempotenz)
+- `reply` ist immer `null`
+
+### Response-Schema (neu)
+```json
+{
+  "proposals": [...],
+  "auto_skipped": bool,
+  "message": "...",   // optional, nur bei auto_skipped
+  "reply": "..." | null  // LLM-Textantwort (Single-Pass-Pfad)
+}
+```
+
+### System-Prompt Routing-Logik
+- Hypothetisch/Fragen/Diskussion → Text, KEINE Tools (Beispiele 7-9 im Prompt)
+- Faktische Zustandsmeldung/Dokument-Paste → Tool-Call (Beispiel 10)
+- Im Zweifel: Text bevorzugen
+
+### Konstanten
+- `CHAT_2PASS_CUTOFF = 2000` (in `agent_patient_chat.py`)
+
 ## Test-Stand
-85 passed in 0.37s
+92 passed in 0.38s
