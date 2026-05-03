@@ -64,20 +64,29 @@ def _build_block1_system(patient: Patient | None) -> str:
     return _load_block1_prompt().replace("{HEUTE}", today).replace("{STATE_BLOCK}", state_block)
 
 
+_VERLAUF_PREVIEW_LEN = 250
+
+
+def _compact_verlauf_overview(patient: Patient | None) -> str:
+    """Kompakte Übersicht aller existierenden Verlaufseinträge für Block-2-Kontext.
+
+    Format pro Eintrag: [YYYY-MM-DD] (id=...) Preview (max. 250 Zeichen)
+    """
+    if patient is None or not patient.verlaufseintraege:
+        return "<existierende_verlaufseintraege>keine</existierende_verlaufseintraege>"
+    sorted_entries = sorted(patient.verlaufseintraege, key=lambda e: e.datum)
+    lines = []
+    for e in sorted_entries:
+        preview = e.text[:_VERLAUF_PREVIEW_LEN] + ("…" if len(e.text) > _VERLAUF_PREVIEW_LEN else "")
+        lines.append(f"[{e.datum.isoformat()}] (id={e.id}) {preview}")
+    content = "\n".join(lines)
+    return f"<existierende_verlaufseintraege>\n{content}\n</existierende_verlaufseintraege>"
+
+
 def _build_block2_system(patient: Patient | None) -> str:
-    """System-Prompt für Pass 2 (chronologisch) mit letztem Verlaufseintrag."""
+    """System-Prompt für Pass 2 (chronologisch) mit allen existierenden Verlaufseinträgen."""
     today = date.today().isoformat()
-
-    if patient is not None and patient.verlaufseintraege:
-        last = sorted(patient.verlaufseintraege, key=lambda e: e.datum, reverse=True)[0]
-        verlauf_block = (
-            f'<letzter_verlaufseintrag id="{last.id}" datum="{last.datum.isoformat()}">\n'
-            f"{last.text}\n"
-            f"</letzter_verlaufseintrag>"
-        )
-    else:
-        verlauf_block = "<letzter_verlaufseintrag>keiner</letzter_verlaufseintrag>"
-
+    verlauf_block = _compact_verlauf_overview(patient)
     return _load_block2_prompt().replace("{HEUTE}", today).replace("{VERLAUF_BLOCK}", verlauf_block)
 
 

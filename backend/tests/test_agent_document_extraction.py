@@ -168,30 +168,75 @@ def test_block1_empty_patient_shows_leer():
     assert "<aktueller_stand>leer</aktueller_stand>" in system
 
 
-# ── Test 6: Letzter Verlaufseintrag erscheint im Block-2-System-Prompt ────────
+# ── Test 6: Alle Verlaufseinträge erscheinen im Block-2-System-Prompt ────────
 
 
-def test_block2_last_verlaufseintrag_in_prompt(isolated_data):
-    """Patient mit mehreren Einträgen → nur der letzte (nach datum) im Prompt."""
+def test_block2_all_verlaufseintraege_in_prompt(isolated_data):
+    """Patient mit mehreren Einträgen → ALLE Einträge (Datum + ID + Preview) im Prompt."""
     patient = Patient(
         stammdaten=Stammdaten(id="P-0001", name="Test", aufnahmedatum="2026-04-01"),
         verlaufseintraege=[
             VerlaufsEintrag(id="ID1", datum=date(2026, 4, 14), text="Erster Eintrag", source_quote="q"),
-            VerlaufsEintrag(id="ID2", datum=date(2026, 4, 15), text="Letzter Eintrag", source_quote="q"),
+            VerlaufsEintrag(id="ID2", datum=date(2026, 4, 15), text="Zweiter Eintrag", source_quote="q"),
+            VerlaufsEintrag(id="ID3", datum=date(2026, 4, 16), text="Dritter Eintrag", source_quote="q"),
         ],
     )
 
     system = _build_block2_system(patient)
 
+    # Alle drei Einträge müssen im Prompt auftauchen (Datum + ID + Preview)
+    assert "ID1" in system
+    assert "2026-04-14" in system
+    assert "Erster Eintrag" in system
     assert "ID2" in system
-    assert "Letzter Eintrag" in system
-    assert "Erster Eintrag" not in system  # Nur der letzte
+    assert "2026-04-15" in system
+    assert "Zweiter Eintrag" in system
+    assert "ID3" in system
+    assert "2026-04-16" in system
+    assert "Dritter Eintrag" in system
 
 
-def test_block2_no_verlaufseintrag_shows_keiner():
-    """Kein Verlaufseintrag → <letzter_verlaufseintrag>keiner</letzter_verlaufseintrag>."""
+def test_block2_empty_patient_shows_keine():
+    """Kein Verlaufseintrag → <existierende_verlaufseintraege>keine<...>."""
     system = _build_block2_system(patient=None)
-    assert "<letzter_verlaufseintrag>keiner</letzter_verlaufseintrag>" in system
+    assert "<existierende_verlaufseintraege>keine</existierende_verlaufseintraege>" in system
+
+
+# ── Test 6b: Idempotenz-Infrastruktur — State im Prompt für LLM sichtbar ─────
+
+
+def test_block2_entry_id_visible_for_skip_detection(isolated_data):
+    """Patient mit Verlaufseintrag → ID und Preview im Prompt (LLM kann Skip/Update entscheiden)."""
+    patient = Patient(
+        stammdaten=Stammdaten(id="P-0001", name="Test", aufnahmedatum="2026-04-01"),
+        verlaufseintraege=[
+            VerlaufsEintrag(
+                id="VE_EARLY",
+                datum=date(2026, 4, 23),
+                text="Beatmungsversuch ohne Erfolg, re-intubiert.",
+                source_quote="q",
+            ),
+        ],
+    )
+    system = _build_block2_system(patient)
+    # ID muss sichtbar sein, damit LLM delete_entry(id=...) aufrufen kann
+    assert "VE_EARLY" in system
+    assert "2026-04-23" in system
+    assert "Beatmungsversuch" in system
+
+
+def test_block2_preview_truncated_at_250():
+    """Eintrag mit Text > 250 Zeichen → Preview wird auf 250 Zeichen + '…' gekürzt."""
+    long_text = "A" * 300
+    patient = Patient(
+        stammdaten=Stammdaten(id="P-0001", name="Test", aufnahmedatum="2026-04-01"),
+        verlaufseintraege=[
+            VerlaufsEintrag(id="VE1", datum=date(2026, 4, 14), text=long_text, source_quote="q"),
+        ],
+    )
+    system = _build_block2_system(patient)
+    assert "A" * 250 + "…" in system
+    assert "A" * 251 + "…" not in system  # kein Zeichen zu viel
 
 
 # ── Test 7: Update-Gruppierung ─────────────────────────────────────────────────
@@ -248,6 +293,27 @@ def test_update_grouping_update_singleton():
     assert len(proposals) == 1
     assert proposals[0].type == "update_singleton"
     assert proposals[0].call.tool == "update_anamnese"
+
+
+def test_block2_uebergangstag_update_as_single_proposal():
+    """delete_entry + add_verlaufseintrag im selben Turn → 1 Update-Proposal (Übergangstag-Pattern)."""
+    iterations = [[
+        {"tool": "delete_entry", "args": {"id": "VE_EARLY", "source_quote": "Spätdienst ergänzt"}},
+        {"tool": "add_verlaufseintrag", "args": {
+            "datum": "2026-04-23",
+            "text": "Beatmungsversuch ohne Erfolg, re-intubiert. Abends Angehörigengespräch (Söhne, Ehefrau): DNR-Entscheidung bei MOF, Übergang Palliation.",
+            "source_quote": "Station 23.04.",
+        }},
+    ]]
+    proposals = group_proposals(iterations)
+    assert len(proposals) == 1
+    assert proposals[0].type == "update"
+    assert proposals[0].delete_call is not None
+    assert proposals[0].add_call is not None
+    assert proposals[0].delete_call.tool == "delete_entry"
+    assert proposals[0].delete_call.args["id"] == "VE_EARLY"
+    assert proposals[0].add_call.tool == "add_verlaufseintrag"
+    assert "DNR" in proposals[0].add_call.args["text"]
 
 
 # ── Test 8: Apply-Update-Gruppe ────────────────────────────────────────────────
