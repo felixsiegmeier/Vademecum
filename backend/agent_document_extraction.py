@@ -123,6 +123,7 @@ async def extract_proposals(
             tools=_PASS1_TOOLS,
             thinking_budget=THINKING_BUDGET_BLOCK_1,
             max_iterations=MAX_ITERATIONS_BLOCK_1,
+            pass_name="Block1",
         )
     except APIStatusError:
         if content_type != "pdf":
@@ -137,6 +138,7 @@ async def extract_proposals(
             tools=_PASS1_TOOLS,
             thinking_budget=THINKING_BUDGET_BLOCK_1,
             max_iterations=MAX_ITERATIONS_BLOCK_1,
+            pass_name="Block1",
         )
 
     # Pass 2: chronologisch (Verlaufseinträge)
@@ -146,6 +148,7 @@ async def extract_proposals(
         user_messages=user_messages,
         tools=_PASS2_TOOLS,
         thinking_budget=THINKING_BUDGET_BLOCK_2,
+        pass_name="Block2",
     )
 
     return group_proposals(pass1_iters + pass2_iters)

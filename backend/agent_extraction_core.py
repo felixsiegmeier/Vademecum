@@ -34,6 +34,7 @@ async def run_pass(
     tools: list[dict],
     thinking_budget: int,
     max_iterations: int = 5,
+    pass_name: str = "pass",
 ) -> list[list[dict]]:
     """Multi-Turn-Loop für einen Extraction-Pass.
 
@@ -49,8 +50,12 @@ async def run_pass(
         *user_messages,
     ]
     iterations: list[list[dict]] = []
+    exit_reason = "max_iter"
+    last_iter = 0
+    print(f"[{pass_name} start] conversation_msgs={len(conversation)}, user_msg_content_len={sum(len(str(m.get('content',''))) for m in conversation if m.get('role')=='user')}")
 
-    for _ in range(max_iterations):
+    for iter_n in range(1, max_iterations + 1):
+        last_iter = iter_n
         response = await llm.chat_completion(
             conversation,
             tools=tools,
@@ -60,8 +65,15 @@ async def run_pass(
             thinking_budget=thinking_budget,
         )
         msg = response.choices[0].message
+        finish_reason = response.choices[0].finish_reason
+        usage = getattr(response, "usage", None)
+        tokens_in = usage.prompt_tokens if usage else "?"
+        tokens_out = usage.completion_tokens if usage else "?"
 
         if not msg.tool_calls:
+            exit_reason = "empty_response" if iter_n == 1 else "complete"
+            print(f"[{pass_name} iter {iter_n}/{max_iterations}] iteration={iter_n}, proposals_in_response=0, tokens_in={tokens_in}, tokens_out={tokens_out}, finish_reason={finish_reason}")
+            print(f"[{pass_name} no-tool-call response] content={repr(msg.content)[:500]}, usage_raw={usage}")
             break
 
         # Parse valide Tool-Calls — malformed JSON wird übersprungen
@@ -73,6 +85,8 @@ async def run_pass(
                 logger.warning("Malformed JSON args für Tool %s, wird übersprungen", tc.function.name)
                 continue
             valid_calls.append({"tool": tc.function.name, "args": args})
+
+        print(f"[{pass_name} iter {iter_n}/{max_iterations}] iteration={iter_n}, proposals_in_response={len(valid_calls)}, tokens_in={tokens_in}, tokens_out={tokens_out}, finish_reason={finish_reason}")
 
         if valid_calls:
             iterations.append(valid_calls)
@@ -89,6 +103,8 @@ async def run_pass(
                 "content": f"queued: {tc.function.name}",
             })
 
+    total_proposals = sum(len(i) for i in iterations)
+    print(f"[{pass_name} done] total_iterations={last_iter}, total_proposals={total_proposals}, exit_reason={exit_reason}")
     return iterations
 
 
