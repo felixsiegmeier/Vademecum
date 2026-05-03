@@ -95,16 +95,23 @@ POST /api/patients/{id}/apply-proposals
 - Keine YAML-Änderung bei 409 (atomar)
 - `force: true` im Request überspringt den Check komplett
 
-## Block-2 State-Aware (V1.6 Phase 3.5)
+## Block-2 State-Aware (V1.6 Phase 3.5 — Iter v2)
 
 - Block 2 bekommt ALLE existierenden Verlaufseinträge im System-Prompt
 - Format: `[YYYY-MM-DD] (id=...) Preview` (max. 250 Zeichen pro Eintrag)
 - XML-Tag: `<existierende_verlaufseintraege>` (kein Eintrag → `keine`)
 - Helper: `_compact_verlauf_overview(patient)` in `agent_document_extraction.py`
-- Prompt (extraction_block2.txt): Skip/Update/Add-Logik mit klinischen Beispielen
+- Prompt (extraction_block2.txt, Iter v2): Skip/Update/Add-Logik mit Konvergenz-Prinzip
   - SKIP: Tag bereits vollständig erfasst, keine neue klinische Info
-  - UPDATE: `delete_entry` + `add_verlaufseintrag` ZWINGEND im selben Turn
+  - UPDATE: `delete_entry` + `add_verlaufseintrag` ZWINGEND im selben Turn; Merge (kein Replace)
   - ADD: Tag noch kein Eintrag
+  - **Konvergenz statt Idempotenz**: Re-Upload soll anreichern, kein Durchlaufen — Merge ist sicher
+  - **8 Dimensionen als MUSS/SOLL/KANN-Prüfliste** (keine Output-Struktur):
+    MUSS: Therapie-Trigger/Begründung, Akute Events, Gespräche/Therapieziel, Mikrobio-Steuerung
+    SOLL: Klinische Tendenz, Bedside-Eingriffe, Pflege-Beobachtungen mit Konsequenz
+    KANN: Klinisches Tagesbild (RASS, Hämodynamik, Diurese)
+  - **Mittelweg-Redundanz**: klinisch wichtige Items namentlich im Narrativ, nicht als Liste
+  - **Tool-Trennung**: Block 2 ruft ausschließlich Verlauf-Tools auf (kein add_behandlungsdiagnose o.ä.)
 - Übergangstag (Früh+Spät): automatisch als UPDATE-Gruppe abgebildet
 
 ## Chat-Endpoint (V1.6 Phase 4)
@@ -139,4 +146,4 @@ POST /api/patients/{id}/apply-proposals
 - `CHAT_2PASS_CUTOFF = 2000` (in `agent_patient_chat.py`)
 
 ## Test-Stand
-92 passed in 0.38s
+94 passed in 0.40s

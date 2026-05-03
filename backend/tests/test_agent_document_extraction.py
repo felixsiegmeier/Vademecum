@@ -447,3 +447,64 @@ def test_block1_prompt_includes_status_pflicht():
     prompt = (Path(__file__).parent.parent / "prompts" / "extraction_block1.txt").read_text(encoding="utf-8")
     assert "update_status(aktiv=true" in prompt
     assert "MUSS-Aufrufe" in prompt or "Pflicht" in prompt.lower()
+
+
+# ── Test 11: Block-2-Prompt enthält Iter-v2-Konzeptbausteine ─────────────────
+
+
+def test_block2_prompt_iter_v2_contains_muss_dimensionen():
+    """Block-2-Prompt (Iter v2) enthält MUSS-Dimensionen und AV-Block-III°-Beispiel."""
+    from pathlib import Path
+    prompt = (Path(__file__).parent.parent / "prompts" / "extraction_block2.txt").read_text(encoding="utf-8")
+
+    required = [
+        "MUSS",                       # MUSS-Sektion vorhanden
+        "Therapie-Trigger",           # Dimension 1
+        "Mikrobiologie-Steuerung",    # Dimension 4
+        "Gespräche",                  # Dimension 3
+        "AV-Block III",               # AV-Block-Beispiel
+        "KONVERGENZ",                 # Konvergenz-Prinzip
+        "Merge",                      # Merge-Klausel
+        "BLOCK-2-TOOL-BESCHRÄNKUNG",  # Tool-Trennung explizit
+    ]
+    missing = [t for t in required if t not in prompt]
+    assert missing == [], f"Fehlende Begriffe in extraction_block2.txt (Iter v2): {missing}"
+
+
+# ── Test 12: Update-Gruppe landet korrekt in Proposals (Pipeline-Test) ───────
+
+
+def test_merge_update_group_in_proposals():
+    """Mock-LLM gibt delete+add-Paar zurück → 1 Update-Proposal mit Merge-Text."""
+    iterations = [[
+        {
+            "tool": "delete_entry",
+            "args": {"id": "VE_042", "source_quote": "Spätdienst-Doku"},
+        },
+        {
+            "tool": "add_verlaufseintrag",
+            "args": {
+                "datum": "2026-04-28",
+                "text": (
+                    "Vorbereitung chirurgische Tracheotomie, HNO-Konsil bestätigt Durchführbarkeit. "
+                    "Klinisch: tief sediert (RASS -3), CIP/CIM, ZVD-Anstieg, CVVHDF-Ende für morgen geplant."
+                ),
+                "source_quote": "Spätdienst-Doku",
+            },
+        },
+    ]]
+    proposals = group_proposals(iterations)
+
+    # Genau 1 Update-Proposal
+    assert len(proposals) == 1
+    p = proposals[0]
+    assert p.type == "update"
+    assert p.delete_call is not None
+    assert p.add_call is not None
+    assert p.delete_call.args["id"] == "VE_042"
+
+    # Neuer Text enthält BEIDE Informationsquellen (Merge-Verhalten)
+    new_text = p.add_call.args["text"]
+    assert "Tracheotomie" in new_text, "Alter Plan-Inhalt fehlt im Merge-Text"
+    assert "RASS -3" in new_text, "Neuer Status fehlt im Merge-Text"
+    assert "CIP/CIM" in new_text
