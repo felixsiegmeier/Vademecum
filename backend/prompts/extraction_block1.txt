@@ -8,81 +8,156 @@ KONTEXT
 
 {STATE_BLOCK}
 
+══════════════════════════════════════════════════════════════
+ANTI-CONFOUND — PRIORITÄT 1
+══════════════════════════════════════════════════════════════
+
+Wenn das Dokument eine eigene Zusammenfassung enthält (Patientenübersicht, Meilenstein-Sektion, Übergabeprotokoll am Ende, Epikrise-Block), behandle sie als zusätzlichen Hinweis, NICHT als Wahrheitsbasis. Die Zusammenfassung ist oft unvollständig — insbesondere bei Antibiotika-Linien, pharmakologischen Therapien (Katecholamine, Antikoagulation, Sedierung) und Bedside-Eingriffen.
+
+Geh durch die einzelnen Tagesdokumentationen und extrahiere jeden Datenpunkt eigenständig. Verlasse dich auf den Tagesverlauf, nicht auf den eingebauten Lehrer.
+
+Konkretes Anti-Confound-Beispiel: In einer Patientenübersicht stehen 4 Antibiotika-Linien aufgelistet, im Tagesverlauf sind es aber 7 Antibiotika-Linien (z.B. Unacid 03.04.→05.04., Pip/Taz 05.04.→10.04., Clarithromycin 06.04.→09.04., Meropenem-1 10.04.→21.04., Vancomycin-1 13.04.→21.04., Meropenem-2 ab 23.04., Vancomycin-2 ab 23.04.). Erfasse alle 7 — jede einzelne Linie als eigene `add_therapie`.
+
 KLASSIFIKATIONS-REGELN — DIAGNOSEN
 
-**Behandlungsdiagnose** = aktive Behandlungslinie mit eigener Therapie/Überwachung. Datum = Entstehung (NICHT Aufnahmedatum). Präzision: Stadium, Schweregrad, Topologie (COPD GOLD 3, STEMI Vorderwand, NYHA III).
-- STEMI → Aufnahme; Kardiogener Schock mit Impella → OP-Tag; Nierenversagen mit CVVHDF → CRRT-Beginn
-- Nosokomiale Pneumonie → Diagnose; prolongiertes Weaning Z.n. Tracheotomie → Tracheo-Datum
+Klare klinische Trennung — die Verteilung ist NICHT optional, `verlaufsdiagnosen` darf nicht leer bleiben, wenn im Verlauf Komplikationen aufgetreten sind.
 
-**Verlaufsdiagnose** = Mini-Komplikation OHNE eigene Behandlungsachse. Selten — Restkategorie.
+**Behandlungsdiagnose** = bei Aufnahme bestehend / Aufnahmegrund / Hauptindikation der aktuellen Behandlung. Datum = Auftreten/Diagnosezeitpunkt (NICHT Aufnahmedatum). Präzision: Stadium, Schweregrad, Topologie (COPD GOLD 3, STEMI Vorderwand, NYHA III).
 
-**Vorbekannte Diagnose** = Vorgeschichte, Z.n., chronische Erkrankungen, Allergien. Inhaltsreich: "Z.n. Splenektomie 2013 bei Splenomegalie unklarer Genese" (NICHT kürzen). KHK: Gefäßstatus + Bypässe.
+**Verlaufsdiagnose** = im Verlauf der Behandlung NEU aufgetreten. Komplikationen sind fast immer Verlaufsdiagnosen. Postoperative Probleme, neu aufgetretene Organversagen, im Verlauf erworbene Infektionen, Druckschäden, Rhythmusstörungen, die nicht Aufnahmegrund waren — alle hier.
 
-ENTSCHEIDUNG: Im Zweifel → Behandlungsdiagnose.
+**Vorbekannte Diagnose** = vor Aufnahme bestehend, nicht aktueller Behandlungsanlass. Z.n., chronische Erkrankungen, Allergien. Inhaltsreich: "Z.n. Splenektomie 2013 bei Splenomegalie unklarer Genese" (NICHT kürzen). KHK: Gefäßstatus + Bypässe.
+
+ENTSCHEIDUNG: Bei Aufnahme schon da → Behandlungsdiagnose. Im Verlauf neu aufgetreten → Verlaufsdiagnose. Vor Aufenthalt bestehend → Vorbekannte.
+
+Beispiele (klinisch gemischter Fall, postoperativer ITS-Verlauf):
+- STEMI Vorderwand mit Hauptstammstenose → **Behandlungs**diagnose (Aufnahmegrund).
+- Kardiogener Schock postop → **Behandlungs**diagnose (Hauptindikation).
+- Vasoplegischer Schock / kardiogen-septischer Schock — wenn dokumentiert: eigene Diagnose, nicht nur Subkategorie.
+- Tachykardes Vorhofflimmern (im Verlauf in nfSR konvertiert unter Antiarrhythmikum) → eigene Diagnose.
+- AV-überleitete VT-Salven (selbstlimitierend) → eigene Diagnose.
+- Anasarka bei Volumenüberladung → eigene Diagnose, nicht nur Beschreibung.
+- Postoperativer Hämatothorax 05.04. → **Verlaufs**diagnose.
+- Anurisches AKI ab 04.04. → **Verlaufs**diagnose.
+- Nosokomiale Pneumonie li. UL → **Verlaufs**diagnose.
+- CIP/CIM ab 17.04. → **Verlaufs**diagnose.
+- Sakraler Dekubitus Grad 3 ab 17.04. → **Verlaufs**diagnose.
+- KHK / aHT / DM II / Z.n. Splenektomie / Z.n. CCE → **Vorbekannte**.
 
 KLASSIFIKATIONS-REGELN — THERAPIE-KATEGORIEN
 
-Eingriffe UND Therapien werden alle als add_therapie(kategorie=...) dokumentiert. Genau 8 gültige Werte:
+Eingriffe UND Therapien werden alle als add_therapie(kategorie=...) dokumentiert. Genau 9 gültige Werte:
 
-**operativ** = Kardiochirurgischer OP-Saal-Eingriff: CABG, Klappenersatz, Re-Thorakotomie, Aortenchirurgie, Herztransplantation.
-NICHT operativ: Herzkatheter, PCI, Schrittmacher, TAVI, MitraClip, Bedside-Eingriffe, Tracheotomie.
+**operativ** = Kardiochirurgischer OP-Saal-Eingriff: CABG, Klappenersatz, Re-Thorakotomie, Aortenchirurgie, Herztransplantation. NICHT operativ: Herzkatheter, PCI, Schrittmacher, TAVI, MitraClip, Bedside-Eingriffe, Bedside-Tracheotomie.
 
 **MCS** = Mechanische Kreislaufunterstützung: ECMO (VA/VV), Impella (alle Versionen), IABP, dauerhafte VADs (HeartMate, HeartWare).
 
 **RRT** = Nierenersatztherapie: CRRT (CVVHDF/CVVH/CVVHD), iHD, SLED.
 
-**respiratorisch** = Invasive Beatmung, NIV (CPAP/BiPAP), HFNC. Tracheotomie (auch Bedside) = respiratorisch — NICHT operativ.
+**respiratorisch** = Atemunterstützungs-MODI: invasive Beatmung, NIV (CPAP/BiPAP), HFNC. NICHT der Eingriff der Tracheotomie selbst — Bedside-Tracheotomie gehört unter `bedside`, OP-Saal-Tracheotomie (HNO/MKG im Saal) unter `operativ`.
 
-**interventionell** = Herzkatheter (diagnostisch/PCI), EPU/RFA, Schrittmacher-/ICD-/CRT-Implantation, TAVI, MitraClip, TriClip, therapeutische Endoskopie (Hämostase-Clip, Polypektomie, Stent, ERCP), Shaldon-Anlage.
+**interventionell** = Herzkatheter (diagnostisch/PCI), EPU/RFA, Schrittmacher-/ICD-/CRT-Implantation, TAVI, MitraClip, TriClip, therapeutische Endoskopie (Hämostase-Clip, Polypektomie, Stent, ERCP).
 
 **antimikrobiell** = Antibiotika, Antimykotika, Antivirale.
 
-**medikamentös** = Katecholamine, Diuretika, Antikoagulation, Sedierung, Analgesie, Antiarrhythmika, Substitution, Insulin, Vasoaktiva. Alles Pharmakologische, das nicht antimikrobiell ist.
+**medikamentös** = Pharmakologische Hauptlinien (siehe ERFASSUNGSPFLICHT). Alles Pharmakologische, das nicht antimikrobiell ist.
+
+**bedside** = Bedside-Eingriffe auf Station (am Bett, ohne OP-Saal): PAK-Anlage und -Wechsel, Shaldon-/ZVK-Anlage, Pleurapunktion, Pleura-/Perikard-Drainage-Anlage, Bronchoskopie (diagnostisch oder therapeutisch), Bedside-Tracheotomie, Magensonde-Anlage, Drainagen-Wechsel mit klinischer Konsequenz.
 
 **sonstiges** = Physio, Mobilisation, Lagerung, Ernährungstherapie (parenteral/enteral), Atemtherapie ohne Gerät.
 
-ABGRENZUNG ENDOSKOPIE: Diagnostische Gastroskopie/Koloskopie ohne Intervention → add_befund. Therapeutische Endoskopie (Clip, Polypektomie, Stent) → add_therapie(interventionell).
+ABGRENZUNG ENDOSKOPIE: Diagnostische Gastroskopie/Koloskopie ohne Intervention → add_befund. Therapeutische Endoskopie (Clip, Polypektomie, Stent) → add_therapie(interventionell). Bronchoskopie immer → add_therapie(bedside) PLUS add_befund (Sekret, Mibi-Sample, Tubus-Position) wenn klinisch relevant.
 
 DATUMS-LOGIK FÜR add_therapie:
-- Einmaliges Event (z.B. OP): beginn = ende = Datum
+- Einmaliges Event (Eingriff, OP, Bedside-Prozedur): beginn = ende = Datum
 - Laufende Therapie (noch aktiv): beginn = Datum, ende = null
-- Beendete Zeitraum-Therapie: beginn = Startdatum, ende = Enddatum
+- Beendete Zeitraum-Therapie (z.B. abgeschlossene AB-Linie): beginn = Startdatum, ende = Enddatum
 
 BEISPIELE:
-- CABG am 04.04. → add_therapie(kategorie="operativ", bezeichnung="CABG 3-fach", beginn="2026-04-04", ende="2026-04-04", ...)
-- Impella 5.5 seit 04.04., noch laufend → add_therapie(kategorie="MCS", bezeichnung="Impella 5.5", beginn="2026-04-04", ende=null, ...)
+- CABG 04.04. → add_therapie(kategorie="operativ", bezeichnung="CABG 3-fach", beginn="2026-04-04", ende="2026-04-04", ...)
+- Impella 5.5 seit 04.04., laufend → add_therapie(kategorie="MCS", beginn="2026-04-04", ende=null, ...)
 - PCI im HKL → add_therapie(kategorie="interventionell", ...) — NICHT operativ
-- Chirurgische Tracheotomie Bedside → add_therapie(kategorie="respiratorisch", ...) — NICHT operativ
-- Meropenem 14.–21.04. → add_therapie(kategorie="antimikrobiell", bezeichnung="Meropenem", beginn="2026-04-14", ende="2026-04-21", ...)
-- CVVHDF seit 10.04. → add_therapie(kategorie="RRT", bezeichnung="CVVHDF", beginn="2026-04-10", ende=null, ...)
+- Bedside-Tracheotomie 20.04. → add_therapie(kategorie="bedside", bezeichnung="Chir. Tracheotomie", beginn="2026-04-20", ende="2026-04-20", ...)
+- PAK-Neuanlage 12.04. → add_therapie(kategorie="bedside", bezeichnung="PAK-Anlage", beginn="2026-04-12", ende="2026-04-12", ...)
+- Bronchoskopie 23.04. → add_therapie(kategorie="bedside", bezeichnung="Bronchoskopie", beginn="2026-04-23", ende="2026-04-23", ...)
+- Pleurapunktion + Drainage 21.04. → add_therapie(kategorie="bedside", ...)
+- Meropenem 14.→21.04. → add_therapie(kategorie="antimikrobiell", bezeichnung="Meropenem", beginn="2026-04-14", ende="2026-04-21", ...)
+- Meropenem-2 (Wiederbeginn 23.04.) → eigene `add_therapie` (= zweite Linie der gleichen Substanz)
+- CVVHDF seit 04.04. → add_therapie(kategorie="RRT", beginn="2026-04-04", ende=null, ...)
 - Noradrenalin laufend → add_therapie(kategorie="medikamentös", bezeichnung="Noradrenalin", ...)
-- Bauchlagerung → add_therapie(kategorie="sonstiges", bezeichnung="Bauchlagerung", ...)
+- Bauchlagerung → add_therapie(kategorie="sonstiges", ...)
 
-ERFASSUNGSPFLICHT
+ERFASSUNGSPFLICHT — THERAPIE-RECALL
 
-Therapien — IMMER alle mit Beginn (+ Ende wenn bekannt, Indikation wenn nicht offensichtlich):
-- antimikrobiell: alle Antibiotika, Antimykotika, Antivirale
+Recall ist die häufigste Schwachstelle. Geh die folgenden Listen explizit durch.
+
+**antimikrobiell — JEDE einzelne Linie:**
+Erfasse JEDE einzelne Antibiotika-Linie als eigene Therapie mit `kategorie: antimikrobiell`, `beginn` und `ende` (sofern beendet). Auch wenn 5+ Linien hintereinander laufen oder eine Substanz mehrfach in verschiedenen Linien auftaucht (z.B. Meropenem-Linie-1 und Meropenem-Linie-2 nach Pause). Linie-Ende ist beim explizit dokumentierten Stop oder beim Beginn der nächsten Linie der gleichen Indikation.
+
+**medikamentös — pharmakologische Hauptlinien:**
+Folgende laufenden pharmakologischen Therapien werden als `medikamentös` mit `beginn` und `ende` (oder `ende: null` wenn laufend) erfasst, wenn sie länger als ein paar Stunden laufen:
+- Katecholamin-Perfusoren (Noradrenalin, Vasopressin, Suprarenin/Epinephrin, Dobutamin)
+- Antikoagulation (UFH-Perfusor, DOAK, Argatroban, Bivalirudin)
+- Sedierungs-Hauptlinie (Propofol, Sufenta, Dexdor, Lorazepam, Midazolam)
+- Antiarrhythmika-Perfusoren (Amiodaron, Lidocain wenn als Perfusor)
+- Inotropika
+- Insulin-Perfusor
+- Kortison-Therapie wenn länger laufend (Hydrocortison-Perfusor)
+
+Mikro-Anpassungen, einzelne Boli und kurze Single-Doses werden NICHT als Therapie erfasst.
+
+**bedside — alle Eingriffe am Bett:**
+Folgende Eingriffe werden als `kategorie: bedside` mit `beginn=ende=Datum` (Einzeltermin) erfasst:
+- PAK-Anlage und -Wechsel
+- Shaldon-/ZVK-Anlagen (auch Wechsel mit klinischer Konsequenz)
+- Pleurapunktion, Pleura-/Perikard-Drainage-Anlage
+- Bronchoskopie (diagnostisch oder therapeutisch)
+- Bedside-Tracheotomie
+- Magensonde-Anlage
+- Drainagen-Wechsel mit klinischer Konsequenz
+
+**Pflicht zusätzlich:**
 - MCS: ECMO, Impella, IABP, VAD
 - RRT: CVVHDF, CVVH, iHD, SLED
-- respiratorisch: Beatmung (invasiv/NIV/HFNC), Tracheotomie
-- interventionell: Herzkatheter, Schrittmacher-/ICD-Impl., TAVI, MitraClip, Shaldon
+- respiratorisch: Beatmung (invasiv/NIV/HFNC) als laufender Modus
+- interventionell: Herzkatheter, Schrittmacher-/ICD-Impl., TAVI, MitraClip
 - operativ: alle kardiochirurgischen OP-Saal-Eingriffe
-- medikamentös: Katecholamine, Antikoagulation mit Indikation, Antiarrhythmika
 
-Befunde — bei JEDEM dieser Ereignisse add_befund:
-- Bildgebung: TTE, TEE, CT, cCT, Echo, Rö, MRT, Sono
-- Mikrobiologie: BK, TBS, Abstrich, Liquor, Urinkultur (auch ausstehend/negativ)
-- Konsil/Spezial: EEG, Neurologie, ABS-Visite, HIT-Test; Pathologie/Histologie
+ERFASSUNGSPFLICHT — BEFUND-RECALL
 
-Beispiel: add_befund(art="TTE", datum="2026-04-15", text="LVEF 30%, RV-Funktion idem", source_quote="...")
-Befund.art = Kategorie-Prefix: "TTE", "CT Thorax", "Mikrobiologie TBS", "Konsil Neurologie".
+Folgende Untersuchungen sind eigene `add_befund`-Items mit Datum, auch wenn sie nur kurz im Tagesverlauf erwähnt sind:
+- Echo-Untersuchungen (TTE, TEE, fokussiertes Echo, Reduktionsecho) — jede einzelne mit ihren Werten (LVEF, RVEF, VTI, Klappenstatus, Lage einer MCS).
+- CTs (cCT, CT Thorax, CT Abdomen, MRT) mit Beurteilung.
+- Bronchoskopie-Befunde wenn klinisch relevant (Sekretverlegung, Mibi-Sample, Tubus-Reposition).
+- Mikrobiologie immer als Befund: BK, TBS, Abstrich, Liquor, Urinkultur (auch ausstehend/negativ).
+- HIT-Test, Cocci-Test, andere Schnelltests.
+- PAK-Messungen mit hämodynamischen Parametern (PCWP, ZVD, CO/CI, MPAP, SVR, PVR) — pro Messzeitpunkt ein Befund.
+- OP-Befund (intraoperativ dokumentiert).
+- Konsile (Hämato-Onko, Gastro, Neurologie, ABS, HNO etc.).
+
+Beispiele aus echtem Verlauf:
+- Präoperatives TEE 03.04. mit LVEF 23%, RV FAC 40%, MI mittelgr., sPAP 25 → eigener Befund.
+- HIT-Schnelltest 09.04. negativ → eigener Befund (klinisch wichtig für Antikoagulations-Entscheidung).
+- Mehrere PAK-Messungen 04.-08.04. mit jeweils unterschiedlichen Werten → separate Befunde pro Tag.
+
+Befund.art = Kategorie-Prefix: "TTE", "TEE", "CT Thorax", "Mikrobiologie TBS", "Konsil Neurologie", "PAK-Messung".
 
 NICHT DOKUMENTIEREN
 
-- ZVK/Katheter/Magensonden/Blasenkatheter/Drainagen (Ausnahme: Shaldon = add_therapie(interventionell); Pleurapunktion mit Drainage = add_therapie(interventionell))
-- Routinelabor, Routine-Medikation (PPI, Heparin-Prophylaxe, Schmerzmedikation, Elektrolyte, Antiemetika), Pflege-Routine
+- Routine-Magensonden ohne klinische Konsequenz, Routine-Blasenkatheter, Routine-Drainagen
+- Routinelabor, Routine-Medikation (PPI, Heparin-Prophylaxe, Standard-Schmerzmedikation, Elektrolyte, Antiemetika), Pflege-Routine
 
 AUSNAHME: Mikrobiologie IMMER als Befund.
+
+ANAMNESE-VOLLSTÄNDIGKEIT
+
+Die Anamnese soll die Aufnahmegeschichte vollständig enthalten:
+- Erstvorstellung (wo, weswegen, Symptomatik mit Zeitangabe)
+- Zwischenstationen (z.B. erstes KH, Diagnose, HK-Befund)
+- Klinische Situation bei Verlegung (was triggerte den Transfer — neu aufgetretene Komplikationen, Eskalationsbedarf)
+- Indikation der Notfall-/elektiven Procedure
+
+Beispiel (kardiochirurgischer Notfall): AP-Symptomatik seit ~18 Uhr → Erstvorstellung Charité Campus Mitte → STEMI-Diagnose und HK mit Hauptstammstenose → Notfall-Verlegung DHZC zur OP → Verlegungs-Trigger: neu aufgetretenes VHF + pulmonale Stauung mit NIV-Bedarf.
 
 STATE-AWARE-LOGIK
 
@@ -95,7 +170,8 @@ ERSTAUFNAHME
 
 Wenn <aktueller_stand> leer oder ohne Anamnese/Therapieziel/Status:
 - update_stammdaten für fehlende Felder
-- update_anamnese (Aufnahmegrund + Vorgeschichte); update_therapieziel (Behandlungsziel)
+- update_anamnese (Aufnahmegrund + Vorgeschichte; siehe ANAMNESE-VOLLSTÄNDIGKEIT)
+- update_therapieziel (Behandlungsziel)
 
 MUSS-Aufrufe bei Erstaufnahme (auch wenn der Wert dem Default entspricht — explizit dokumentieren ist Pflicht):
 
