@@ -435,6 +435,88 @@ def test_block1_prompt_loaded_contains_classification_examples():
     assert missing == [], f"Fehlende Begriffe in extraction_block1.txt: {missing}"
 
 
+def test_block1_prompt_iter5_includes_anti_confound():
+    """Block-1-Iter-5: Anti-Confound-Klausel und 7-Antibiotika-Linien-Beispiel müssen drin sein."""
+    from pathlib import Path
+    prompt = (Path(__file__).parent.parent / "prompts" / "extraction_block1.txt").read_text(encoding="utf-8")
+
+    required = [
+        "ANTI-CONFOUND",                # prominenter Section-Header
+        "Patientenübersicht",           # konkrete Confound-Quelle benannt
+        "eingebauten Lehrer",           # Schlüsselformulierung
+        "7 Antibiotika-Linien",         # konkretes celik-Beispiel (im Prompt-Text)
+    ]
+    missing = [t for t in required if t not in prompt]
+    assert missing == [], f"Anti-Confound-Bausteine fehlen in extraction_block1.txt: {missing}"
+
+
+def test_block1_prompt_iter5_has_9_categories_with_bedside():
+    """Block-1-Iter-5 nennt 9 Kategorien inklusive `bedside`."""
+    from pathlib import Path
+    prompt = (Path(__file__).parent.parent / "prompts" / "extraction_block1.txt").read_text(encoding="utf-8")
+
+    assert "9 gültige Werte" in prompt
+    assert "bedside" in prompt.lower()
+    # Bedside-Kategorie-Definition mit konkreten Eingriffen
+    assert "PAK-Anlage" in prompt
+    assert "Bronchoskopie" in prompt
+    assert "Pleurapunktion" in prompt
+
+
+def test_block1_prompt_iter5_bedside_tracheotomie_redefined():
+    """Tracheotomie ist NICHT mehr automatisch `respiratorisch` — Bedside-Tracheo unter `bedside`."""
+    from pathlib import Path
+    prompt = (Path(__file__).parent.parent / "prompts" / "extraction_block1.txt").read_text(encoding="utf-8")
+
+    # `respiratorisch` ist neu als Atemunterstützungs-MODI definiert
+    assert "Atemunterstützungs-MODI" in prompt
+    # Bedside-Tracheotomie wird explizit als bedside-Kategorie genannt
+    assert "Bedside-Tracheotomie" in prompt
+
+
+def test_block1_prompt_iter5_diagnose_classification_examples():
+    """Block-1-Iter-5 enthält Diagnose-Klassifikations-Beispiele inklusive verlaufs-relevanter."""
+    from pathlib import Path
+    prompt = (Path(__file__).parent.parent / "prompts" / "extraction_block1.txt").read_text(encoding="utf-8")
+
+    required = [
+        "Hämatothorax",                 # Verlaufsdiagnose-Beispiel
+        "Anurisches AKI",               # Verlaufsdiagnose-Beispiel
+        "CIP/CIM",                      # Verlaufsdiagnose-Beispiel
+        "Vasoplegischer Schock",        # fehlende Hauptdiagnose explizit benannt
+        "Anasarka",                     # eigene Diagnose, nicht nur Beschreibung
+        "Vorhofflimmern",               # Rhythmus-Diagnose
+    ]
+    missing = [t for t in required if t not in prompt]
+    assert missing == [], f"Diagnose-Beispiele fehlen in extraction_block1.txt: {missing}"
+
+
+def test_block1_prompt_iter5_befund_recall_specifics():
+    """Block-1-Iter-5 hebt Befund-Recall hervor: TEE, HIT, PAK-Messungen."""
+    from pathlib import Path
+    prompt = (Path(__file__).parent.parent / "prompts" / "extraction_block1.txt").read_text(encoding="utf-8")
+
+    required = [
+        "BEFUND-RECALL",
+        "TEE",
+        "HIT",
+        "PAK-Messung",
+        "LVEF",
+    ]
+    missing = [t for t in required if t not in prompt]
+    assert missing == [], f"Befund-Recall-Bausteine fehlen: {missing}"
+
+
+def test_block1_prompt_iter5_anamnese_completeness():
+    """Block-1-Iter-5 enthält Anamnese-Vollständigkeitsklausel mit Verlegungs-Trigger."""
+    from pathlib import Path
+    prompt = (Path(__file__).parent.parent / "prompts" / "extraction_block1.txt").read_text(encoding="utf-8")
+
+    assert "ANAMNESE-VOLLSTÄNDIGKEIT" in prompt
+    assert "Erstvorstellung" in prompt
+    assert "Verlegungs-Trigger" in prompt or "triggerte den Transfer" in prompt
+
+
 def test_block2_prompt_includes_datum_short_format():
     """Block-2-Prompt enthält Anweisung zum TT.MM.-Format im Text."""
     from pathlib import Path
@@ -469,6 +551,44 @@ def test_block2_prompt_iter_v2_contains_muss_dimensionen():
     ]
     missing = [t for t in required if t not in prompt]
     assert missing == [], f"Fehlende Begriffe in extraction_block2.txt (Iter v2): {missing}"
+
+
+def test_block2_prompt_iter_v2_separates_was_pruefen_from_wie_schreiben():
+    """Block-2-Iter-v2 trennt Prüfliste (8 Dimensionen) von Schreibanweisungen klar."""
+    from pathlib import Path
+    prompt = (Path(__file__).parent.parent / "prompts" / "extraction_block2.txt").read_text(encoding="utf-8")
+
+    assert "WAS PRÜFEN" in prompt
+    assert "WIE SCHREIBEN" in prompt
+    # MUSS / SOLL / KANN als drei Prio-Stufen vorhanden
+    assert "SOLL" in prompt
+    assert "KANN" in prompt
+    # Mittelweg-Klausel namentlich
+    assert "MITTELWEG-REDUNDANZ" in prompt or "Mittelweg-Redundanz" in prompt
+
+
+def test_block2_prompt_iter_v2_includes_mikrobio_merge_example():
+    """Block-2-Iter-v2 enthält Mikrobio-Trigger-Merge-Beispiel mit Erreger und AB-Konsequenz."""
+    from pathlib import Path
+    prompt = (Path(__file__).parent.parent / "prompts" / "extraction_block2.txt").read_text(encoding="utf-8")
+
+    # Mikrobio-Beispiel: Mibi-Probe (alt) + Erregerwachstum + Antibiose-Switch (neu)
+    assert "Trachealsekret" in prompt
+    assert "Klebsiella" in prompt or "ESBL" in prompt
+    assert "Meropenem" in prompt
+    # Beide Quellen gemergt — explizite Auflösung
+    assert "gemergt" in prompt or "Mikrobio-Trigger-Merge" in prompt
+
+
+def test_block2_prompt_iter_v2_has_three_clinical_examples():
+    """Block-2-Iter-v2 enthält mindestens 3 klinische Beispiele."""
+    from pathlib import Path
+    prompt = (Path(__file__).parent.parent / "prompts" / "extraction_block2.txt").read_text(encoding="utf-8")
+
+    # 3 Beispiele: Plan→Status-Merge (Tracheo), Mikrobio-Trigger-Merge, Akutes Event (AV-Block)
+    assert "Beispiel 1" in prompt
+    assert "Beispiel 2" in prompt
+    assert "Beispiel 3" in prompt
 
 
 # ── Test 12: Update-Gruppe landet korrekt in Proposals (Pipeline-Test) ───────
