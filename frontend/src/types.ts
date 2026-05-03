@@ -32,6 +32,14 @@ export interface UploadResponse {
   auto_skipped: boolean;
 }
 
+/** Response von POST /api/patients/{id}/chat */
+export interface ChatResponse {
+  proposals: Proposal[];
+  auto_skipped: boolean;
+  message?: string;
+  reply?: string | null;
+}
+
 /** Response von POST /api/patients/{id}/apply-proposals */
 export interface ApplyResult {
   type: ProposalType;

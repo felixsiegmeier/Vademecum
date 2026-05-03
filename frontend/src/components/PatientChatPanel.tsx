@@ -3,6 +3,7 @@ import type {
   ApplyResponse,
   ApplyResult,
   ArgsRecord,
+  ChatResponse,
   Patient,
   Proposal,
   UploadResponse,
@@ -95,6 +96,7 @@ export function PatientChatPanel({ patientId, patient, refreshPatient, onPatient
   const [input, setInput] = useState("");
   const [uploading, setUploading] = useState(false);   // F5: globaler Upload-Guard
   const [chatBusy, setChatBusy] = useState(false);
+  const [chatBusyLong, setChatBusyLong] = useState(false); // true wenn Input > CUTOFF (2-Pass)
   const [applying, setApplying] = useState(false);
   const [toast, setToast] = useState<ToastMessage | null>(null);
   const [mismatchModal, setMismatchModal] = useState<
@@ -138,11 +140,13 @@ export function PatientChatPanel({ patientId, patient, refreshPatient, onPatient
   async function handleSubmit() {
     if (!input.trim() || chatBusy || uploading) return;
     const text = input;
+    const isLong = text.length > 2000; // CHAT_2PASS_CUTOFF — gespiegelt aus Backend
     const userEntry: ChatTextEntry = { kind: "chat-text", role: "user", content: text };
     const optimistic = [...history, userEntry];
     persist(optimistic);
     setInput("");
     setChatBusy(true);
+    setChatBusyLong(isLong);
     try {
       const res = await fetch(`/api/patients/${patientId}/chat`, {
         method: "POST",
@@ -154,17 +158,27 @@ export function PatientChatPanel({ patientId, patient, refreshPatient, onPatient
         const detail = body?.detail ?? `HTTP ${res.status}`;
         throw new Error(typeof detail === "string" ? detail : `HTTP ${res.status}`);
       }
-      const data = (await res.json()) as { proposals: Proposal[]; auto_skipped: boolean; message?: string };
-      if (data.auto_skipped || data.proposals.length === 0) {
+      const data = (await res.json()) as ChatResponse;
+      if (data.reply) {
+        // Single-Pass Text-Antwort des LLM
+        const replyEntry: ChatTextEntry = {
+          kind: "chat-text",
+          role: "assistant",
+          content: data.reply,
+        };
+        persist([...optimistic, replyEntry]);
+      } else if (data.proposals.length > 0) {
+        // Tool-Calls → Proposals (Single-Pass oder 2-Pass)
+        const propEntry = makeProposalsEntry("chat", data.proposals);
+        persist([...optimistic, propEntry]);
+      } else {
+        // Keine Proposals, kein Reply — Fallback-Meldung
         const msgEntry: ChatTextEntry = {
           kind: "chat-text",
           role: "assistant",
           content: data.message ?? "Keine Änderungen am Patienten vorgeschlagen.",
         };
         persist([...optimistic, msgEntry]);
-      } else {
-        const propEntry = makeProposalsEntry("chat", data.proposals);
-        persist([...optimistic, propEntry]);
       }
     } catch (e) {
       const err: ChatTextEntry = {
@@ -176,6 +190,7 @@ export function PatientChatPanel({ patientId, patient, refreshPatient, onPatient
       showToast("error", "Verbindung zum Backend verloren");
     } finally {
       setChatBusy(false);
+      setChatBusyLong(false);
       textareaRef.current?.focus();
     }
   }
@@ -462,8 +477,8 @@ export function PatientChatPanel({ patientId, patient, refreshPatient, onPatient
         {history.map((e, i) => renderEntry(e, i))}
         {chatBusy && (
           <div className="flex justify-start">
-            <div className="rounded-xl bg-white border border-gray-200 px-3 py-2 text-sm text-gray-400">
-              Denkt nach…
+            <div className={`rounded-xl border px-3 py-2 text-sm ${chatBusyLong ? "bg-amber-50 border-amber-200 text-amber-800" : "bg-white border-gray-200 text-gray-400"}`}>
+              {chatBusyLong ? "Verarbeitung läuft, kann 30–60 Sekunden dauern…" : "Denkt nach…"}
             </div>
           </div>
         )}
