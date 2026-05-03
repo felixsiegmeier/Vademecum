@@ -677,6 +677,13 @@ async def upload_document(
         raise HTTPException(503, f"LLM nicht erreichbar: {e}")
     except APIStatusError as e:
         raise HTTPException(502, f"LLM API Fehler {e.status_code}: {e.message}")
+    except RuntimeError as e:
+        if "LLM provider instability" in str(e):
+            return JSONResponse(
+                status_code=503,
+                content={"error": "API-Instabilität (Gemini PDF-Drop). Bitte Upload erneut starten.", "retryable": True},
+            )
+        raise
 
     if not proposals:
         return JSONResponse(

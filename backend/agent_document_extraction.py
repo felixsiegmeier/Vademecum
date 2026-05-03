@@ -148,6 +148,7 @@ async def extract_proposals(
         user_messages=user_messages,
         tools=_PASS2_TOOLS,
         thinking_budget=THINKING_BUDGET_BLOCK_2,
+        max_tokens=16384,
         pass_name="Block2",
     )
 

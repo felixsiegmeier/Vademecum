@@ -2,7 +2,7 @@
 import asyncio
 import json
 from datetime import date
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -50,6 +50,16 @@ def _llm_response(tool_calls: list | None) -> MagicMock:
     resp = MagicMock()
     resp.choices[0].message.tool_calls = tool_calls
     resp.choices[0].message.model_dump.return_value = {"role": "assistant", "content": None}
+    return resp
+
+
+def _malformed_response() -> MagicMock:
+    resp = MagicMock()
+    resp.choices[0].message.tool_calls = None
+    resp.choices[0].message.content = None
+    resp.choices[0].finish_reason = "function_call_filter: MALFORMED_FUNCTION_CALL"
+    resp.choices[0].message.model_dump.return_value = {"role": "assistant", "content": None}
+    resp.usage = None
     return resp
 
 
@@ -628,3 +638,52 @@ def test_merge_update_group_in_proposals():
     assert "Tracheotomie" in new_text, "Alter Plan-Inhalt fehlt im Merge-Text"
     assert "RASS -3" in new_text, "Neuer Status fehlt im Merge-Text"
     assert "CIP/CIM" in new_text
+
+
+# ── Test 13: MALFORMED_FUNCTION_CALL Retry-Logik ─────────────────────────────
+
+
+def test_malformed_function_call_retry_success():
+    """iter 1 liefert MALFORMED_FUNCTION_CALL, erster Retry erfolgreich → Proposal vorhanden."""
+    tc = _mock_tool_call("add_verlaufseintrag", {"datum": "2026-04-01", "text": "Test", "source_quote": "q"})
+    mock_llm = MagicMock()
+    mock_llm.chat_completion = AsyncMock(side_effect=[
+        _malformed_response(),   # attempt 1: MALFORMED
+        _llm_response([tc]),     # attempt 2 (retry 1): success
+        _llm_response(None),     # iter 2: kein Tool-Call → exit
+    ])
+
+    with patch("asyncio.sleep", new=AsyncMock()) as mock_sleep:
+        iters = asyncio.run(run_pass(
+            llm=mock_llm,
+            system_prompt="test",
+            user_messages=[{"role": "user", "content": "doc"}],
+            tools=[],
+            thinking_budget=0,
+            pass_name="TestPass",
+        ))
+
+    assert mock_llm.chat_completion.call_count == 3   # 1 initial + 1 retry + 1 iter2
+    assert mock_sleep.call_count == 1                  # genau 1 Retry-Sleep
+    assert len(iters) == 1
+    assert iters[0][0]["tool"] == "add_verlaufseintrag"
+
+
+def test_malformed_function_call_retry_exhausted_raises():
+    """3x MALFORMED_FUNCTION_CALL → RuntimeError mit 'LLM provider instability'."""
+    mock_llm = MagicMock()
+    mock_llm.chat_completion = AsyncMock(return_value=_malformed_response())
+
+    with patch("asyncio.sleep", new=AsyncMock()) as mock_sleep:
+        with pytest.raises(RuntimeError, match="LLM provider instability"):
+            asyncio.run(run_pass(
+                llm=mock_llm,
+                system_prompt="test",
+                user_messages=[{"role": "user", "content": "doc"}],
+                tools=[],
+                thinking_budget=0,
+                pass_name="TestPass",
+            ))
+
+    assert mock_llm.chat_completion.call_count == 3   # 1 initial + 2 retries
+    assert mock_sleep.call_count == 2                  # 2 Retry-Sleeps

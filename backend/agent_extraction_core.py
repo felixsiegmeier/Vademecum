@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from typing import Literal, Optional
@@ -11,6 +12,8 @@ THINKING_BUDGET_BLOCK_2 = 1024
 
 MAX_ITERATIONS_BLOCK_1 = 8
 MAX_ITERATIONS_BLOCK_2 = 5
+
+_MAX_MALFORMED_RETRIES = 2  # 1 initial + 2 retries = 3 total attempts
 
 
 class ToolCallInfo(BaseModel):
@@ -34,6 +37,7 @@ async def run_pass(
     tools: list[dict],
     thinking_budget: int,
     max_iterations: int = 5,
+    max_tokens: int = 8192,
     pass_name: str = "pass",
 ) -> list[list[dict]]:
     """Multi-Turn-Loop für einen Extraction-Pass.
@@ -61,11 +65,40 @@ async def run_pass(
             tools=tools,
             tool_choice="auto",
             temperature=0,
-            max_tokens=8192,
+            max_tokens=max_tokens,
             thinking_budget=thinking_budget,
         )
-        msg = response.choices[0].message
         finish_reason = response.choices[0].finish_reason
+
+        # Iteration 1 only: Gemini droppt intermittierend das PDF-Content-Part,
+        # liefert MALFORMED_FUNCTION_CALL. Retry bis zu _MAX_MALFORMED_RETRIES.
+        if iter_n == 1:
+            retries = 0
+            while "MALFORMED_FUNCTION_CALL" in str(finish_reason or ""):
+                if retries >= _MAX_MALFORMED_RETRIES:
+                    print(f"[{pass_name} retry exhausted] 3 attempts all failed with MALFORMED_FUNCTION_CALL, raising")
+                    raise RuntimeError(
+                        f"LLM provider instability: {pass_name} failed after "
+                        f"{_MAX_MALFORMED_RETRIES + 1} attempts (PDF drop). "
+                        f"Bitte Upload erneut starten."
+                    )
+                retries += 1
+                print(
+                    f"[{pass_name} retry] iteration=1 failed with MALFORMED_FUNCTION_CALL "
+                    f"(likely PDF drop), retrying after 500ms..."
+                )
+                await asyncio.sleep(0.5)
+                response = await llm.chat_completion(
+                    conversation,
+                    tools=tools,
+                    tool_choice="auto",
+                    temperature=0,
+                    max_tokens=max_tokens,
+                    thinking_budget=thinking_budget,
+                )
+                finish_reason = response.choices[0].finish_reason
+
+        msg = response.choices[0].message
         usage = getattr(response, "usage", None)
         tokens_in = usage.prompt_tokens if usage else "?"
         tokens_out = usage.completion_tokens if usage else "?"
