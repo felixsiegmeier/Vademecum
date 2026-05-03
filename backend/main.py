@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from agent_tools import TOOL_FUNCTIONS
 from agent_document_extraction import extract_proposals
 from agent_extraction_core import Proposal
+from agent_patient_chat import CHAT_2PASS_CUTOFF, run_single_pass_chat
 from agent_stammdaten_extraction import StammdatenExtractResult, extract_stammdaten
 from llm_client import LLMClient
 from models.patient import Patient, PatientSummary, Stammdaten
@@ -549,18 +550,19 @@ async def chat(request: ChatRequest):
 @app.post("/api/patients/{patient_id}/chat")
 async def patient_chat(patient_id: str, req: PatientChatRequest):
     """
-    Arzt chattet über einen Patienten. Nutzt den gleichen 2-Pass-Mechanismus
-    wie der Upload-Endpoint: Pass 1 (themen-quer) + Pass 2 (Verlaufseintrag).
+    Arzt chattet über einen Patienten.
 
-    Die letzte Nutzer-Nachricht wird als Text-Dokument behandelt.
-    Gibt Proposals zurück — der Arzt reviewed und applied über apply-proposals.
+    Kurze Inputs (≤ CHAT_2PASS_CUTOFF Zeichen): Single-Pass — LLM entscheidet
+    selbst ob Tool-Call (→ proposals) oder Text-Antwort (→ reply).
+
+    Lange Inputs (> CHAT_2PASS_CUTOFF): 2-Pass-Pipeline wie Upload-Endpoint.
+    Typisch für eingefügte Akte-Texte. Gibt nur proposals + auto_skipped zurück.
     """
     try:
         patient = load_patient(patient_id)
     except FileNotFoundError:
         raise HTTPException(404, f"Patient {patient_id} nicht gefunden")
 
-    # Letzte Nutzer-Nachricht als Text-Dokument extrahieren
     user_text = ""
     for m in reversed(req.messages):
         if m.get("role") == "user":
@@ -572,31 +574,63 @@ async def patient_chat(patient_id: str, req: PatientChatRequest):
         raise HTTPException(400, "Keine Benutzernachricht gefunden")
 
     try:
-        proposals = await extract_proposals(llm, patient, user_text, content_type="text")
+        if len(user_text) > CHAT_2PASS_CUTOFF:
+            # Langer Input → 2-Pass-Pipeline (wie Upload)
+            proposals = await extract_proposals(llm, patient, user_text, content_type="text")
+            if not proposals:
+                return JSONResponse(
+                    content={
+                        "proposals": [],
+                        "auto_skipped": True,
+                        "message": "Keine Änderungen vorgeschlagen.",
+                        "reply": None,
+                    },
+                    media_type="application/json; charset=utf-8",
+                )
+            return JSONResponse(
+                content={
+                    "proposals": [p.model_dump() for p in proposals],
+                    "auto_skipped": False,
+                    "reply": None,
+                },
+                media_type="application/json; charset=utf-8",
+            )
+        else:
+            # Kurzer Input → Single-Pass (Tool-Call oder Text-Antwort)
+            proposals, reply = await run_single_pass_chat(llm, patient, user_text, date.today())
+            if reply:
+                return JSONResponse(
+                    content={
+                        "proposals": [],
+                        "auto_skipped": False,
+                        "reply": reply,
+                    },
+                    media_type="application/json; charset=utf-8",
+                )
+            if proposals:
+                return JSONResponse(
+                    content={
+                        "proposals": [p.model_dump() for p in proposals],
+                        "auto_skipped": False,
+                        "reply": None,
+                    },
+                    media_type="application/json; charset=utf-8",
+                )
+            return JSONResponse(
+                content={
+                    "proposals": [],
+                    "auto_skipped": True,
+                    "message": "Keine Änderungen vorgeschlagen.",
+                    "reply": None,
+                },
+                media_type="application/json; charset=utf-8",
+            )
     except RateLimitError:
         raise HTTPException(429, "LLM Rate-Limit erreicht. Bitte kurz warten und erneut versuchen.")
     except APIConnectionError as e:
         raise HTTPException(503, f"LLM nicht erreichbar: {e}")
     except APIStatusError as e:
         raise HTTPException(502, f"LLM API Fehler {e.status_code}: {e.message}")
-
-    if not proposals:
-        return JSONResponse(
-            content={
-                "proposals": [],
-                "auto_skipped": True,
-                "message": "Keine Änderungen vorgeschlagen.",
-            },
-            media_type="application/json; charset=utf-8",
-        )
-
-    return JSONResponse(
-        content={
-            "proposals": [p.model_dump() for p in proposals],
-            "auto_skipped": False,
-        },
-        media_type="application/json; charset=utf-8",
-    )
 
 
 # ── Dokument-Upload / Extraktion ──────────────────────────────────────────────

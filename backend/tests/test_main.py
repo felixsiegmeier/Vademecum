@@ -1,9 +1,12 @@
 """Smoke-Tests für die wichtigsten REST-Endpoints (GET /patients/{id}, apply-proposals)."""
-from unittest.mock import AsyncMock, patch
+import json
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi.testclient import TestClient
 
 import storage
+from agent_extraction_core import Proposal, ToolCallInfo
+from agent_patient_chat import CHAT_2PASS_CUTOFF
 from agent_stammdaten_extraction import StammdatenExtractResult
 from main import app
 from models.patient import Patient, Stammdaten
@@ -344,3 +347,90 @@ def test_non_identity_stammdaten_field_no_mismatch(isolated_data):
     assert res.status_code == 200
     result = res.json()["results"][0]
     assert result["ok"] is True
+
+
+# ── Chat-Endpoint: Single-Pass vs. 2-Pass-Routing (Phase 4) ──────────────────
+
+
+def test_chat_short_input_uses_single_pass(isolated_data):
+    """Kurzer Input (< CUTOFF) → run_single_pass_chat aufgerufen, nicht extract_proposals."""
+    _make_patient("P-0001")
+    short_text = "Wie ist der Status des Patienten?"
+    assert len(short_text) < CHAT_2PASS_CUTOFF
+
+    with patch("main.run_single_pass_chat", new_callable=AsyncMock) as mock_single, \
+         patch("main.extract_proposals", new_callable=AsyncMock) as mock_extract:
+        mock_single.return_value = ([], "Patient ist stabil laut YAML.")
+        res = client.post(
+            "/api/patients/P-0001/chat",
+            json={"messages": [{"role": "user", "content": short_text}]},
+        )
+
+    assert res.status_code == 200
+    mock_single.assert_called_once()
+    mock_extract.assert_not_called()
+    body = res.json()
+    assert body["reply"] == "Patient ist stabil laut YAML."
+    assert body["proposals"] == []
+
+
+def test_chat_long_input_uses_two_pass(isolated_data):
+    """Langer Input (> CUTOFF) → extract_proposals aufgerufen, nicht run_single_pass_chat."""
+    _make_patient("P-0001")
+    long_text = "x" * (CHAT_2PASS_CUTOFF + 1)
+
+    with patch("main.extract_proposals", new_callable=AsyncMock) as mock_extract, \
+         patch("main.run_single_pass_chat", new_callable=AsyncMock) as mock_single:
+        mock_extract.return_value = []
+        res = client.post(
+            "/api/patients/P-0001/chat",
+            json={"messages": [{"role": "user", "content": long_text}]},
+        )
+
+    assert res.status_code == 200
+    mock_extract.assert_called_once()
+    mock_single.assert_not_called()
+    body = res.json()
+    assert body["auto_skipped"] is True
+    assert body["reply"] is None
+
+
+def test_chat_tool_call_gives_proposals_no_reply(isolated_data):
+    """LLM macht Tool-Call → proposals nicht-leer, reply=null in Response."""
+    _make_patient("P-0001")
+    proposal = Proposal(
+        type="update_singleton",
+        call=ToolCallInfo(tool="update_bettplatz", args={"bettplatz": "WD2I_07A", "source_quote": "test"}),
+    )
+
+    with patch("main.run_single_pass_chat", new_callable=AsyncMock) as mock_single:
+        mock_single.return_value = ([proposal], None)
+        res = client.post(
+            "/api/patients/P-0001/chat",
+            json={"messages": [{"role": "user", "content": "Bettplatz ist jetzt WD2I_07A"}]},
+        )
+
+    assert res.status_code == 200
+    body = res.json()
+    assert len(body["proposals"]) == 1
+    assert body["proposals"][0]["type"] == "update_singleton"
+    assert body["reply"] is None
+    assert body["auto_skipped"] is False
+
+
+def test_chat_text_reply_no_proposals(isolated_data):
+    """LLM antwortet mit Text → proposals leer, reply enthält Antwort."""
+    _make_patient("P-0001")
+
+    with patch("main.run_single_pass_chat", new_callable=AsyncMock) as mock_single:
+        mock_single.return_value = ([], "Bei HIT-Verdacht wäre Argatroban indiziert.")
+        res = client.post(
+            "/api/patients/P-0001/chat",
+            json={"messages": [{"role": "user", "content": "Was wäre wenn wir Heparin umstellen?"}]},
+        )
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body["proposals"] == []
+    assert body["reply"] == "Bei HIT-Verdacht wäre Argatroban indiziert."
+    assert body["auto_skipped"] is False

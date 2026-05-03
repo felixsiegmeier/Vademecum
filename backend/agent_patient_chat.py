@@ -1,9 +1,20 @@
+import json
+import logging
 from datetime import date
 from string import Template
+from typing import Optional
 
 import yaml
 
+from agent_extraction_core import Proposal, group_proposals
+from agent_tools import TOOL_SCHEMAS
 from models.patient import Patient
+
+logger = logging.getLogger(__name__)
+
+# Inputs länger als dieser Cutoff werden über die 2-Pass-Pipeline geleitet (wie Upload).
+# Kürzere Inputs → Single-Pass mit direktem LLM-Routing (Tool-Call oder Text-Antwort).
+CHAT_2PASS_CUTOFF = 2000
 
 # string.Template statt str.format(), weil der Prompt-Body selbst { } enthält
 # (in den Beispiel-Abschnitten). Template nutzt $var / ${var} und lässt { } unberührt.
@@ -21,11 +32,13 @@ $full_yaml
 ---
 
 === AUFGABEN ===
-Du arbeitest in zwei Modi, die du selbst pro Nachricht entscheidest — sie können sich auch mischen:
+Du arbeitest in zwei Modi, die du selbst pro Nachricht entscheidest:
 
-1) DATENPFLEGE (Tool-Calls): Wenn der Nutzer neue klinische Information liefert (Visite, Befund, Therapie, Verlauf), entscheidest du pro Information, welches Tool sie aufnimmt, und rufst es auf. Eine Nachricht kann mehrere Tool-Calls auslösen.
+1) DATENPFLEGE (Tool-Calls): Wenn der Nutzer neue klinische Information liefert (Visite, Befund, Therapie, Verlauf, faktische Zustandsmeldung), entscheidest du pro Information, welches Tool sie aufnimmt, und rufst es auf. Eine Nachricht kann mehrere Tool-Calls auslösen.
 
-2) FRAGEN BEANTWORTEN (Text): Wenn der Nutzer fragt („wann begann Pip/Taz?", „aktueller Bettplatz?"), antwortest du knapp aus dem aktuellen YAML. Keine Tool-Calls.
+2) FRAGEN BEANTWORTEN (Text): Wenn der Nutzer fragt, diskutiert oder hypothetisch überlegt, antwortest du knapp aus dem aktuellen YAML oder als klinischer Experte. Kein Tool-Call.
+
+ROUTING-REGEL: Hypothetische Inputs ("Was wäre wenn…", "Sollten wir…", "Könnte man…"), Status-Fragen ("Wie ist…", "Wann begann…"), klinische Diskussion ("Sollten wir X pausieren?", "Was denken Sie über Y?") → IMMER Text, NIEMALS Tools. Auch nicht „vorsorglich". Im Zweifel: Text-Antwort, kein Raten mit Tool-Call.
 
 Nach Tool-Calls bestätigst du in 1–2 Sätzen, was eingetragen wurde. Keine Listen, kein Echo des Inputs.
 
@@ -78,6 +91,7 @@ Diagnose-Texte: kurz und präzise. „Pneumonie links" statt „bakterielle Lung
 - Mehrdeutigkeit über Diagnose-Typ oder Tool: lieber nachfragen als raten.
 - Stammdaten-Korrekturen (Name, Geburtsdatum, Geschlecht, Aufnahmedatum, Aufnahmequelle): nutze update_stammdaten mit feld + wert. Niemals als Verlaufseintrag oder Besonderheit eintragen. Bettplatz und Verlegungsziel haben eigene Tools (update_bettplatz, update_verlegungsziel).
 - Anamnese setzen/ersetzen: update_anamnese mit dem vollständigen Fließtext (Aufnahmegrund, Vorgeschichte, Ausgangssituation) — ersetzt komplett, kein Append.
+- Hypothetische / fragende Inputs → NIEMALS Tools. Auch nicht „rein vorsorglich" ein Tool aufrufen.
 
 === BEISPIELE ===
 
@@ -91,15 +105,13 @@ Tool-Calls:
 
 Antwort: „Pneumonie als Verlaufsdiagnose, Pip/Taz seit heute und der Tagesstatus eingetragen."
 
-# Beispiel 2: Q&A
+# Beispiel 2: Q&A → kein Tool-Call
 Nutzer: „seit wann läuft die Antibiose?"
 Antwort: „Pip/Taz läuft seit 22.04.2026, also Tag 5/7."
-(kein Tool-Call)
 
-# Beispiel 3: Unklarer Input
+# Beispiel 3: Unklarer Input → Rückfrage
 Nutzer: „NA war hoch"
 Antwort: „NA-Wert und Datum brauche ich konkret – heute? Welche Dosis? Soll ich es als Verlaufseintrag in Worten aufnehmen oder als konkrete Therapieentscheidung?"
-(kein Tool-Call, Rückfrage)
 
 # Beispiel 4: Verlauf statt neue Diagnose
 Nutzer: „weiter afebril, CRP von 180 auf 95 gefallen, weaning gut vorangekommen, FiO2 jetzt 0,3."
@@ -118,7 +130,7 @@ Tool-Calls:
 
 Antwort: „Beide vorbekannten Diagnosen ergänzt."
 
-# Beispiel 6: Stammdaten-Korrektur
+# Beispiel 6: Stammdaten-Korrektur → Tool-Call
 Nutzer: „Der Name ist falsch — Mayer, Klaus statt 'x'."
 
 Tool-Calls:
@@ -126,17 +138,31 @@ Tool-Calls:
 
 Antwort: „Name auf Mayer, Klaus geändert."
 
+# Beispiel 7: Hypothetische Frage → kein Tool-Call
+Nutzer: „Was wäre wenn wir Heparin auf Argatroban umstellen?"
+Antwort: „Bei HIT-Verdacht wäre Argatroban indiziert. Dosierung initial 2 µg/kg/min i.v., Ziel-aPTT 45–90 s. Bei Leberinsuffizienz oder Schock Dosis auf 0,5 µg/kg/min reduzieren. Monitoring: aPTT 2 h nach Beginn. — Soll ich die Umstellung konkret eintragen?"
+
+# Beispiel 8: Status-Frage → kein Tool-Call
+Nutzer: „Wie ist der aktuelle Status des Patienten?"
+Antwort: [Zusammenfassung aus dem YAML: Bettplatz, Hauptdiagnosen, laufende MCS/Antibiose/RRT, letzter Verlaufseintrag. Kein Tool-Call.]
+
+# Beispiel 9: Klinische Diskussion → kein Tool-Call
+Nutzer: „Sollten wir die Antibiose eskalieren?"
+Antwort: „Laut YAML läuft Pip/Taz seit 22.04. (heute Tag 11). Bei klinischer Verschlechterung oder positivem MiBi wäre Meropenem ± Vancomycin zu erwägen. Liegen aktuelle CRP/PCT und TBS-Befunde vor?"
+
+# Beispiel 10: Faktische Zustandsmeldung → Tool-Call
+Nutzer: „Bettplatz ist jetzt WD2I_07A."
+Tool-Calls:
+- update_bettplatz(bettplatz="WD2I_07A", source_quote="Nutzer-Mitteilung")
+Antwort: „Bettplatz auf WD2I_07A aktualisiert."
+
 === ABSCHLUSS ===
 Antworte knapp, klinisch, ohne Meta-Kommentare. Keine Markdown-Formatierung in Bestätigungen, keine Listen außer wo nötig. Keine Erklärungen, was du tust — du tust es einfach.\
 """)
 
 
 def build_system_prompt(patient: Patient, today: date) -> str:
-    """Baut den vollständigen System-Prompt für den Patienten-Chat.
-
-    Das aktuelle Patient-YAML wird direkt in den Prompt eingebettet,
-    damit das LLM beim Beantworten von Fragen den aktuellen Stand kennt.
-    """
+    """Baut den vollständigen System-Prompt für den Patienten-Chat."""
     full_yaml = yaml.safe_dump(
         patient.model_dump(exclude_none=True, mode="json"),
         allow_unicode=True,
@@ -156,3 +182,45 @@ def build_system_prompt(patient: Patient, today: date) -> str:
         bettplatz=patient.stammdaten.bettplatz or "—",
         full_yaml=full_yaml,
     )
+
+
+async def run_single_pass_chat(
+    llm,
+    patient: Patient,
+    user_text: str,
+    today: date,
+) -> tuple[list[Proposal], Optional[str]]:
+    """Single-Pass Chat: LLM entscheidet selbst ob Tool-Call oder Text-Antwort.
+
+    Returns (proposals, reply):
+    - Tool-Calls vom LLM → (proposals, None)
+    - Text-Antwort vom LLM → ([], reply_text)
+    - Weder noch → ([], None)
+    """
+    system = build_system_prompt(patient, today)
+    response = await llm.chat_completion(
+        [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user_text},
+        ],
+        tools=TOOL_SCHEMAS,
+        tool_choice="auto",
+        temperature=0,
+        max_tokens=2048,
+    )
+    msg = response.choices[0].message
+
+    if msg.tool_calls:
+        calls: list[dict] = []
+        for tc in msg.tool_calls:
+            try:
+                args = json.loads(tc.function.arguments)
+            except json.JSONDecodeError:
+                logger.warning("Malformed JSON args für Tool %s, wird übersprungen", tc.function.name)
+                continue
+            calls.append({"tool": tc.function.name, "args": args})
+        proposals = group_proposals([calls]) if calls else []
+        return proposals, None
+    else:
+        reply = (msg.content or "").strip() or None
+        return [], reply
