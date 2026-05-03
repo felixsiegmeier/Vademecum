@@ -49,11 +49,20 @@ def test_no_add_prozedur_in_tools():
     assert "add_prozedur" not in tool_names
 
 
-def test_add_therapie_schema_has_8_categories():
+def test_add_therapie_schema_has_9_categories():
     schema = next(s for s in TOOL_SCHEMAS if s["function"]["name"] == "add_therapie")
     enum_values = schema["function"]["parameters"]["properties"]["kategorie"]["enum"]
-    expected = {"operativ", "MCS", "RRT", "respiratorisch", "interventionell", "antimikrobiell", "medikamentös", "sonstiges"}
+    expected = {
+        "operativ", "MCS", "RRT", "respiratorisch", "interventionell",
+        "antimikrobiell", "medikamentös", "bedside", "sonstiges",
+    }
     assert set(enum_values) == expected
+
+
+def test_add_therapie_schema_includes_bedside():
+    schema = next(s for s in TOOL_SCHEMAS if s["function"]["name"] == "add_therapie")
+    enum_values = schema["function"]["parameters"]["properties"]["kategorie"]["enum"]
+    assert "bedside" in enum_values
 
 
 # ── Funktion-Akzeptiert-source_quote-Tests ────────────────────────────────────
@@ -210,7 +219,7 @@ def test_delete_entry_unknown_id_errors(isolated_data):
 
 @pytest.mark.parametrize("kategorie", [
     "operativ", "MCS", "RRT", "respiratorisch",
-    "interventionell", "antimikrobiell", "medikamentös", "sonstiges",
+    "interventionell", "antimikrobiell", "medikamentös", "bedside", "sonstiges",
 ])
 def test_add_therapie_accepts_all_categories(kategorie, isolated_data):
     _make_test_patient()
@@ -280,6 +289,26 @@ def test_add_therapie_antimikrobiell_running(isolated_data):
     assert t.kategorie == "antimikrobiell"
     assert str(t.beginn) == "2026-04-14"
     assert t.ende is None
+
+
+def test_add_therapie_bedside_event_pattern(isolated_data):
+    """`bedside`-Kategorie für Bedside-Eingriffe (PAK-Anlage, Bronchoskopie etc.) als Einzelevent."""
+    _make_test_patient()
+    result = add_therapie(
+        patient_id="P-0001",
+        kategorie="bedside",
+        bezeichnung="Bronchoskopie",
+        beginn="2026-04-23",
+        ende="2026-04-23",
+        indikation="erhöhte Sekretlast",
+        source_quote="Bronchoskopie 23.04. bei erhöhter Sekretlast",
+    )
+    assert result["ok"] is True
+    p = storage.load_patient("P-0001")
+    t = p.therapien[-1]
+    assert t.kategorie == "bedside"
+    assert str(t.beginn) == "2026-04-23"
+    assert str(t.ende) == "2026-04-23"
 
 
 def test_add_therapie_indikation_optional(isolated_data):

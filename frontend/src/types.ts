@@ -87,6 +87,7 @@ export const THERAPIE_KATEGORIEN: Record<string, { label: string; color: string 
   interventionell:{ label: "Interventionell",color: "bg-orange-100 text-orange-700" },
   antimikrobiell: { label: "Antimikrobiell", color: "bg-violet-100 text-violet-700" },
   medikamentös:   { label: "Medikamentös",   color: "bg-slate-100 text-slate-700" },
+  bedside:        { label: "Bedside",        color: "bg-amber-100 text-amber-700" },
   sonstiges:      { label: "Sonstiges",      color: "bg-gray-100 text-gray-700" },
 };
 

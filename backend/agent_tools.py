@@ -331,8 +331,8 @@ ADD_THERAPIE_SCHEMA = _wrap(
     "add_therapie",
     (
         "Fügt einen Eingriff oder eine Therapie hinzu. "
-        "kategorie ist eines der 8 Werte: operativ, MCS, RRT, respiratorisch, "
-        "interventionell, antimikrobiell, medikamentös, sonstiges. "
+        "kategorie ist eines der 9 Werte: operativ, MCS, RRT, respiratorisch, "
+        "interventionell, antimikrobiell, medikamentös, bedside, sonstiges. "
         "Einmaliges Event (z.B. CABG): beginn = ende = Datum. "
         "Laufend: ende = null."
     ),
@@ -341,7 +341,8 @@ ADD_THERAPIE_SCHEMA = _wrap(
             "type": "string",
             "enum": [
                 "operativ", "MCS", "RRT", "respiratorisch",
-                "interventionell", "antimikrobiell", "medikamentös", "sonstiges",
+                "interventionell", "antimikrobiell", "medikamentös",
+                "bedside", "sonstiges",
             ],
             "description": "Klinische Kategorie des Eingriffs oder der Therapie.",
         },

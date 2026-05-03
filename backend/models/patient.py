@@ -28,11 +28,12 @@ class Befund(BaseModel):
 
 
 class Therapie(BaseModel):
-    """Eingriffe und Therapien. kategorie unterscheidet 8 klinische Typen."""
+    """Eingriffe und Therapien. kategorie unterscheidet 9 klinische Typen."""
     id: str
     kategorie: Literal[
         "operativ", "MCS", "RRT", "respiratorisch",
-        "interventionell", "antimikrobiell", "medikamentös", "sonstiges"
+        "interventionell", "antimikrobiell", "medikamentös",
+        "bedside", "sonstiges"
     ]
     bezeichnung: str
     beginn: date
