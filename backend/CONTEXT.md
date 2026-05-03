@@ -1,4 +1,4 @@
-# Backend Context — Stand 2026-05-03 (V1.6 Phase 3.5 + 4)
+# Backend Context — Stand 2026-05-03 (V1.6 Phase 3.5 Iter v2 + 4)
 
 ## Pydantic-Modelle (kompakt)
 
@@ -19,11 +19,16 @@
 - id, art, text, datum, source_quote
 
 ### Therapie
-- id, kategorie (8 Werte: operativ|MCS|RRT|respiratorisch|interventionell|
-  antimikrobiell|medikamentös|sonstiges), bezeichnung, beginn, ende?,
+- id, kategorie (9 Werte: operativ|MCS|RRT|respiratorisch|interventionell|
+  antimikrobiell|medikamentös|bedside|sonstiges), bezeichnung, beginn, ende?,
   indikation?, source_quote
 - beginn=ende: einmaliges Event (z.B. OP)
 - ende=null: noch laufend
+- `bedside` (Iter v2): Bedside-Eingriffe auf Station — PAK/Shaldon-Anlage,
+  Pleurapunktion, Bronchoskopie, Bedside-Tracheotomie, Magensonde,
+  Drainagen-Wechsel mit Konsequenz. `respiratorisch` ist seit Iter v2 nur
+  Atemunterstützungs-MODI (Beatmung, NIV, HFNC) — Tracheotomie ist Eingriff,
+  nicht Modus. Keine Backwards-Compat: bei vorhandenen YAMLs `rm` + Re-Upload.
 
 ### VerlaufsEintrag
 - id, text, datum, source_quote
@@ -59,8 +64,15 @@
 - THINKING_BUDGET_BLOCK_2 = 1024
 
 ## Prompt-Files
-- extraction_block1.txt: 8-Kategorie-Tag-Set, Datums-Logik (beginn=ende für Events)
-- extraction_block2.txt: Verlaufseintrag-Generierung
+- extraction_block1.txt (Iter 5): 9-Kategorie-Tag-Set inkl. `bedside`,
+  ANTI-CONFOUND-Klausel als Priorität 1 (verhindert Lehrer-Bias bei
+  Patientenübersicht-Sektionen), klinisch geschärfte Diagnose-Klassifikation
+  mit konkreten Beispielen, Therapie-Recall-Verstärkung (alle AB-Linien,
+  pharma. Hauptlinien, Bedside-Eingriffe), Befund-Recall-Liste (TEE, HIT,
+  PAK-Messungen, Bronchoskopie-Befunde), Anamnese-Vollständigkeitsklausel
+- extraction_block2.txt (Iter v2): Verlaufseintrag-Generierung mit
+  Konvergenz-Prinzip, 8 MUSS/SOLL/KANN-Dimensionen als Prüfliste,
+  Mittelweg-Redundanz, 3 klinische Beispiele inkl. Mikrobio-Trigger-Merge
 
 ## Cache-Hinweis
 - _BLOCK1_PROMPT_CACHE / _BLOCK2_PROMPT_CACHE laden Prompts einmal beim
@@ -146,4 +158,4 @@ POST /api/patients/{id}/apply-proposals
 - `CHAT_2PASS_CUTOFF = 2000` (in `agent_patient_chat.py`)
 
 ## Test-Stand
-94 passed in 0.40s
+106 passed in 0.40s
