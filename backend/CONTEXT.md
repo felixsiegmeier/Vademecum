@@ -219,5 +219,46 @@ POST /api/patients/{id}/apply-proposals
 ### Konstanten
 - `CHAT_2PASS_CUTOFF = 2000` (in `agent_patient_chat.py`)
 
+## Frontend Streaming-Pattern (Phase D Iter 3)
+
+### NDJSON-Consumer (`frontend/src/utils/ndjson.ts`)
+- `parseNdjson<T>(body: ReadableStream)` — AsyncGenerator, yields one event per line
+- TextDecoder mit Line-Buffer; `releaseLock()` im finally für sauberes Early-Break
+- Konsumiert via `for await (const event of parseNdjson<StreamEvent>(res.body))`
+
+### Section-Counter (`frontend/src/utils/streamSection.ts`)
+- `formatSectionCounts(proposals)` → `"2 Diagnosen, 4 Therapien, 1 Befund"`
+- Reihenfolge: Diagnosen | Therapien | Befunde | Verlauf | Sonstiges
+- Tool→Section-Mapping: alle `add_*`-Tools → Section, Rest → Sonstiges
+
+### State-Modell im ProposalsEntry (Streaming)
+- `streaming: boolean` — true während NDJSON-Stream aktiv
+- `streamStatus: {phase, iter, max_iter, items_in_phase} | null`
+- `proposals: Proposal[]` — wächst inkrementell bei jedem `proposals`-Event
+- `updateEntryById` — funktionale setState-Updates (async-sicher, kein Stale-Closure)
+
+### Upload-Flow
+1. Streaming-ProposalsEntry sofort in History eingetragen (Live-Bar sichtbar)
+2. `for await` über Events: heartbeat ignorieren, status → streamStatus, proposals → akkumulieren
+3. `error`-Event → Toast + Entry discarden (kein Half-State)
+4. `done` mit `auto_skipped` → Entry durch AutoSkipEntry ersetzen (gleiche Position)
+5. `done` ohne Skip → `streaming: false`, Apply-Bar aktiv
+
+### Streaming-UI in ProposalsEntry
+- Header zeigt Section-Counts während Stream statt Global-Count
+- Sticky Live-Bar (amber): `Loader2 animate-spin` + `"Block 1 — Iteration 2/8, 7 Items bisher"`
+- Cards laufen progressiv ein; Checkboxen/Toggles mid-stream interagierbar
+- Apply-Bar: disabled + Loader2 während `streaming`, aktiv nach `done`
+
+### Chat-Markdown-Rendering
+- `react-markdown` für Assistant-Replies in `PatientChatPanel` (`chat-text` role=assistant)
+- Tailwind utility classes statt `@tailwindcss/typography` (nicht installiert)
+- User-Messages: weiterhin `whitespace-pre-wrap`
+
+### Datenschutz-Hinweis: backend/data/ Git-History
+- Commit `5dbb7ba` entfernte Patientendaten aus Tracking (nur `.gitkeep` im Index)
+- **Initial commit `2b1258c` enthält noch Patientendaten in der Git-History**
+- Cleanup: `git filter-repo` oder GitHub Support notwendig (Felix-Entscheidung ausstehend)
+
 ## Test-Stand
-124 passed in 0.89s
+124 passed in 0.86s
