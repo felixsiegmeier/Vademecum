@@ -1,4 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Check, Copy, RefreshCw, Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 
 // Die 6 Brief-Felder — Reihenfolge bestimmt die Darstellung
 const BRIEF_FIELDS = [
@@ -40,47 +44,37 @@ function formatDate(iso: string | null): string {
   return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-// Erstellt ein Record-Objekt mit demselben Wert für alle 6 Felder
 function initRecord<T>(val: T): Record<FieldKey, T> {
   return Object.fromEntries(BRIEF_FIELDS.map((f) => [f.key, val])) as Record<FieldKey, T>;
 }
 
 export default function BriefPanel({ patientId }: Props) {
   const [briefData, setBriefData] = useState<BriefData | null>(null);
-  // is_stale pro Feld: hat sich die Quelldaten seit der Generierung geändert?
   const [isStale, setIsStale] = useState<Record<FieldKey, boolean>>(initRecord(false));
-  // localContent: was im Textarea steht (kann vom gespeicherten Wert abweichen, während Autosave läuft)
   const [localContent, setLocalContent] = useState<Record<FieldKey, string>>(initRecord(""));
-  // hasLocalEdits: wurde dieses Feld manuell bearbeitet? (für Warnung vor Neu-Generierung)
   const [hasLocalEdits, setHasLocalEdits] = useState<Record<FieldKey, boolean>>(initRecord(false));
 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [empty, setEmpty] = useState(false);  // 404 → noch kein Brief
+  const [empty, setEmpty] = useState(false);
 
-  // globalGenerating: alle Felder auf einmal (erster Aufruf)
   const [globalGenerating, setGlobalGenerating] = useState(false);
   const [globalGenError, setGlobalGenError] = useState<string | null>(null);
-  // generatingField: genau ein Feld wird gerade regeneriert
   const [generatingField, setGeneratingField] = useState<FieldKey | null>(null);
   const [fieldGenErrors, setFieldGenErrors] = useState<Record<FieldKey, string>>(initRecord(""));
 
-  // Autosave-Status und Debounce-Timer pro Feld
   const [saveStatus, setSaveStatus] = useState<Record<FieldKey, "idle" | "saving" | "saved">>(
     initRecord("idle")
   );
   const saveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
-  // popoverField: welches Feld hat gerade das Regenerier-Popover offen?
   const [popoverField, setPopoverField] = useState<FieldKey | null>(null);
   const [customPrompt, setCustomPrompt] = useState("");
   const popoverRef = useRef<HTMLDivElement>(null);
 
-  // Refs zu allen Textareas für Auto-Resize
   const textareaRefs = useRef<Partial<Record<FieldKey, HTMLTextAreaElement | null>>>({});
   const [copiedField, setCopiedField] = useState<FieldKey | null>(null);
 
-  // Neue Brief-Daten vom Backend übernehmen und alle lokalen States synchronisieren
   const applyBriefData = (d: BriefData, stale: Record<FieldKey, boolean> = initRecord(false)) => {
     setBriefData(d);
     setIsStale(stale);
@@ -109,7 +103,6 @@ export default function BriefPanel({ patientId }: Props) {
 
   useEffect(() => { loadBrief(); }, [loadBrief]);
 
-  // Popover schließen bei Klick außerhalb
   useEffect(() => {
     if (!popoverField) return;
     function handleClick(e: MouseEvent) {
@@ -121,7 +114,6 @@ export default function BriefPanel({ patientId }: Props) {
     return () => document.removeEventListener("mousedown", handleClick);
   }, [popoverField]);
 
-  // Textarea-Höhe automatisch an Inhalt anpassen (kein festes resize)
   useEffect(() => {
     BRIEF_FIELDS.forEach((f) => {
       const el = textareaRefs.current[f.key];
@@ -137,7 +129,6 @@ export default function BriefPanel({ patientId }: Props) {
     setHasLocalEdits((prev) => ({ ...prev, [field]: true }));
     setSaveStatus((prev) => ({ ...prev, [field]: "saving" }));
 
-    // Debounce: 1,5s warten nach letzter Eingabe, dann speichern
     if (saveTimers.current[field]) clearTimeout(saveTimers.current[field]);
     saveTimers.current[field] = setTimeout(async () => {
       try {
@@ -199,7 +190,6 @@ export default function BriefPanel({ patientId }: Props) {
         throw new Error((body as { detail?: string }).detail ?? `HTTP ${res.status}`);
       }
       const d: BriefData = await res.json();
-      // Nur das regenerierte Feld aktualisieren, den Rest unberührt lassen
       setBriefData(d);
       setLocalContent((prev) => ({ ...prev, [field]: d[field] }));
       setHasLocalEdits((prev) => ({ ...prev, [field]: false }));
@@ -221,11 +211,9 @@ export default function BriefPanel({ patientId }: Props) {
     }
   }
 
-  // ── Render-States ──────────────────────────────────────────────────────────
-
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-full text-sm text-gray-400">
+      <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
         Lade Brief…
       </div>
     );
@@ -233,27 +221,25 @@ export default function BriefPanel({ patientId }: Props) {
 
   if (loadError) {
     return (
-      <div className="flex items-center justify-center h-full text-sm text-red-600">
+      <div className="flex items-center justify-center h-full text-sm text-destructive">
         Fehler: {loadError}
       </div>
     );
   }
 
-  // Noch kein Brief generiert → nur Generate-Button zeigen
   if (empty) {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-4">
-        <p className="text-sm text-gray-500">Noch kein Brief generiert</p>
+        <p className="text-sm text-muted-foreground">Noch kein Brief generiert</p>
         {globalGenError && (
-          <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{globalGenError}</p>
+          <p className="text-sm text-destructive bg-destructive/10 rounded-md px-3 py-2">{globalGenError}</p>
         )}
-        <button
+        <Button
           onClick={handleGlobalGenerate}
           disabled={globalGenerating}
-          className="px-5 py-2.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {globalGenerating ? "Generiere…" : "Brief generieren"}
-        </button>
+          {globalGenerating ? (<><Loader2 className="size-4 animate-spin" /> Generiere…</>) : "Brief generieren"}
+        </Button>
       </div>
     );
   }
@@ -262,18 +248,16 @@ export default function BriefPanel({ patientId }: Props) {
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      {/* Globaler Stale-Banner: mindestens ein Feld ist veraltet */}
       {anyStale && (
         <div className="shrink-0 bg-amber-50 border-b border-amber-200 px-4 py-2">
-          <span className="text-sm text-amber-800">
+          <span className="text-sm text-amber-900">
             Patientendaten haben sich seit der Generierung geändert. Felder können einzeln neu
             generiert werden.
           </span>
         </div>
       )}
 
-      {/* Felder */}
-      <div className="flex-1 overflow-y-auto px-6 py-4 space-y-8">
+      <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
         {BRIEF_FIELDS.map(({ key, label }) => {
           const isGeneratingThis = generatingField === key;
           const isPopoverOpen = popoverField === key;
@@ -283,46 +267,40 @@ export default function BriefPanel({ patientId }: Props) {
 
           return (
             <div key={key}>
-              {/* Feld-Header: Label + Staleness-Indikator + Zeitstempel + Buttons */}
-              <div className="flex items-center gap-2 mb-1">
-                <h3 className="text-sm font-semibold text-gray-800 flex-1">{label}</h3>
+              <div className="flex items-center gap-2 mb-1.5">
+                <h3 className="text-sm font-semibold text-foreground flex-1">{label}</h3>
 
-                {/* Orangener Punkt = Quelldaten haben sich geändert */}
                 {stale && (
                   <span
-                    className="w-2 h-2 rounded-full bg-amber-400 shrink-0"
+                    className="size-2 rounded-full bg-amber-500 shrink-0"
                     title="Daten seit Generierung geändert"
                   />
                 )}
 
-                <span className="text-xs text-gray-400 shrink-0">
+                <span className="text-xs text-muted-foreground shrink-0">
                   {genAt ? `Generiert: ${formatDate(genAt)}` : "Nicht generiert"}
                 </span>
 
-                {/* Kopier-Button */}
-                <button
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
                   onClick={() => handleCopy(key)}
                   title="Kopieren"
-                  className="shrink-0 p-1 text-gray-400 hover:text-gray-600 rounded"
                 >
                   {copiedField === key ? (
-                    <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 text-green-600" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                    </svg>
+                    <Check className="size-3.5 text-emerald-600" />
                   ) : (
-                    <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
-                      <path d="M8 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" />
-                      <path d="M6 3a2 2 0 00-2 2v11a2 2 0 002 2h8a2 2 0 002-2V5a2 2 0 00-2-2 3 3 0 01-3 3H9a3 3 0 01-3-3z" />
-                    </svg>
+                    <Copy className="size-3.5" />
                   )}
-                </button>
+                </Button>
 
-                {/* Regenerier-Button + Popover (mit optionalem Custom-Prompt) */}
                 <div
                   className="relative shrink-0"
                   ref={isPopoverOpen ? popoverRef : undefined}
                 >
-                  <button
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
                     onClick={() => {
                       if (isPopoverOpen) {
                         setPopoverField(null);
@@ -333,84 +311,80 @@ export default function BriefPanel({ patientId }: Props) {
                     }}
                     disabled={isGeneratingThis || globalGenerating}
                     title="Neu generieren"
-                    className="p-1 text-gray-400 hover:text-gray-600 rounded disabled:opacity-40"
                   >
                     {isGeneratingThis ? (
-                      <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path strokeLinecap="round" d="M12 2a10 10 0 0 1 0 20" />
-                      </svg>
+                      <Loader2 className="size-3.5 animate-spin" />
                     ) : (
-                      <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
-                      </svg>
+                      <RefreshCw className="size-3.5" />
                     )}
-                  </button>
+                  </Button>
 
-                  {/* Popover: Warnung + optionaler Custom-Prompt + Generieren-Button */}
                   {isPopoverOpen && (
-                    <div className="absolute right-0 top-full mt-1 w-80 bg-white border border-gray-200 rounded-xl shadow-lg z-20 p-4">
-                      <p className="text-xs font-medium text-gray-700 mb-2">Neu generieren</p>
+                    <div className="absolute right-0 top-full mt-1 w-80 bg-popover text-popover-foreground border rounded-md shadow-md z-20 p-3">
+                      <p className="text-xs font-medium mb-2">Neu generieren</p>
                       {hasLocalEdits[key] && (
-                        <div className="mb-3 text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2">
+                        <div className="mb-3 text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
                           Manuelle Änderungen an diesem Abschnitt werden überschrieben. Trotzdem generieren?
                         </div>
                       )}
                       {fieldErr && (
-                        <div className="mb-3 text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">
+                        <div className="mb-3 text-xs text-destructive bg-destructive/10 rounded-md px-3 py-2">
                           {fieldErr}
                         </div>
                       )}
-                      <textarea
+                      <Textarea
                         value={customPrompt}
                         onChange={(e) => setCustomPrompt(e.target.value)}
                         placeholder="z.B. kürzer, chronologisch, nur Rechtschreibung korrigieren …"
                         rows={2}
-                        className="w-full text-xs text-gray-700 border border-gray-200 rounded-lg p-2 mb-3 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="text-xs resize-none mb-3"
                       />
                       <div className="flex gap-2 justify-end">
-                        <button
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           onClick={() => setPopoverField(null)}
-                          className="px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-100 rounded-lg"
                         >
                           Abbrechen
-                        </button>
-                        <button
+                        </Button>
+                        <Button
+                          size="sm"
                           onClick={() => handleFieldRegenerate(key)}
-                          className="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg"
                         >
                           Generieren
-                        </button>
+                        </Button>
                       </div>
                     </div>
                   )}
                 </div>
               </div>
 
-              {/* Textarea mit Generierungs-Overlay */}
               <div className="relative">
-                <textarea
+                <Textarea
                   ref={(el) => { textareaRefs.current[key] = el; }}
                   value={localContent[key]}
                   onChange={(e) => handleContentChange(key, e.target.value)}
                   disabled={isGeneratingThis}
-                  className="w-full min-h-[120px] resize-none text-sm text-gray-800 bg-white border border-gray-200 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60"
+                  className="w-full min-h-[120px] resize-none"
                   style={{ overflow: "hidden" }}
                   spellCheck={false}
                 />
                 {isGeneratingThis && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-white/60 rounded-lg">
-                    <span className="text-xs text-gray-500">Generiere…</span>
+                  <div className="absolute inset-0 flex items-center justify-center bg-background/60 rounded-md">
+                    <span className="text-xs text-muted-foreground flex items-center gap-1.5">
+                      <Loader2 className="size-3.5 animate-spin" />
+                      Generiere…
+                    </span>
                   </div>
                 )}
               </div>
 
-              {/* Autosave-Status unter dem Textarea */}
-              <div className="h-4 mt-1">
+              <div className={cn("h-4 mt-1", saveStatus[key] === "idle" && "invisible")}>
                 {saveStatus[key] === "saving" && (
-                  <span className="text-xs text-gray-400">Speichert…</span>
+                  <span className="text-xs text-muted-foreground">Speichert…</span>
                 )}
                 {saveStatus[key] === "saved" && (
-                  <span className="text-xs text-green-600">Gespeichert</span>
+                  <span className="text-xs text-emerald-600">Gespeichert</span>
                 )}
               </div>
             </div>

@@ -1,4 +1,15 @@
 import { useEffect, useRef, useState, useCallback } from "react";
+import { Copy, Check, Loader2, RefreshCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 interface MeilensteinData {
   content: string;
@@ -22,13 +33,12 @@ export default function MeilensteinPanel({ patientId }: Props) {
   const [data, setData] = useState<MeilensteinData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [empty, setEmpty] = useState(false);  // 404 → noch kein Meilenstein vorhanden
+  const [empty, setEmpty] = useState(false);
 
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState<string | null>(null);
-  const [confirmRegen, setConfirmRegen] = useState(false);  // Regen-Modal anzeigen?
+  const [confirmRegen, setConfirmRegen] = useState(false);
 
-  // Autosave: Debounce-Timer — erst 1,5s nach letzter Eingabe wird gespeichert
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveStatusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -55,7 +65,6 @@ export default function MeilensteinPanel({ patientId }: Props) {
   }, [loadMeilenstein]);
 
   function handleContentChange(value: string) {
-    // Lokalen State sofort aktualisieren (optimistic), Backend mit Debounce
     setData((prev) => prev ? { ...prev, content: value } : null);
     setSaveStatus("saving");
 
@@ -111,120 +120,107 @@ export default function MeilensteinPanel({ patientId }: Props) {
   }
 
   if (loading) {
-    return <div className="flex items-center justify-center h-full text-sm text-gray-400">Lade Meilenstein…</div>;
+    return <div className="flex items-center justify-center h-full text-sm text-muted-foreground">Lade Meilenstein…</div>;
   }
 
   if (error) {
-    return <div className="flex items-center justify-center h-full text-sm text-red-600">Fehler: {error}</div>;
+    return <div className="flex items-center justify-center h-full text-sm text-destructive">Fehler: {error}</div>;
   }
 
-  // Noch kein Meilenstein generiert → nur Generate-Button zeigen
   if (empty) {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-4">
-        <p className="text-sm text-gray-500">Noch kein Meilenstein generiert</p>
+        <p className="text-sm text-muted-foreground">Noch kein Meilenstein generiert</p>
         {genError && (
-          <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{genError}</p>
+          <p className="text-sm text-destructive bg-destructive/10 rounded-md px-3 py-2">{genError}</p>
         )}
-        <button
-          onClick={doGenerate}
-          disabled={generating}
-          className="px-5 py-2.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {generating ? "Generiere…" : "Meilenstein generieren"}
-        </button>
+        <Button onClick={doGenerate} disabled={generating}>
+          {generating ? (<><Loader2 className="size-4 animate-spin" /> Generiere…</>) : "Meilenstein generieren"}
+        </Button>
       </div>
     );
   }
 
   return (
     <div className="flex flex-col h-full">
-      {/* Stale-Banner: erscheint wenn YAML sich seit der Generierung geändert hat */}
       {data?.is_stale && (
         <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 flex items-center justify-between gap-4">
-          <span className="text-sm text-amber-800">
+          <span className="text-sm text-amber-900">
             Patientendaten haben sich seit der Generierung geändert. Neu generieren?
           </span>
-          <button
+          <Button
+            size="sm"
+            variant="default"
             onClick={() => setConfirmRegen(true)}
             disabled={generating}
-            className="shrink-0 px-3 py-1 text-xs font-medium text-white bg-amber-600 hover:bg-amber-700 rounded-lg disabled:opacity-50"
+            className="bg-amber-600 hover:bg-amber-700 text-white shrink-0"
           >
             Neu generieren
-          </button>
+          </Button>
         </div>
       )}
 
       {/* Toolbar */}
-      <div className="bg-white border-b px-4 py-2 flex items-center justify-between gap-2">
+      <div className="bg-card border-b px-4 py-2 flex items-center justify-between gap-2">
         <div className="flex items-center gap-3">
-          <span className="text-xs text-gray-400">
+          <span className="text-xs text-muted-foreground">
             letzte Generierung: {formatGeneratedAt(data?.generated_at ?? null)}
           </span>
           {saveStatus === "saving" && (
-            <span className="text-xs text-gray-400">Speichert…</span>
+            <span className="text-xs text-muted-foreground">Speichert…</span>
           )}
           {saveStatus === "saved" && (
-            <span className="text-xs text-green-600">Gespeichert</span>
+            <span className="text-xs text-emerald-600">Gespeichert</span>
           )}
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={handleCopy}
-            className="px-3 py-1.5 text-xs font-medium text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
-          >
-            {copied ? "Kopiert ✓" : "Kopieren"}
-          </button>
-          <button
+          <Button variant="outline" size="sm" onClick={handleCopy}>
+            {copied ? <Check className="size-3.5 text-emerald-600" /> : <Copy className="size-3.5" />}
+            {copied ? "Kopiert" : "Kopieren"}
+          </Button>
+          <Button
+            size="sm"
             onClick={() => setConfirmRegen(true)}
             disabled={generating}
-            className="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg disabled:opacity-50"
           >
+            {generating ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
             {generating ? "Generiere…" : "Neu generieren"}
-          </button>
+          </Button>
         </div>
       </div>
 
-      {/* Editierbares Textarea (Arzt kann Meilenstein manuell korrigieren) */}
+      {/* Editor */}
       <div className="flex-1 overflow-hidden p-4">
-        <textarea
+        <Textarea
           value={data?.content ?? ""}
           onChange={(e) => handleContentChange(e.target.value)}
-          className="w-full h-full resize-none font-mono text-sm text-gray-800 bg-white border border-gray-200 rounded-lg p-4 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full h-full resize-none font-mono"
           spellCheck={false}
         />
       </div>
 
-      {/* Bestätigungs-Modal vor Neu-Generierung (manuelle Änderungen werden überschrieben) */}
-      {confirmRegen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm mx-4 p-6">
-            <h2 className="text-base font-semibold text-gray-900 mb-2">Neu generieren?</h2>
-            <p className="text-sm text-gray-600 mb-6">
+      {/* Confirm-Dialog */}
+      <Dialog open={confirmRegen} onOpenChange={(o) => !o && !generating && setConfirmRegen(false)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Neu generieren?</DialogTitle>
+            <DialogDescription>
               Manuelle Änderungen am Meilenstein werden überschrieben. Fortfahren?
-            </p>
-            {genError && (
-              <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2 mb-4">{genError}</p>
-            )}
-            <div className="flex gap-2 justify-end">
-              <button
-                onClick={() => setConfirmRegen(false)}
-                disabled={generating}
-                className="px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-lg disabled:opacity-50"
-              >
-                Abbrechen
-              </button>
-              <button
-                onClick={doGenerate}
-                disabled={generating}
-                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg disabled:opacity-50"
-              >
-                {generating ? "Generiere…" : "Neu generieren"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+            </DialogDescription>
+          </DialogHeader>
+          {genError && (
+            <p className="text-sm text-destructive bg-destructive/10 rounded-md px-3 py-2">{genError}</p>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmRegen(false)} disabled={generating}>
+              Abbrechen
+            </Button>
+            <Button onClick={doGenerate} disabled={generating}>
+              {generating ? (<><Loader2 className="size-4 animate-spin" /> Generiere…</>) : "Neu generieren"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

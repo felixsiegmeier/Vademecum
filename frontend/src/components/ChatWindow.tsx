@@ -1,4 +1,8 @@
 import { useState, useRef, useEffect, KeyboardEvent } from "react";
+import { Send } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 
 interface Message {
   role: "user" | "assistant";
@@ -45,7 +49,6 @@ export default function ChatWindow() {
 
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split("\n");
-        // Letztes Element könnte ein unvollständiger Chunk sein → für nächste Runde aufheben
         buffer = lines.pop() ?? "";
 
         for (const line of lines) {
@@ -75,35 +78,38 @@ export default function ChatWindow() {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-gray-50">
+    <div className="flex flex-col h-screen bg-background">
       {/* Header */}
-      <div className="bg-white border-b px-6 py-4 shadow-sm">
-        <h1 className="text-lg font-semibold text-gray-800">Arztbrief-Assistent</h1>
+      <div className="bg-card border-b px-6 py-3">
+        <h1 className="text-base font-semibold text-foreground">Arztbrief-Assistent</h1>
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4">
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
         {messages.length === 0 && (
-          <p className="text-center text-gray-400 mt-16">Starte ein Gespräch…</p>
+          <p className="text-center text-sm text-muted-foreground mt-16">
+            Starte ein Gespräch…
+          </p>
         )}
         {messages.map((msg, i) => (
           <div
             key={i}
-            className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+            className={cn("flex", msg.role === "user" ? "justify-end" : "justify-start")}
           >
             <div
-              className={`max-w-[70%] rounded-2xl px-4 py-3 text-sm whitespace-pre-wrap leading-relaxed ${
+              className={cn(
+                "max-w-[85%] rounded-md px-3 py-2 text-sm whitespace-pre-wrap leading-relaxed",
                 msg.role === "user"
-                  ? "bg-blue-600 text-white rounded-br-sm"
-                  : "bg-white text-gray-800 border border-gray-200 rounded-bl-sm shadow-sm"
-              }`}
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-muted/60 text-foreground border",
+              )}
             >
               {msg.content}
               {loading && i === messages.length - 1 && msg.role === "assistant" && msg.content === "" && (
                 <span className="inline-flex gap-1">
-                  <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce [animation-delay:0ms]" />
-                  <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce [animation-delay:150ms]" />
-                  <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce [animation-delay:300ms]" />
+                  <span className="size-1.5 bg-muted-foreground rounded-full animate-bounce [animation-delay:0ms]" />
+                  <span className="size-1.5 bg-muted-foreground rounded-full animate-bounce [animation-delay:150ms]" />
+                  <span className="size-1.5 bg-muted-foreground rounded-full animate-bounce [animation-delay:300ms]" />
                 </span>
               )}
             </div>
@@ -113,10 +119,10 @@ export default function ChatWindow() {
       </div>
 
       {/* Input */}
-      <div className="bg-white border-t px-4 py-4">
-        <div className="flex gap-3 items-end max-w-3xl mx-auto">
-          <textarea
-            className="flex-1 resize-none rounded-xl border border-gray-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent min-h-[48px] max-h-40"
+      <div className="bg-card border-t px-4 py-3">
+        <div className="flex gap-2 items-end max-w-3xl mx-auto">
+          <Textarea
+            className="flex-1 resize-none min-h-[2.5rem] max-h-40"
             rows={1}
             placeholder="Nachricht eingeben… (Enter zum Senden)"
             value={input}
@@ -124,13 +130,13 @@ export default function ChatWindow() {
             onKeyDown={handleKeyDown}
             disabled={loading}
           />
-          <button
+          <Button
             onClick={send}
             disabled={loading || !input.trim()}
-            className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white rounded-xl px-5 py-3 text-sm font-medium transition-colors"
           >
+            <Send className="size-4" />
             Senden
-          </button>
+          </Button>
         </div>
       </div>
     </div>
