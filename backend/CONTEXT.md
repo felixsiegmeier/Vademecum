@@ -84,6 +84,25 @@
 - _BLOCK1_PROMPT_CACHE / _BLOCK2_PROMPT_CACHE laden Prompts einmal beim
   ersten Request. Bei Prompt-Änderung: Backend-Restart nötig.
 
+## Datei-Format-Support (Phase 5)
+
+### /api/uploads — akzeptierte Formate
+Alle Formate werden in die bestehende 2-Pass-Block-1/Block-2-Pipeline eingespeist:
+
+| Format | MIME-Typ | Konvertierung |
+| --- | --- | --- |
+| PDF | application/pdf | Nativ via Gemini PDF-Parts |
+| Bild | image/jpeg, image/png, … | Nativ als Image-Parts |
+| TXT | text/plain | UTF-8 dekodiert (Fallback latin-1) |
+| Markdown | text/markdown | Wie TXT |
+| CSV | text/csv | Markdown-Tabelle via csv stdlib |
+| XLSX | application/vnd.openxmlformats-officedocument.spreadsheetml.sheet | Sheets als Markdown-Tabellen via openpyxl |
+| DOCX | application/vnd.openxmlformats-officedocument.wordprocessingml.document | Absätze + Tabellen als Text via python-docx |
+
+- TXT/MD/CSV/XLSX/DOCX werden als `content_type="text"` an `extract_proposals` übergeben
+- `/api/extract-stammdaten` akzeptiert weiterhin nur PDF + Bilder (`_BINARY_UPLOAD_MIMES`)
+- Unbekannter MIME → HTTP 415
+
 ## Stammdaten-Extraktion (V1.6 Phase 2)
 
 ### StammdatenExtractResult
@@ -93,7 +112,7 @@
 - Service: `agent_stammdaten_extraction.extract_stammdaten(client, file_bytes, mime_type)`
 
 ### POST /api/extract-stammdaten
-- multipart/form-data, akzeptiert PDF + Bilder (gleiche MIME-Allowlist wie /api/uploads)
+- multipart/form-data, akzeptiert nur PDF + Bilder (`_BINARY_UPLOAD_MIMES`, enger als /api/uploads)
 - Single-LLM-Call, JSON-Mode, temperature=0
 - Response: StammdatenExtractResult (alle Felder null wenn kein Patientendokument)
 - Kein Error bei unerkannten Dokumenten — nur null-Felder
