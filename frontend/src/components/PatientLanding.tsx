@@ -1,19 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useLocation } from "react-router-dom";
 import { PatientChatPanel } from "./PatientChatPanel";
 import MeilensteinPanel from "./MeilensteinPanel";
 import BriefPanel from "./BriefPanel";
-
-interface Patient {
-  stammdaten: {
-    id: string;
-    name: string;
-    bettplatz: string | null;
-    aktiv: boolean;
-    aufnahmedatum: string;
-    geburtsdatum?: string;
-  };
-}
+import type { Patient } from "../types";
 
 interface Props {
   onModified: () => void;
@@ -28,6 +18,12 @@ export default function PatientLanding({ onModified }: Props) {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const refreshPatient = useCallback(async () => {
+    if (!id) return;
+    const res = await fetch(`/api/patients/${id}`);
+    if (res.ok) setPatient(await res.json());
+  }, [id]);
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -181,7 +177,14 @@ export default function PatientLanding({ onModified }: Props) {
 
       {/* Content */}
       <div className="flex-1 overflow-hidden">
-        {activeTab === "chat" && <PatientChatPanel patientId={id!} />}
+        {activeTab === "chat" && (
+          <PatientChatPanel
+            patientId={id!}
+            patient={patient}
+            refreshPatient={refreshPatient}
+            onPatientChanged={onModified}
+          />
+        )}
         {activeTab === "meilenstein" && <MeilensteinPanel patientId={id!} />}
         {activeTab === "brief" && <BriefPanel patientId={id!} />}
       </div>
