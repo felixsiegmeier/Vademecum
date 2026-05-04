@@ -1,9 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useNavigate, useParams, useLocation } from "react-router-dom";
+import { useNavigate, useParams, useLocation } from "react-router-dom";
+import { MoreHorizontal, Loader2 } from "lucide-react";
 import { PatientChatPanel } from "./PatientChatPanel";
 import MeilensteinPanel from "./MeilensteinPanel";
 import BriefPanel from "./BriefPanel";
 import type { Patient } from "../types";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
 
 interface Props {
   onModified: () => void;
@@ -95,78 +108,57 @@ export default function PatientLanding({ onModified }: Props) {
     }
   }
 
-  if (loading) return <div className="p-8 text-sm text-gray-400">Lade Patient…</div>;
-  if (notFound) return <div className="p-8 text-sm text-gray-600">Patient nicht gefunden.</div>;
-  if (error) return <div className="p-8 text-sm text-red-600">Fehler beim Laden: {error}</div>;
+  if (loading) return <div className="p-8 text-sm text-muted-foreground">Lade Patient…</div>;
+  if (notFound) return <div className="p-8 text-sm text-foreground">Patient nicht gefunden.</div>;
+  if (error) return <div className="p-8 text-sm text-destructive">Fehler beim Laden: {error}</div>;
   if (!patient) return null;
 
   const { name, bettplatz, aktiv, aufnahmedatum } = patient.stammdaten;
 
+  function handleTabChange(value: string) {
+    if (value === activeTab) return;
+    navigate(`/patients/${id}/${value}`);
+  }
+
   return (
-    <div className="flex flex-col h-screen bg-gray-50">
+    <div className="flex flex-col h-screen bg-background">
       {/* Header */}
-      <div className="bg-white border-b px-6 py-4 shadow-sm">
-        <h1 className="text-xl font-semibold text-gray-900">{name}</h1>
-        <p className="text-sm text-gray-500 mt-0.5">
-          {bettplatz ?? "—"} · {aktiv ? "aktiv" : "inaktiv"} · Aufnahme: {aufnahmedatum}
-        </p>
-      </div>
+      <div className="bg-card border-b px-6 py-3 flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <h1 className="text-lg font-semibold text-foreground truncate">{name}</h1>
+            {!aktiv && (
+              <Badge variant="outline" className="text-[10px]">inaktiv</Badge>
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {bettplatz ?? "—"} · Aufnahme: {aufnahmedatum}
+          </p>
+        </div>
 
-      {/* Tab bar */}
-      <div className="bg-white border-b flex items-center px-4">
-        <Link
-          to={`/patients/${id}/chat`}
-          className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-            activeTab === "chat"
-              ? "border-blue-600 text-blue-600"
-              : "border-transparent text-gray-500 hover:text-gray-700"
-          }`}
-        >
-          Chat
-        </Link>
-        <Link
-          to={`/patients/${id}/meilenstein`}
-          className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-            activeTab === "meilenstein"
-              ? "border-blue-600 text-blue-600"
-              : "border-transparent text-gray-500 hover:text-gray-700"
-          }`}
-        >
-          Meilenstein
-        </Link>
-        <Link
-          to={`/patients/${id}/brief`}
-          className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-            activeTab === "brief"
-              ? "border-blue-600 text-blue-600"
-              : "border-transparent text-gray-500 hover:text-gray-700"
-          }`}
-        >
-          Brief
-        </Link>
-
-        {/* Spacer + action menu */}
-        <div className="ml-auto relative" ref={menuRef}>
-          <button
+        {/* Action menu */}
+        <div className="relative shrink-0" ref={menuRef}>
+          <Button
+            variant="ghost"
+            size="icon-sm"
             onClick={() => setMenuOpen((o) => !o)}
             disabled={actionBusy}
-            className="px-3 py-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg text-lg leading-none disabled:opacity-40"
             title="Patientenaktionen"
           >
-            ⋯
-          </button>
+            <MoreHorizontal className="size-4" />
+          </Button>
           {menuOpen && (
-            <div className="absolute right-0 top-full mt-1 w-52 bg-white border border-gray-200 rounded-xl shadow-lg z-20 py-1">
+            <div className="absolute right-0 top-full mt-1 w-48 bg-popover text-popover-foreground border rounded-md shadow-md z-20 py-1">
               <button
                 onClick={() => handleSetAktiv(!aktiv)}
-                className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground"
               >
                 {aktiv ? "Auf inaktiv setzen" : "Auf aktiv setzen"}
               </button>
-              <div className="border-t border-gray-100 my-1" />
+              <div className="border-t my-1" />
               <button
                 onClick={() => { setMenuOpen(false); setConfirmDelete(true); }}
-                className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+                className="w-full text-left px-3 py-1.5 text-sm text-destructive hover:bg-destructive/10"
               >
                 Patient löschen
               </button>
@@ -175,8 +167,19 @@ export default function PatientLanding({ onModified }: Props) {
         </div>
       </div>
 
+      {/* Tab bar */}
+      <div className="bg-card border-b px-4">
+        <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
+          <TabsList variant="line" className="h-10 bg-transparent">
+            <TabsTrigger value="chat">Chat</TabsTrigger>
+            <TabsTrigger value="meilenstein">Meilenstein</TabsTrigger>
+            <TabsTrigger value="brief">Brief</TabsTrigger>
+          </TabsList>
+        </Tabs>
+      </div>
+
       {/* Content */}
-      <div className="flex-1 overflow-hidden">
+      <div className={cn("flex-1 overflow-hidden", actionBusy && "opacity-50 pointer-events-none")}>
         {activeTab === "chat" && (
           <PatientChatPanel
             patientId={id!}
@@ -190,32 +193,32 @@ export default function PatientLanding({ onModified }: Props) {
       </div>
 
       {/* Delete confirm modal */}
-      {confirmDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm mx-4 p-6">
-            <h2 className="text-base font-semibold text-gray-900 mb-2">Patient löschen?</h2>
-            <p className="text-sm text-gray-600 mb-6">
+      <Dialog open={confirmDelete} onOpenChange={(o) => !o && !actionBusy && setConfirmDelete(false)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Patient löschen?</DialogTitle>
+            <DialogDescription>
               Diese Aktion ist nicht umkehrbar. Patient, Meilenstein und Uploads werden gelöscht.
-            </p>
-            <div className="flex gap-2 justify-end">
-              <button
-                onClick={() => setConfirmDelete(false)}
-                disabled={actionBusy}
-                className="px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-lg disabled:opacity-50"
-              >
-                Abbrechen
-              </button>
-              <button
-                onClick={handleDelete}
-                disabled={actionBusy}
-                className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg disabled:opacity-50"
-              >
-                {actionBusy ? "Löschen…" : "Löschen"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setConfirmDelete(false)}
+              disabled={actionBusy}
+            >
+              Abbrechen
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDelete}
+              disabled={actionBusy}
+            >
+              {actionBusy ? (<><Loader2 className="size-4 animate-spin" />Löschen…</>) : "Löschen"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
