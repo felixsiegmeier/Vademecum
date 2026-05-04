@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ChevronDown, ChevronRight, AlertCircle, Pencil, FileText } from "lucide-react";
 import {
   type ArgsRecord,
   type ArgValue,
@@ -10,6 +11,20 @@ import {
   TOOL_LABELS,
 } from "../types";
 import { resolveById } from "../utils/resolveById";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { cn } from "@/lib/utils";
 
 interface Props {
   proposal: Proposal;
@@ -74,24 +89,22 @@ interface ArgFieldProps {
 
 function ArgField({ argKey, value, onChange, readOnly, isStammdatenFeld, stammdatenFeldContext }: ArgFieldProps) {
   const ro = readOnly || READONLY_KEYS.has(argKey) || isStammdatenFeld;
-  const label = (
-    <label className="block text-xs font-medium text-gray-600 mb-0.5">{argKey}</label>
+  const labelEl = (
+    <Label className="text-xs font-medium text-muted-foreground mb-1">{argKey}</Label>
   );
 
   // Boolean (update_status.aktiv)
   if (typeof value === "boolean") {
     return (
-      <div>
-        {label}
-        <label className="inline-flex items-center gap-2 text-xs">
-          <input
-            type="checkbox"
+      <div className="space-y-1">
+        {labelEl}
+        <label className="flex items-center gap-2 text-sm">
+          <Checkbox
             checked={value}
             disabled={ro}
-            onChange={(e) => onChange(argKey, e.target.checked)}
-            className="accent-blue-600"
+            onCheckedChange={(v) => onChange(argKey, v === true)}
           />
-          <span className="text-gray-700">{value ? "aktiv" : "inaktiv"}</span>
+          <span>{value ? "aktiv" : "inaktiv"}</span>
         </label>
       </div>
     );
@@ -100,20 +113,24 @@ function ArgField({ argKey, value, onChange, readOnly, isStammdatenFeld, stammda
   // Therapie-Kategorie als Select
   if (argKey === "kategorie") {
     return (
-      <div>
-        {label}
-        <select
+      <div className="space-y-1">
+        {labelEl}
+        <Select
           value={String(value ?? "")}
           disabled={ro}
-          onChange={(e) => onChange(argKey, e.target.value)}
-          className="w-full rounded border border-gray-300 px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:bg-gray-100 disabled:text-gray-500"
+          onValueChange={(v) => onChange(argKey, v)}
         >
-          {Object.entries(THERAPIE_KATEGORIEN).map(([key, meta]) => (
-            <option key={key} value={key}>
-              {meta.label}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {Object.entries(THERAPIE_KATEGORIEN).map(([key, meta]) => (
+              <SelectItem key={key} value={key}>
+                {meta.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
     );
   }
@@ -123,10 +140,10 @@ function ArgField({ argKey, value, onChange, readOnly, isStammdatenFeld, stammda
   // Source-Quote oder andere read-only Felder grau anzeigen
   if (ro) {
     return (
-      <div>
-        {label}
-        <div className="w-full rounded border border-gray-200 bg-gray-100 px-2 py-1 text-xs text-gray-500 whitespace-pre-wrap break-words min-h-[1.5rem]">
-          {stringValue || <span className="italic text-gray-400">(leer)</span>}
+      <div className="space-y-1">
+        {labelEl}
+        <div className="w-full rounded-md border bg-muted/40 px-2.5 py-1.5 text-xs text-muted-foreground whitespace-pre-wrap break-words min-h-[1.5rem]">
+          {stringValue || <span className="italic">(leer)</span>}
         </div>
       </div>
     );
@@ -136,43 +153,45 @@ function ArgField({ argKey, value, onChange, readOnly, isStammdatenFeld, stammda
   if (argKey === "wert" && stammdatenFeldContext) {
     if (stammdatenFeldContext === "geschlecht") {
       return (
-        <div>
-          {label}
-          <select
+        <div className="space-y-1">
+          {labelEl}
+          <Select
             value={stringValue}
-            onChange={(e) => onChange(argKey, e.target.value)}
-            className="w-full rounded border border-gray-300 px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
+            onValueChange={(v) => onChange(argKey, v)}
           >
-            <option value="m">m — männlich</option>
-            <option value="w">w — weiblich</option>
-            <option value="d">d — divers</option>
-          </select>
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="—" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="m">m — männlich</SelectItem>
+              <SelectItem value="w">w — weiblich</SelectItem>
+              <SelectItem value="d">d — divers</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       );
     }
     if (stammdatenFeldContext === "geburtsdatum" || stammdatenFeldContext === "aufnahmedatum") {
       return (
-        <div>
-          {label}
-          <input
+        <div className="space-y-1">
+          {labelEl}
+          <Input
             type="date"
             value={stringValue}
             onChange={(e) => onChange(argKey, e.target.value)}
-            className="w-full rounded border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
           />
         </div>
       );
     }
     if (stammdatenFeldContext === "aufnahme_quelle") {
       return (
-        <div>
-          {label}
-          <input
+        <div className="space-y-1">
+          {labelEl}
+          <Input
             type="text"
             value={stringValue}
             placeholder="z.B. elektiv, notfall, extern"
             onChange={(e) => onChange(argKey, e.target.value)}
-            className="w-full rounded border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
           />
         </div>
       );
@@ -181,13 +200,12 @@ function ArgField({ argKey, value, onChange, readOnly, isStammdatenFeld, stammda
 
   if (isDateKey(argKey)) {
     return (
-      <div>
-        {label}
-        <input
+      <div className="space-y-1">
+        {labelEl}
+        <Input
           type="date"
           value={stringValue}
           onChange={(e) => onChange(argKey, e.target.value)}
-          className="w-full rounded border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
         />
       </div>
     );
@@ -195,40 +213,41 @@ function ArgField({ argKey, value, onChange, readOnly, isStammdatenFeld, stammda
 
   if (stringValue.length > 60) {
     return (
-      <div>
-        {label}
-        <textarea
+      <div className="space-y-1">
+        {labelEl}
+        <Textarea
           value={stringValue}
           rows={3}
           onChange={(e) => onChange(argKey, e.target.value)}
-          className="w-full rounded border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 resize-none"
+          className="resize-none"
         />
       </div>
     );
   }
 
   return (
-    <div>
-      {label}
-      <input
+    <div className="space-y-1">
+      {labelEl}
+      <Input
         type="text"
         value={stringValue}
         onChange={(e) => onChange(argKey, e.target.value)}
-        className="w-full rounded border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
       />
     </div>
   );
 }
 
-function colorForType(type: Proposal["type"], selected: boolean): string {
-  if (!selected) return "border-gray-200 bg-gray-50 opacity-50";
+function styleForType(type: Proposal["type"], selected: boolean): string {
+  if (!selected) {
+    return "border-border bg-muted/20 opacity-60";
+  }
   switch (type) {
     case "delete":
-      return "border-red-200 bg-red-50";
+      return "border-destructive/30 bg-destructive/5";
     case "update":
-      return "border-amber-200 bg-amber-50";
+      return "border-amber-300 bg-amber-50/60";
     default:
-      return "border-blue-200 bg-blue-50";
+      return "border-blue-200 bg-blue-50/40";
   }
 }
 
@@ -271,13 +290,13 @@ export default function ProposalCard({
       const meta = THERAPIE_KATEGORIEN[kat];
       if (meta) {
         kategorieBadge = (
-          <span className={`ml-2 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${meta.color}`}>
+          <Badge variant="secondary" className="ml-2">
             {meta.label}
-          </span>
+          </Badge>
         );
       }
     }
-    mainContent = <span className="text-gray-600">{shorten(getMainTextFromAdd(localArgs, tool))}</span>;
+    mainContent = <span className="text-foreground/70">{shorten(getMainTextFromAdd(localArgs, tool))}</span>;
   } else if (proposal.type === "update_singleton" && proposal.call) {
     const { tool, args } = proposal.call;
     sourceQuote = String(args.source_quote ?? "");
@@ -286,12 +305,11 @@ export default function ProposalCard({
       const feld = String(args.feld ?? "");
       const wert = String(args.wert ?? "");
       const label = STAMMDATEN_FELD_LABELS[feld] ?? feld;
-      mainContent = <span className="text-gray-600">{shorten(`${label}: ${wert}`)}</span>;
+      mainContent = <span className="text-foreground/70">{shorten(`${label}: ${wert}`)}</span>;
     } else {
       header = TOOL_LABELS[tool] ?? tool;
-      // Use localArgs so live edits reflect in the header text
       const previewCall: ToolCall = { tool, args: { ...args, ...localArgs } };
-      mainContent = <span className="text-gray-600">{shorten(getSingletonMainText(previewCall))}</span>;
+      mainContent = <span className="text-foreground/70">{shorten(getSingletonMainText(previewCall))}</span>;
     }
   } else if (proposal.type === "update" && proposal.add_call && proposal.delete_call) {
     const addTool = proposal.add_call.tool;
@@ -302,9 +320,9 @@ export default function ProposalCard({
       const meta = THERAPIE_KATEGORIEN[kat];
       if (meta) {
         kategorieBadge = (
-          <span className={`ml-2 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${meta.color}`}>
+          <Badge variant="secondary" className="ml-2">
             {meta.label}
-          </span>
+          </Badge>
         );
       }
     }
@@ -313,20 +331,20 @@ export default function ProposalCard({
     const newText = getMainTextFromAdd(localArgs, addTool);
     if (resolved) {
       mainContent = (
-        <span className="text-gray-600">
-          <span className="line-through text-gray-400">{shorten(resolved.text)}</span>
-          <span className="mx-1.5 text-gray-400">→</span>
-          <span className="font-medium text-gray-800">{shorten(newText)}</span>
+        <span className="text-foreground/70">
+          <span className="line-through text-muted-foreground">{shorten(resolved.text)}</span>
+          <span className="mx-1.5 text-muted-foreground">→</span>
+          <span className="font-medium text-foreground">{shorten(newText)}</span>
         </span>
       );
     } else {
       mainContent = (
-        <span className="text-gray-600">
-          <span className="italic text-gray-400 line-through">
+        <span className="text-foreground/70">
+          <span className="italic text-muted-foreground line-through">
             Eintrag …{oldId.slice(-6)} (nicht im Stand auffindbar)
           </span>
-          <span className="mx-1.5 text-gray-400">→</span>
-          <span className="font-medium text-gray-800">{shorten(newText)}</span>
+          <span className="mx-1.5 text-muted-foreground">→</span>
+          <span className="font-medium text-foreground">{shorten(newText)}</span>
         </span>
       );
     }
@@ -339,15 +357,15 @@ export default function ProposalCard({
       ? `${TOOL_LABELS["delete_entry"]} — ${resolved.section}`
       : TOOL_LABELS["delete_entry"];
     mainContent = resolved ? (
-      <span className="line-through text-gray-500">{shorten(resolved.text)}</span>
+      <span className="line-through text-muted-foreground">{shorten(resolved.text)}</span>
     ) : (
-      <span className="italic text-gray-400">
+      <span className="italic text-muted-foreground">
         Eintrag …{oldId.slice(-6)} <span>(nicht im Stand auffindbar)</span>
       </span>
     );
   }
 
-  const colorClass = colorForType(proposal.type, selected);
+  const styleClass = styleForType(proposal.type, selected);
   const isUpdate = proposal.type === "update";
 
   // Diff-View-Daten für Update-Gruppen
@@ -359,43 +377,51 @@ export default function ProposalCard({
     : "";
 
   return (
-    <div className={`rounded-lg border text-sm transition-colors ${colorClass}`}>
+    <div className={cn("rounded-md border text-sm transition-colors", styleClass, failedSummary && "border-destructive/40")}>
       {/* Header row */}
       <div className="flex items-start gap-2 px-3 py-2">
-        <input
-          type="checkbox"
+        <Checkbox
           checked={selected}
-          onChange={onToggle}
-          className="mt-0.5 shrink-0 accent-blue-600"
+          onCheckedChange={onToggle}
+          className="mt-0.5"
         />
         <div className="flex-1 min-w-0">
           <div className="flex items-baseline">
-            <span className="font-medium text-gray-800">{header}</span>
+            <span className="font-medium text-foreground">{header}</span>
             {kategorieBadge}
           </div>
           {mainContent && <div className="mt-0.5 truncate">{mainContent}</div>}
         </div>
         <div className="flex gap-1 shrink-0">
-          <button
+          <Button
+            variant="ghost"
+            size="xs"
             onClick={() => setExpanded((v) => !v)}
-            className="rounded px-2 py-0.5 text-xs text-blue-600 hover:bg-blue-100"
+            className="text-primary"
           >
-            {expanded ? "Schließen" : isUpdate ? "Details" : proposal.type === "delete" ? "Details" : "Bearbeiten"}
-          </button>
+            {expanded ? <ChevronDown className="size-3.5" /> : <Pencil className="size-3.5" />}
+            <span className="ml-1">
+              {expanded ? "Schließen" : isUpdate ? "Details" : proposal.type === "delete" ? "Details" : "Bearbeiten"}
+            </span>
+          </Button>
           {sourceQuote && (
-            <button
+            <Button
+              variant="ghost"
+              size="xs"
               onClick={() => setShowQuote((v) => !v)}
-              className="rounded px-2 py-0.5 text-xs text-gray-500 hover:bg-gray-200"
+              className="text-muted-foreground"
             >
-              {showQuote ? "▲ Quelle" : "▼ Quelle"}
-            </button>
+              {showQuote ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+              <FileText className="size-3.5" />
+              <span className="ml-1">Quelle</span>
+            </Button>
           )}
         </div>
       </div>
 
       {/* Edit / details mode */}
       {expanded && (
-        <div className="border-t border-black/5 px-3 py-2 space-y-2">
+        <div className="border-t px-3 py-2 space-y-2 bg-background/40">
 
           {/* delete: ID + source_quote read-only */}
           {proposal.type === "delete" && proposal.call && (
@@ -445,26 +471,26 @@ export default function ProposalCard({
             <>
               {/* Bisheriger Eintrag */}
               <div>
-                <p className="text-xs font-medium text-red-600/80 mb-0.5">Bisheriger Eintrag</p>
+                <p className="text-xs font-medium text-destructive/80 mb-1">Bisheriger Eintrag</p>
                 {diffOldText !== null ? (
-                  <div className="w-full rounded border border-red-200 bg-red-50 px-2 py-1.5 text-xs text-gray-500 whitespace-pre-wrap break-words">
+                  <div className="w-full rounded-md border border-destructive/20 bg-destructive/5 px-2.5 py-1.5 text-xs text-muted-foreground whitespace-pre-wrap break-words">
                     <s>{diffOldText}</s>
                   </div>
                 ) : (
-                  <div className="text-xs italic text-gray-400">
+                  <div className="text-xs italic text-muted-foreground">
                     Eintrag …{diffOldId.slice(-6)} nicht im aktuellen Stand auffindbar.
                   </div>
                 )}
               </div>
 
               {/* Neuer Eintrag (Merge, bearbeitbar) */}
-              <div>
-                <p className="text-xs font-medium text-blue-600 mb-0.5">Neuer Eintrag (Merge)</p>
-                <textarea
+              <div className="space-y-1">
+                <Label className="text-xs font-medium text-primary mb-1">Neuer Eintrag (Merge)</Label>
+                <Textarea
                   value={String(localArgs.text ?? proposal.add_call.args.text ?? "")}
                   rows={4}
                   onChange={(e) => handleArgChange("text", e.target.value)}
-                  className="w-full rounded border border-blue-200 bg-blue-50 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 resize-none"
+                  className="resize-none border-primary/30 bg-primary/5"
                 />
               </div>
 
@@ -489,16 +515,17 @@ export default function ProposalCard({
 
       {/* Source quote */}
       {showQuote && sourceQuote && (
-        <div className="border-t border-black/5 px-3 py-2">
-          <p className="text-xs text-gray-400 mb-0.5">Quelle:</p>
-          <p className="text-xs italic text-gray-500 whitespace-pre-wrap">{sourceQuote}</p>
+        <div className="border-t px-3 py-2 bg-background/40">
+          <p className="text-xs text-muted-foreground mb-1">Quelle:</p>
+          <p className="text-xs italic text-muted-foreground whitespace-pre-wrap">{sourceQuote}</p>
         </div>
       )}
 
       {/* Apply-Fehler inline */}
       {failedSummary && (
-        <div className="border-t border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-          ⚠ {failedSummary}
+        <div className="border-t border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive flex items-center gap-1.5">
+          <AlertCircle className="size-3.5 shrink-0" />
+          <span>{failedSummary}</span>
         </div>
       )}
     </div>
