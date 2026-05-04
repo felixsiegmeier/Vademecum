@@ -1,9 +1,9 @@
 from datetime import date
 from pathlib import Path
-from typing import Literal
+from typing import AsyncGenerator, Literal
 
 import yaml
-from openai import APIStatusError
+from openai import APIConnectionError, APIStatusError, RateLimitError
 
 from agent_extraction_core import (
     MAX_ITERATIONS_BLOCK_1,
@@ -12,6 +12,7 @@ from agent_extraction_core import (
     Proposal,
     group_proposals,
     run_pass,
+    run_pass_streaming,
 )
 from agent_tools import (
     ADD_VERLAUFSEINTRAG_SCHEMA,
@@ -153,3 +154,109 @@ async def extract_proposals(
     )
 
     return group_proposals(pass1_iters + pass2_iters)
+
+
+async def extract_proposals_streaming(
+    llm,
+    patient,
+    content: str | bytes,
+    content_type: Literal["pdf", "image", "text"],
+    image_mime_type: str = "image/jpeg",
+) -> AsyncGenerator[dict, None]:
+    """2-Pass-Extraktion mit Live-Event-Stream (NDJSON über chunked HTTP).
+
+    Yields in order: status → heartbeat → proposals (per block) → done.
+    On error: yields an error event and returns immediately (no resume).
+
+    Why NDJSON instead of SSE: this endpoint is POST (file upload). The browser's
+    EventSource API only supports GET/HEAD, so SSE is not applicable here.
+    """
+    if content_type == "text":
+        user_messages = [{"role": "user", "content": content}]
+    elif content_type == "pdf":
+        assert isinstance(content, bytes)
+        user_messages = [{"role": "user", "content": file_to_content_parts(content, "application/pdf")}]
+    else:  # image
+        assert isinstance(content, bytes)
+        user_messages = [{"role": "user", "content": file_to_content_parts(content, image_mime_type)}]
+
+    block1_system = _build_block1_system(patient)
+    block2_system = _build_block2_system(patient)
+    total_proposals = 0
+
+    # Pass 1: themen-quer — catch APIStatusError for PDF-fallback to images
+    try:
+        async for event in run_pass_streaming(
+            llm=llm,
+            system_prompt=block1_system,
+            user_messages=user_messages,
+            tools=_PASS1_TOOLS,
+            thinking_budget=THINKING_BUDGET_BLOCK_1,
+            phase="block1",
+            max_iterations=MAX_ITERATIONS_BLOCK_1,
+            pass_name="Block1",
+        ):
+            if event.get("type") == "error":
+                yield event
+                return
+            yield event
+            if event["type"] == "proposals":
+                total_proposals += len(event["items"])
+    except APIStatusError:
+        if content_type != "pdf":
+            yield {"type": "error", "message": "LLM API error in Block1", "retryable": False}
+            return
+        # PDF-Fallback: Seiten als PNG-Bilder
+        assert isinstance(content, bytes)
+        user_messages = [{"role": "user", "content": convert_pdf_to_image_parts(content)}]
+        total_proposals = 0
+        try:
+            async for event in run_pass_streaming(
+                llm=llm,
+                system_prompt=block1_system,
+                user_messages=user_messages,
+                tools=_PASS1_TOOLS,
+                thinking_budget=THINKING_BUDGET_BLOCK_1,
+                phase="block1",
+                max_iterations=MAX_ITERATIONS_BLOCK_1,
+                pass_name="Block1-fallback",
+            ):
+                if event.get("type") == "error":
+                    yield event
+                    return
+                yield event
+                if event["type"] == "proposals":
+                    total_proposals += len(event["items"])
+        except (APIStatusError, RateLimitError, APIConnectionError) as e:
+            yield {"type": "error", "message": str(e), "retryable": False}
+            return
+    except RateLimitError as e:
+        yield {"type": "error", "message": f"Rate-Limit erreicht: {e}", "retryable": True}
+        return
+    except APIConnectionError as e:
+        yield {"type": "error", "message": f"LLM nicht erreichbar: {e}", "retryable": True}
+        return
+
+    # Pass 2: chronologisch
+    try:
+        async for event in run_pass_streaming(
+            llm=llm,
+            system_prompt=block2_system,
+            user_messages=user_messages,
+            tools=_PASS2_TOOLS,
+            thinking_budget=THINKING_BUDGET_BLOCK_2,
+            phase="block2",
+            max_tokens=16384,
+            pass_name="Block2",
+        ):
+            if event.get("type") == "error":
+                yield event
+                return
+            yield event
+            if event["type"] == "proposals":
+                total_proposals += len(event["items"])
+    except (APIStatusError, RateLimitError, APIConnectionError) as e:
+        yield {"type": "error", "message": str(e), "retryable": False}
+        return
+
+    yield {"type": "done", "total_proposals": total_proposals, "auto_skipped": total_proposals == 0}
