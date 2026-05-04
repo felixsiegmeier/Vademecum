@@ -1,4 +1,4 @@
-# Backend Context — Stand 2026-05-04 (Phase D Iter 3 — Streaming Proposals)
+# Backend Context — Stand 2026-05-05 (Phase E — FE shadcn/ui-Migration)
 
 ## Pydantic-Modelle (kompakt)
 
@@ -252,8 +252,56 @@ POST /api/patients/{id}/apply-proposals
 
 ### Chat-Markdown-Rendering
 - `react-markdown` für Assistant-Replies in `PatientChatPanel` (`chat-text` role=assistant)
-- Tailwind utility classes statt `@tailwindcss/typography` (nicht installiert)
+- `prose prose-sm` ohne `@tailwindcss/typography`-Plugin (Tailwind 4 default genügt)
 - User-Messages: weiterhin `whitespace-pre-wrap`
+
+## Frontend-Stack (Phase E — shadcn/ui)
+
+### Tooling
+- **Tailwind 4** via `@tailwindcss/vite`-Plugin (kein PostCSS, kein `tailwind.config.js`).
+  Theme + CSS-Variablen liegen komplett in `frontend/src/index.css` via `@theme inline`.
+- **shadcn/ui v4.6** mit `radix-nova`-Preset (Radix-UI primitives, Geist Variable Font,
+  Lucide-Icons). `components.json` definiert Pfad-Aliase (`@/components/ui`, `@/lib/utils`).
+- **Path-Alias `@/*`** in `tsconfig.json` + `vite.config.ts`.
+- Komponenten in `frontend/src/components/ui/`: button, card, dialog, input, textarea,
+  select, checkbox, separator, badge, tooltip, scroll-area, sonner, tabs, skeleton,
+  avatar, label.
+
+### Design-Tokens (`index.css`)
+- Light-only (kein Dark-Mode-Toggle, klinik-tageslicht).
+- Slate-tinted Neutrals (chroma 0.003–0.046 in OKLCH-Blau-Achse).
+- Primary = blue-600 (`oklch(0.546 0.215 262.881)`).
+- `--radius: 0.5rem` (medium, weniger consumer-y als shadcn-Default).
+- Compact density: Button-Default `h-8`, Input `h-8`, Card-Padding `p-4`,
+  Section-Spacing `space-y-3`/`space-y-4`.
+
+### Toasts
+- **Sonner** (`@/components/ui/sonner`) statt eigener `Toast.tsx` (gelöscht).
+- Toaster auf App-Root außerhalb Dialog-Subtrees gemountet
+  → behält Stacking-Context-Vertrag bei (Toasts erscheinen über Dialog-Backdrop).
+- API: `toast.success/error/warning/info(text)`.
+
+### Komponenten-Migration (1:1 visual, State-Logic unangetastet)
+- **ProposalCard**: Checkbox/Input/Textarea/Select/Label/Badge/Button, Border-Tinting
+  per Proposal-Type (delete=destructive, update=amber, add=blue) bei `selected`,
+  muted-grau bei deselected. Diff-View für update-Gruppen.
+- **PatientChatPanel**: Chat-Bubbles (User=primary, AI=muted+border), `prose prose-sm`
+  für Markdown, Sticky Live-Bar (`amber-50` + Loader2), Apply-Bar als gerader
+  primary-Button-Footer, Mismatch-Modal als shadcn Dialog mit `AlertTriangle` (amber).
+- **NewPatientDialog**: shadcn Dialog, Input/Select/Label-Form, Drop-Zone als
+  gestrichelte Card mit Upload-Icon und Loader2 während Stammdaten-Extract.
+- **Sidebar**: Compact-Liste mit `border-l-2 border-primary` für aktive Patienten,
+  ScrollArea, Filter-Tabs als Button-Pair, "+Neu" als ghost-Button.
+- **PatientLanding**: shadcn Tabs (variant=line) für Chat/Meilenstein/Brief mit
+  navigation-driven `onValueChange`. Delete-Confirm als Dialog mit destructive-Button.
+- **BriefPanel/MeilensteinPanel**: Lucide-Icons für Toolbar (Copy/Check/RefreshCw),
+  Stale-Banner amber-50, Regen-Confirm als Dialog.
+
+### Bewusst NICHT migriert
+- Globaler App-Header (h-12, App-Name + Avatar): Single-User-App, jeder Page-Header
+  würde dupliziert werden → visueller Lärm. Sidebar enthält Branding-Pfad.
+- DropdownMenu-Komponente (nicht im Order-Scope) → Patient-Action-Menü als
+  einfacher absolute-positioned Toggle mit shadcn-getunten Klassen.
 
 ### Datenschutz-Hinweis: backend/data/ Git-History
 - Commit `5dbb7ba` entfernte Patientendaten aus Tracking (nur `.gitkeep` im Index)
@@ -261,4 +309,4 @@ POST /api/patients/{id}/apply-proposals
 - Cleanup: `git filter-repo` oder GitHub Support notwendig (Felix-Entscheidung ausstehend)
 
 ## Test-Stand
-124 passed in 0.86s
+126 passed in 0.89s
