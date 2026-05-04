@@ -1,4 +1,4 @@
-# Backend Context — Stand 2026-05-03 (V1.6 Phase 3.5 Iter v2 + 4)
+# Backend Context — Stand 2026-05-04 (V1.6 Phase 3.5 Iter v2 Patches C/D/E)
 
 ## Pydantic-Modelle (kompakt)
 
@@ -64,12 +64,18 @@
 - THINKING_BUDGET_BLOCK_2 = 1024
 
 ## Prompt-Files
-- extraction_block1.txt (Iter 5): 9-Kategorie-Tag-Set inkl. `bedside`,
-  ANTI-CONFOUND-Klausel als Priorität 1 (verhindert Lehrer-Bias bei
-  Patientenübersicht-Sektionen), klinisch geschärfte Diagnose-Klassifikation
-  mit konkreten Beispielen, Therapie-Recall-Verstärkung (alle AB-Linien,
-  pharma. Hauptlinien, Bedside-Eingriffe), Befund-Recall-Liste (TEE, HIT,
-  PAK-Messungen, Bronchoskopie-Befunde), Anamnese-Vollständigkeitsklausel
+- extraction_block1.txt (Iter 5 + Patches C/D/E):
+  - 9-Kategorie-Tag-Set inkl. `bedside`, ANTI-CONFOUND-Klausel als Priorität 1
+  - Klinisch geschärfte Diagnose-Klassifikation mit konkreten Beispielen
+  - Therapie-Recall-Verstärkung (alle AB-Linien, pharma. Hauptlinien, Bedside)
+  - Befund-Recall-Liste (TEE, HIT, PAK-Messungen, Bronchoskopie-Befunde)
+  - Anamnese-Vollständigkeitsklausel
+  - **Patch C:** Aufnahmedatum-Klausel — stationäre/ITS-Aufnahme im DHZC, NICHT
+    ambulantes Aufnahmegespräch/Sprechstunde; bei Doppelterminen: späteres Datum
+  - **Patch D:** Vorerkrankungen-Granularität — jede Vorerkrankung als eigenes
+    `add_vorbekannte_diagnose`-Item (NICHT clustern); Negativ-Beispiel mit 7er-Liste
+  - **Patch E:** Therapie-`ende`-Differenzierung — `ende` nur bei explizit
+    dokumentierter Beendigung; wenn Therapie am letzten Doku-Tag noch läuft → `ende: null`
 - extraction_block2.txt (Iter v2): Verlaufseintrag-Generierung mit
   Konvergenz-Prinzip, 8 MUSS/SOLL/KANN-Dimensionen als Prüfliste,
   Mittelweg-Redundanz, 3 klinische Beispiele inkl. Mikrobio-Trigger-Merge
