@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 from openai import APIConnectionError, APIStatusError, RateLimitError
 from pydantic import BaseModel
 from agent_tools import TOOL_FUNCTIONS
-from agent_document_extraction import extract_proposals
+from agent_document_extraction import extract_proposals, extract_proposals_streaming
 from agent_extraction_core import Proposal
 from agent_patient_chat import CHAT_2PASS_CUTOFF, run_single_pass_chat
 from agent_stammdaten_extraction import StammdatenExtractResult, extract_stammdaten
@@ -730,10 +730,12 @@ async def upload_document(
     patient_id: str | None = Form(None),
 ):
     """
-    2-Pass-basierter Upload-Endpoint.
-    Analysiert ein Dokument und gibt Proposals zurück — führt sie NICHT aus.
-    patient_id optional: Patientenstand wird als Kongruenz-Kontext mitgegeben.
-    Auto-Skip wenn 0 Proposals.
+    Streaming-Upload-Endpoint (NDJSON, chunked HTTP).
+    Analysiert ein Dokument per 2-Pass-Extraktion und streamt Events zurück:
+    status → heartbeats → proposals (pro Iteration) → done (oder error).
+    patient_id optional: Patientenstand als Kongruenz-Kontext.
+
+    NDJSON statt SSE: POST-Upload, EventSource (nur GET/HEAD) nicht verwendbar.
     """
     mime_type = file.content_type or "application/octet-stream"
     if mime_type not in ALLOWED_UPLOAD_MIMES:
@@ -769,42 +771,17 @@ async def upload_document(
     else:
         raise HTTPException(415, f"Nicht unterstützter Dateityp: {mime_type}")
 
-    try:
-        proposals = await extract_proposals(
+    async def ndjson_stream():
+        async for event in extract_proposals_streaming(
             llm, patient, file_content, content_type, image_mime_type=mime_type
-        )
-    except RateLimitError:
-        raise HTTPException(429, "LLM Rate-Limit erreicht. Bitte kurz warten.")
-    except APIConnectionError as e:
-        raise HTTPException(503, f"LLM nicht erreichbar: {e}")
-    except APIStatusError as e:
-        raise HTTPException(502, f"LLM API Fehler {e.status_code}: {e.message}")
-    except RuntimeError as e:
-        if "LLM provider instability" in str(e):
-            return JSONResponse(
-                status_code=503,
-                content={"error": "API-Instabilität (Gemini PDF-Drop). Bitte Upload erneut starten.", "retryable": True},
-            )
-        raise
+        ):
+            yield json.dumps(event, ensure_ascii=False) + "\n"
 
-    if not proposals:
-        return JSONResponse(
-            content={
-                "proposals": [],
-                "auto_skipped": True,
-                "message": "Keine Änderungen vorgeschlagen.",
-                "patient_id": patient_id,
-            },
-            media_type="application/json; charset=utf-8",
-        )
-
-    return JSONResponse(
-        content={
-            "proposals": [p.model_dump() for p in proposals],
-            "auto_skipped": False,
-            "patient_id": patient_id,
-        },
-        media_type="application/json; charset=utf-8",
+    return StreamingResponse(
+        ndjson_stream(),
+        media_type="application/x-ndjson",
+        # Prevent Nginx from buffering the stream in reverse-proxy setups (e.g. Charité)
+        headers={"X-Accel-Buffering": "no"},
     )
 
 
