@@ -1,6 +1,25 @@
 import { useRef, useState } from "react";
+import { Upload, Loader2, Paperclip } from "lucide-react";
 import { toast } from "sonner";
 import { setPendingFile } from "../pendingFileStore";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { cn } from "@/lib/utils";
 
 interface Props {
   open: boolean;
@@ -56,8 +75,6 @@ export default function NewPatientDialog({ open, onClose, onCreated }: Props) {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  if (!open) return null;
-
   function setField<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((f) => ({ ...f, [key]: value }));
     setErrors((e) => ({ ...e, [key]: undefined }));
@@ -92,11 +109,9 @@ export default function NewPatientDialog({ open, onClose, onCreated }: Props) {
       const allNull = Object.values(data).every((v) => v === null);
       if (allNull) {
         toast.info("Keine Stammdaten im Dokument erkannt — bitte manuell eingeben.");
-        // File verworfen — kein Auto-Forward in die Proposals-Pipeline
         return;
       }
 
-      // Felder mit extrahierten Werten befüllen; bestehende manuelle Eingaben nicht überschreiben
       setForm((prev) => ({
         ...prev,
         name: data.name ?? prev.name,
@@ -173,224 +188,233 @@ export default function NewPatientDialog({ open, onClose, onCreated }: Props) {
     setSubmitError(null);
   }
 
-  function handleClose() {
-    if (isExtracting || isSubmitting) return;
-    handleReset();
-    onClose();
+  function handleOpenChange(nextOpen: boolean) {
+    if (!nextOpen) {
+      if (isExtracting || isSubmitting) return;
+      handleReset();
+      onClose();
+    }
   }
 
   return (
-    <>
-      <div
-        className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
-        onClick={(e) => e.target === e.currentTarget && handleClose()}
-      >
-        <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4 overflow-hidden max-h-[90vh] flex flex-col">
-          {/* Header */}
-          <div className="px-6 py-4 border-b border-gray-200 shrink-0">
-            <h2 className="text-base font-semibold text-gray-900">Neuer Patient</h2>
-          </div>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent className="sm:max-w-md max-h-[90vh] flex flex-col gap-0 p-0 overflow-hidden">
+        <DialogHeader className="px-6 py-4 border-b shrink-0">
+          <DialogTitle>Neuer Patient</DialogTitle>
+        </DialogHeader>
 
-          <form onSubmit={handleSubmit} noValidate className="flex flex-col overflow-hidden">
-            <div className="px-6 py-4 space-y-4 overflow-y-auto">
-              {/* Upload-Bereich */}
-              <div>
-                <p className="text-sm text-gray-500 mb-2">
-                  Optional: Dokument hochladen, um Felder automatisch zu befüllen.
-                </p>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".pdf,.jpg,.jpeg,.png"
-                  className="hidden"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) handleFileSelected(file);
-                    e.target.value = "";
-                  }}
-                />
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={isExtracting || isSubmitting}
-                  className="w-full rounded-lg border-2 border-dashed border-gray-300 px-4 py-4 text-sm text-gray-500 hover:border-blue-400 hover:text-blue-500 transition-colors disabled:opacity-50"
-                >
-                  {isExtracting ? (
-                    <span className="text-blue-500">Stammdaten werden gelesen…</span>
-                  ) : pendingFile ? (
-                    <span className="text-gray-800 font-medium">📎 {pendingFile.name}</span>
-                  ) : (
-                    "PDF, JPG oder PNG auswählen…"
-                  )}
-                </button>
-                {uploadError && (
-                  <p className="mt-1 text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">
-                    {uploadError}
-                  </p>
+        <form onSubmit={handleSubmit} noValidate className="flex flex-col overflow-hidden flex-1">
+          <div className="px-6 py-4 space-y-4 overflow-y-auto">
+            {/* Upload-Bereich */}
+            <div>
+              <p className="text-sm text-muted-foreground mb-2">
+                Optional: Dokument hochladen, um Felder automatisch zu befüllen.
+              </p>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf,.jpg,.jpeg,.png"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleFileSelected(file);
+                  e.target.value = "";
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isExtracting || isSubmitting}
+                className={cn(
+                  "w-full rounded-md border-2 border-dashed border-input px-4 py-4 text-sm transition-colors disabled:opacity-50",
+                  "hover:border-primary hover:bg-muted/40",
+                  pendingFile && "border-primary/40 bg-primary/5",
                 )}
-              </div>
-
-              {/* Name */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Name <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={form.name}
-                  onChange={(e) => setField("name", e.target.value)}
-                  placeholder="Nachname, Vorname"
-                  disabled={isSubmitting}
-                  className={`w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 ${
-                    errors.name ? "border-red-400" : "border-gray-300"
-                  }`}
-                />
-                {errors.name && <p className="mt-1 text-xs text-red-600">{errors.name}</p>}
-              </div>
-
-              {/* Geburtsdatum + Geschlecht */}
-              <div className="flex gap-3">
-                <div className="flex-1">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Geburtsdatum <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="date"
-                    value={form.geburtsdatum}
-                    onChange={(e) => setField("geburtsdatum", e.target.value)}
-                    disabled={isSubmitting}
-                    className={`w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 ${
-                      errors.geburtsdatum ? "border-red-400" : "border-gray-300"
-                    }`}
-                  />
-                  {errors.geburtsdatum && (
-                    <p className="mt-1 text-xs text-red-600">{errors.geburtsdatum}</p>
-                  )}
-                </div>
-                <div className="w-28">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Geschlecht <span className="text-red-500">*</span>
-                  </label>
-                  <select
-                    value={form.geschlecht}
-                    onChange={(e) => setField("geschlecht", e.target.value as Geschlecht)}
-                    disabled={isSubmitting}
-                    className={`w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 ${
-                      errors.geschlecht ? "border-red-400" : "border-gray-300"
-                    }`}
-                  >
-                    <option value="">—</option>
-                    <option value="m">m</option>
-                    <option value="w">w</option>
-                    <option value="d">d</option>
-                  </select>
-                  {errors.geschlecht && (
-                    <p className="mt-1 text-xs text-red-600">{errors.geschlecht}</p>
-                  )}
-                </div>
-              </div>
-
-              {/* Bettplatz */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Bettplatz <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={form.bettplatz}
-                  onChange={(e) => setField("bettplatz", e.target.value)}
-                  placeholder="ITS-1 / Bett 3"
-                  disabled={isSubmitting}
-                  className={`w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 ${
-                    errors.bettplatz ? "border-red-400" : "border-gray-300"
-                  }`}
-                />
-                {errors.bettplatz && (
-                  <p className="mt-1 text-xs text-red-600">{errors.bettplatz}</p>
+              >
+                {isExtracting ? (
+                  <span className="flex items-center justify-center gap-2 text-primary">
+                    <Loader2 className="size-4 animate-spin" />
+                    Stammdaten werden gelesen…
+                  </span>
+                ) : pendingFile ? (
+                  <span className="flex items-center justify-center gap-2 text-foreground font-medium">
+                    <Paperclip className="size-4" />
+                    {pendingFile.name}
+                  </span>
+                ) : (
+                  <span className="flex items-center justify-center gap-2 text-muted-foreground">
+                    <Upload className="size-4" />
+                    PDF, JPG oder PNG auswählen…
+                  </span>
                 )}
-              </div>
-
-              {/* Aufnahmedatum + Aufnahmequelle */}
-              <div className="flex gap-3">
-                <div className="flex-1">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Aufnahmedatum <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="date"
-                    value={form.aufnahmedatum}
-                    onChange={(e) => setField("aufnahmedatum", e.target.value)}
-                    disabled={isSubmitting}
-                    className={`w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 ${
-                      errors.aufnahmedatum ? "border-red-400" : "border-gray-300"
-                    }`}
-                  />
-                  {errors.aufnahmedatum && (
-                    <p className="mt-1 text-xs text-red-600">{errors.aufnahmedatum}</p>
-                  )}
-                </div>
-                <div className="w-36">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Aufnahmequelle
-                  </label>
-                  <select
-                    value={form.aufnahme_quelle}
-                    onChange={(e) => setField("aufnahme_quelle", e.target.value as Aufnahmequelle)}
-                    disabled={isSubmitting}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
-                  >
-                    <option value="">—</option>
-                    <option value="elektiv">elektiv</option>
-                    <option value="notfall">notfall</option>
-                    <option value="extern">extern</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Verlegungsziel */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Verlegungsziel
-                </label>
-                <input
-                  type="text"
-                  value={form.verlegungsziel}
-                  onChange={(e) => setField("verlegungsziel", e.target.value)}
-                  placeholder="IMC, Normalstation, …"
-                  disabled={isSubmitting}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
-                />
-              </div>
-
-              {submitError && (
-                <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">
-                  {submitError}
+              </button>
+              {uploadError && (
+                <p className="mt-2 text-sm text-destructive bg-destructive/10 rounded-md px-3 py-2">
+                  {uploadError}
                 </p>
               )}
             </div>
 
-            {/* Footer */}
-            <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-2 shrink-0">
-              <button
-                type="button"
-                onClick={handleClose}
-                disabled={isExtracting || isSubmitting}
-                className="px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-lg disabled:opacity-50"
-              >
-                Abbrechen
-              </button>
-              <button
-                type="submit"
-                disabled={isSubmitting || isExtracting}
-                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg disabled:opacity-50"
-              >
-                {isSubmitting ? "Anlegen…" : "Anlegen"}
-              </button>
+            {/* Name */}
+            <div className="space-y-1">
+              <Label htmlFor="np-name">
+                Name <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="np-name"
+                type="text"
+                value={form.name}
+                onChange={(e) => setField("name", e.target.value)}
+                placeholder="Nachname, Vorname"
+                disabled={isSubmitting}
+                aria-invalid={!!errors.name}
+              />
+              {errors.name && <p className="text-xs text-destructive">{errors.name}</p>}
             </div>
-          </form>
-        </div>
-      </div>
 
-    </>
+            {/* Geburtsdatum + Geschlecht */}
+            <div className="flex gap-3">
+              <div className="flex-1 space-y-1">
+                <Label htmlFor="np-geburtsdatum">
+                  Geburtsdatum <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  id="np-geburtsdatum"
+                  type="date"
+                  value={form.geburtsdatum}
+                  onChange={(e) => setField("geburtsdatum", e.target.value)}
+                  disabled={isSubmitting}
+                  aria-invalid={!!errors.geburtsdatum}
+                />
+                {errors.geburtsdatum && (
+                  <p className="text-xs text-destructive">{errors.geburtsdatum}</p>
+                )}
+              </div>
+              <div className="w-32 space-y-1">
+                <Label>
+                  Geschlecht <span className="text-destructive">*</span>
+                </Label>
+                <Select
+                  value={form.geschlecht}
+                  onValueChange={(v) => setField("geschlecht", v as Geschlecht)}
+                  disabled={isSubmitting}
+                >
+                  <SelectTrigger
+                    className="w-full"
+                    aria-invalid={!!errors.geschlecht}
+                  >
+                    <SelectValue placeholder="—" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="m">m</SelectItem>
+                    <SelectItem value="w">w</SelectItem>
+                    <SelectItem value="d">d</SelectItem>
+                  </SelectContent>
+                </Select>
+                {errors.geschlecht && (
+                  <p className="text-xs text-destructive">{errors.geschlecht}</p>
+                )}
+              </div>
+            </div>
+
+            {/* Bettplatz */}
+            <div className="space-y-1">
+              <Label htmlFor="np-bettplatz">
+                Bettplatz <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="np-bettplatz"
+                type="text"
+                value={form.bettplatz}
+                onChange={(e) => setField("bettplatz", e.target.value)}
+                placeholder="ITS-1 / Bett 3"
+                disabled={isSubmitting}
+                aria-invalid={!!errors.bettplatz}
+              />
+              {errors.bettplatz && (
+                <p className="text-xs text-destructive">{errors.bettplatz}</p>
+              )}
+            </div>
+
+            {/* Aufnahmedatum + Aufnahmequelle */}
+            <div className="flex gap-3">
+              <div className="flex-1 space-y-1">
+                <Label htmlFor="np-aufnahmedatum">
+                  Aufnahmedatum <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  id="np-aufnahmedatum"
+                  type="date"
+                  value={form.aufnahmedatum}
+                  onChange={(e) => setField("aufnahmedatum", e.target.value)}
+                  disabled={isSubmitting}
+                  aria-invalid={!!errors.aufnahmedatum}
+                />
+                {errors.aufnahmedatum && (
+                  <p className="text-xs text-destructive">{errors.aufnahmedatum}</p>
+                )}
+              </div>
+              <div className="w-40 space-y-1">
+                <Label>Aufnahmequelle</Label>
+                <Select
+                  value={form.aufnahme_quelle}
+                  onValueChange={(v) => setField("aufnahme_quelle", v as Aufnahmequelle)}
+                  disabled={isSubmitting}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="—" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="elektiv">elektiv</SelectItem>
+                    <SelectItem value="notfall">notfall</SelectItem>
+                    <SelectItem value="extern">extern</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Verlegungsziel */}
+            <div className="space-y-1">
+              <Label htmlFor="np-verlegungsziel">Verlegungsziel</Label>
+              <Input
+                id="np-verlegungsziel"
+                type="text"
+                value={form.verlegungsziel}
+                onChange={(e) => setField("verlegungsziel", e.target.value)}
+                placeholder="IMC, Normalstation, …"
+                disabled={isSubmitting}
+              />
+            </div>
+
+            {submitError && (
+              <p className="text-sm text-destructive bg-destructive/10 rounded-md px-3 py-2">
+                {submitError}
+              </p>
+            )}
+          </div>
+
+          <DialogFooter className="px-6 py-3 border-t bg-muted/30 shrink-0 -mx-0 -mb-0 rounded-b-xl">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => handleOpenChange(false)}
+              disabled={isExtracting || isSubmitting}
+            >
+              Abbrechen
+            </Button>
+            <Button
+              type="submit"
+              disabled={isSubmitting || isExtracting}
+            >
+              {isSubmitting ? (
+                <><Loader2 className="size-4 animate-spin" /> Anlegen…</>
+              ) : (
+                "Anlegen"
+              )}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
