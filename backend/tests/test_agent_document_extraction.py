@@ -951,3 +951,68 @@ def test_streaming_heartbeat_appears_during_slow_llm():
 
     heartbeats = [e for e in events if e["type"] == "heartbeat"]
     assert len(heartbeats) >= 1, "Mindestens ein Heartbeat erwartet bei 300ms LLM-Delay und 50ms Intervall"
+
+
+# ── Test 21: Block-1-Prompt enthält Konvergenz-Prinzip ───────────────────────
+
+
+def test_block1_prompt_includes_konvergenz_prinzip():
+    """Patch F: Block-1-Prompt enthält Konvergenz-Prinzip, explizites add_*-Verbot und SKIP-Beispiele."""
+    from pathlib import Path
+    prompt = (Path(__file__).parent.parent / "prompts" / "extraction_block1.txt").read_text(encoding="utf-8")
+
+    required = [
+        "KEIN add_*",       # explizites Duplikat-Verbot
+        "KONVERGENZ",       # Konvergenz-Prinzip benannt
+        "SKIP",             # SKIP-Aktion benannt
+        "UPDATE",           # UPDATE-Aktion benannt
+        "delete_entry",     # UPDATE-Mechanismus beschrieben
+    ]
+    missing = [t for t in required if t not in prompt]
+    assert missing == [], f"Konvergenz-Klausel fehlt/unvollständig in extraction_block1.txt: {missing}"
+
+
+# ── Test 22: Block-1-Streaming enthält Patientenstand im System-Prompt ────────
+
+
+def test_block1_streaming_patient_state_in_system_prompt():
+    """State-Aware: Patientenstand wird in Block-1-System-Prompt eingebaut und ans LLM übergeben.
+
+    Regression-Guard: Re-Upload einer bereits vollständig extrahierten PDF darf
+    keine Duplikate erzeugen. Der LLM muss den <aktueller_stand> sehen (inkl. IDs),
+    damit er SKIP/UPDATE/ADD korrekt entscheiden kann.
+    """
+    patient = Patient(
+        stammdaten=Stammdaten(id="P-ZZZZ", name="Konvergenz-Test", aufnahmedatum=date(2026, 4, 1)),
+        behandlungsdiagnosen=[
+            Diagnose(id="D-001", text="STEMI Vorderwand", source_quote="Aufnahmebefund 01.04."),
+        ],
+    )
+
+    captured_prompts: list[str] = []
+
+    async def _mock_chat(conversation, **kwargs):
+        if not captured_prompts:
+            captured_prompts.append(conversation[0]["content"])
+        return _llm_response(None)  # LLM erkennt State → keine Tool-Calls (SKIP-Pfad)
+
+    mock_llm = MagicMock()
+    mock_llm.chat_completion = _mock_chat
+
+    events = _collect_streaming(extract_proposals_streaming(
+        llm=mock_llm,
+        patient=patient,
+        content="Gleiche PDF nochmals hochgeladen",
+        content_type="text",
+    ))
+
+    done_events = [e for e in events if e["type"] == "done"]
+    assert len(done_events) == 1
+    assert done_events[0]["auto_skipped"] is True
+    assert done_events[0]["total_proposals"] == 0
+
+    assert captured_prompts, "LLM wurde nicht aufgerufen"
+    system_prompt = captured_prompts[0]
+    assert "<aktueller_stand>" in system_prompt, "Patientenstand fehlt im System-Prompt"
+    assert "STEMI Vorderwand" in system_prompt, "Diagnose-Text fehlt im State-Block"
+    assert "D-001" in system_prompt, "Diagnose-ID fehlt (benötigt für delete_entry bei UPDATE)"

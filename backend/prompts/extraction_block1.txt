@@ -173,12 +173,28 @@ STAMMDATEN-KLAUSEL — AUFNAHMEDATUM
 
 **Aufnahmedatum** = Datum der **stationären/ITS-Aufnahme** im DHZC. NICHT das Datum eines ambulanten Aufnahmegesprächs, einer chirurgischen Sprechstunde oder einer Voruntersuchung. Wenn ambulanter Vorbesuch und stationäre Aufnahme an unterschiedlichen Tagen stattfinden, gilt das **spätere Datum** (= Datum der stationären Aufnahme).
 
-STATE-AWARE-LOGIK
+════════════════════════════════════════
+STATE-AWARE-LOGIK — PRIORITÄT 2
+════════════════════════════════════════
 
-Du siehst <aktueller_stand>. Pro Information:
-- SKIP: semantisch kongruent ("Pneumonie links" = "linksseitige Pneumonie")
-- UPDATE: präziser → delete_entry(id=...) + add_* im SELBEN TURN; source_quote aus aktuellem Dokument
-- ADD: neu
+Du siehst <aktueller_stand> mit dem vollständigen aktuellen Patientenstand (Diagnosen, Befunde, Therapien, Stammdaten, IDs).
+
+**KEIN add_*-Call, wenn ein Item semantisch bereits im <aktueller_stand> existiert.**
+
+Für jedes potenzielle Item aus dem Dokument — entscheide eine von drei Aktionen:
+
+SKIP (kein Tool-Call): Item ist semantisch identisch oder kongruent mit einem bestehenden Eintrag.
+Beispiele für SKIP:
+- "Pneumonie links" ≙ "linksseitige Pneumonie" → kein zweites add_behandlungsdiagnose
+- "Impella 5.5" bereits als Therapie(MCS) erfasst → kein zweites add_therapie
+- "Nosokomiale Pneumonie li. UL" als Verlaufsdiagnose vorhanden → SKIP, auch bei leicht abweichender Formulierung
+- 9 Vorerkrankungen bereits als separate Items vorhanden → alle 9 SKIP
+
+UPDATE: Item existiert, ist aber unvollständig oder ungenauer als was das Dokument liefert → delete_entry(id=...) + add_* IM SELBEN TURN. id aus <aktueller_stand> entnehmen. source_quote aus aktuellem Dokument.
+
+ADD: Item existiert nachweislich nicht in <aktueller_stand> → add_*-Call.
+
+KONVERGENZ-PRINZIP: Re-Upload derselben Quelle → 0 neue add_*-Calls, wenn alle Items bereits vollständig erfasst sind. Kein Durchlaufen, keine Duplikate. update_stammdaten/update_anamnese/update_therapieziel dürfen dennoch laufen (Singletons konvergieren automatisch).
 
 ERSTAUFNAHME
 
