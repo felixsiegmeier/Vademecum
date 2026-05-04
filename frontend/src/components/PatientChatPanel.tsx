@@ -15,7 +15,7 @@ import { takePendingFile } from "../pendingFileStore";
 import { parseNdjson } from "../utils/ndjson";
 import { formatSectionCounts } from "../utils/streamSection";
 import ProposalCard from "./ProposalCard";
-import Toast, { type ToastMessage } from "./Toast";
+import { toast } from "sonner";
 
 // ── Anzeige-Typen für die Chat-History ───────────────────────────────────────
 
@@ -117,7 +117,6 @@ export function PatientChatPanel({ patientId, patient, refreshPatient, onPatient
   const [chatBusy, setChatBusy] = useState(false);
   const [chatBusyLong, setChatBusyLong] = useState(false); // true wenn Input > CUTOFF (2-Pass)
   const [applying, setApplying] = useState(false);
-  const [toast, setToast] = useState<ToastMessage | null>(null);
   const [mismatchModal, setMismatchModal] = useState<
     Array<{ feld: string; current: string; proposed: string }>
   | null>(null);
@@ -139,8 +138,8 @@ export function PatientChatPanel({ patientId, patient, refreshPatient, onPatient
     setHistory(next);
   }
 
-  function showToast(kind: ToastMessage["kind"], text: string) {
-    setToast({ id: Date.now(), kind, text });
+  function showToast(kind: "success" | "error" | "warning" | "info", text: string) {
+    toast[kind](text);
   }
 
   // Safe for async streaming loops — uses functional setState so closure is never stale
@@ -656,8 +655,6 @@ export function PatientChatPanel({ patientId, patient, refreshPatient, onPatient
           Senden
         </button>
       </div>
-
-      <Toast toast={toast} onDismiss={() => setToast(null)} />
 
       {/* Mismatch-Modal */}
       {mismatchModal && (

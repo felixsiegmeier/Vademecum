@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import Toast, { type ToastMessage } from "./Toast";
+import { toast } from "sonner";
 import { setPendingFile } from "../pendingFileStore";
 
 interface Props {
@@ -53,7 +53,6 @@ export default function NewPatientDialog({ open, onClose, onCreated }: Props) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [toast, setToast] = useState<ToastMessage | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -92,11 +91,7 @@ export default function NewPatientDialog({ open, onClose, onCreated }: Props) {
 
       const allNull = Object.values(data).every((v) => v === null);
       if (allNull) {
-        setToast({
-          id: Date.now(),
-          kind: "info",
-          text: "Keine Stammdaten im Dokument erkannt — bitte manuell eingeben.",
-        });
+        toast.info("Keine Stammdaten im Dokument erkannt — bitte manuell eingeben.");
         // File verworfen — kein Auto-Forward in die Proposals-Pipeline
         return;
       }
@@ -396,7 +391,6 @@ export default function NewPatientDialog({ open, onClose, onCreated }: Props) {
         </div>
       </div>
 
-      <Toast toast={toast} onDismiss={() => setToast(null)} />
     </>
   );
 }

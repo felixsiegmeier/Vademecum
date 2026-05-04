@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes, useNavigate } from "react-route
 import ChatWindow from "./components/ChatWindow";
 import PatientLanding from "./components/PatientLanding";
 import Sidebar from "./components/Sidebar";
+import { Toaster } from "@/components/ui/sonner";
 
 // AppContent ist vom Router getrennt, damit useNavigate() funktioniert
 // (Router-Hooks sind nur innerhalb von <BrowserRouter> verfügbar)
@@ -21,7 +22,7 @@ function AppContent() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-screen overflow-hidden bg-background text-foreground">
       <Sidebar refreshTrigger={refreshTrigger} onPatientCreated={handlePatientCreated} />
       <main className="flex-1 overflow-hidden">
         <Routes>
@@ -53,6 +54,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <AppContent />
+      <Toaster position="bottom-center" richColors closeButton />
     </BrowserRouter>
   );
 }
