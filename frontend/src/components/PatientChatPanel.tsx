@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, Paperclip, MessageSquare, Send, AlertTriangle, CheckCircle2 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import type {
   ApplyResponse,
@@ -16,6 +16,18 @@ import { parseNdjson } from "../utils/ndjson";
 import { formatSectionCounts } from "../utils/streamSection";
 import ProposalCard from "./ProposalCard";
 import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
 
 // ── Anzeige-Typen für die Chat-History ───────────────────────────────────────
 
@@ -455,33 +467,29 @@ export function PatientChatPanel({ patientId, patient, refreshPatient, onPatient
     if (entry.kind === "chat-text") {
       const isUser = entry.role === "user";
       return (
-        <div key={idx} className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
+        <div key={idx} className={cn("flex", isUser ? "justify-end" : "justify-start")}>
           <div
-            className={`max-w-[80%] rounded-xl px-3 py-2 text-sm ${
+            className={cn(
+              "max-w-[85%] rounded-md px-3 py-2 text-sm",
               isUser
-                ? "bg-blue-600 text-white whitespace-pre-wrap"
-                : "bg-white border border-gray-200 text-gray-800"
-            }`}
+                ? "bg-primary text-primary-foreground whitespace-pre-wrap"
+                : "bg-muted/60 text-foreground border",
+            )}
           >
             {isUser ? (
               entry.content
             ) : (
-              // Assistant replies from LLM may contain Markdown — render it properly
-              <ReactMarkdown
-                components={{
-                  p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
-                  ul: ({ children }) => <ul className="list-disc list-inside space-y-1 mb-2">{children}</ul>,
-                  ol: ({ children }) => <ol className="list-decimal list-inside space-y-1 mb-2">{children}</ol>,
-                  li: ({ children }) => <li>{children}</li>,
-                  strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
-                  em: ({ children }) => <em className="italic">{children}</em>,
-                  code: ({ children }) => (
-                    <code className="bg-gray-100 rounded px-1 font-mono text-xs">{children}</code>
-                  ),
-                }}
-              >
-                {entry.content}
-              </ReactMarkdown>
+              <div className="prose prose-sm max-w-none prose-p:my-2 prose-p:first:mt-0 prose-p:last:mb-0 prose-ul:my-2 prose-ol:my-2 prose-li:my-0">
+                <ReactMarkdown
+                  components={{
+                    code: ({ children }) => (
+                      <code className="bg-background border rounded px-1 font-mono text-xs">{children}</code>
+                    ),
+                  }}
+                >
+                  {entry.content}
+                </ReactMarkdown>
+              </div>
             )}
           </div>
         </div>
@@ -491,11 +499,14 @@ export function PatientChatPanel({ patientId, patient, refreshPatient, onPatient
     if (entry.kind === "auto-skip") {
       return (
         <div key={idx} className="flex justify-start">
-          <div className="max-w-[80%] rounded-xl bg-gray-50 border border-gray-200 px-3 py-2 text-sm text-gray-500">
-            {entry.fileName ? (
-              <>📎 <span className="font-medium">{entry.fileName}</span> — </>
-            ) : null}
-            PDF identisch zum letzten Upload — keine Änderungen gefunden.
+          <div className="max-w-[85%] rounded-md bg-muted/40 border px-3 py-2 text-sm text-muted-foreground flex items-center gap-2">
+            <CheckCircle2 className="size-4 text-emerald-600 shrink-0" />
+            <span>
+              {entry.fileName ? (
+                <><span className="font-medium text-foreground">{entry.fileName}</span> — </>
+              ) : null}
+              identisch zum letzten Upload, keine Änderungen.
+            </span>
           </div>
         </div>
       );
@@ -512,14 +523,21 @@ export function PatientChatPanel({ patientId, patient, refreshPatient, onPatient
 
     return (
       <div key={idx} className="flex justify-start">
-        <div className={`rounded-xl border border-gray-200 bg-white text-sm overflow-hidden w-full max-w-[90%] ${entry.discarded ? "opacity-50 pointer-events-none" : ""}`}>
+        <div className={cn(
+          "rounded-md border bg-card text-sm overflow-hidden w-full max-w-[92%] shadow-sm",
+          entry.discarded && "opacity-50 pointer-events-none",
+        )}>
           {/* Header */}
-          <div className="px-3 py-2 border-b border-gray-100 bg-gray-50 flex items-center justify-between gap-2">
-            <p className="font-medium text-gray-800 truncate">
-              {entry.source === "upload" ? "📎 " : "💬 "}
-              {entry.fileName ?? (entry.source === "chat" ? "Chat-Vorschläge" : "Upload")}
+          <div className="px-3 py-2 border-b bg-muted/40 flex items-center justify-between gap-2">
+            <p className="font-medium text-foreground truncate flex items-center gap-1.5">
+              {entry.source === "upload"
+                ? <Paperclip className="size-3.5 text-muted-foreground shrink-0" />
+                : <MessageSquare className="size-3.5 text-muted-foreground shrink-0" />}
+              <span className="truncate">
+                {entry.fileName ?? (entry.source === "chat" ? "Chat-Vorschläge" : "Upload")}
+              </span>
             </p>
-            <span className="text-xs text-gray-500 shrink-0">
+            <span className="text-xs text-muted-foreground shrink-0">
               {headerCount}
               {!isStreaming && entry.appliedIndices.size > 0 && ` · ${entry.appliedIndices.size} angewendet`}
             </span>
@@ -527,8 +545,8 @@ export function PatientChatPanel({ patientId, patient, refreshPatient, onPatient
 
           {/* Sticky live bar while streaming */}
           {isStreaming && (
-            <div className="px-3 py-1.5 border-b border-amber-100 bg-amber-50 flex items-center gap-2 text-xs text-amber-800">
-              <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+            <div className="px-3 py-1.5 border-b border-amber-200 bg-amber-50 flex items-center gap-2 text-xs text-amber-900">
+              <Loader2 className="size-3.5 animate-spin shrink-0" />
               <span>{liveText}</span>
             </div>
           )}
@@ -538,7 +556,7 @@ export function PatientChatPanel({ patientId, patient, refreshPatient, onPatient
             {entry.proposals.map((p, i) => {
               const applied = entry.appliedIndices.has(i);
               return (
-                <div key={i} className={applied ? "opacity-50 pointer-events-none" : ""}>
+                <div key={i} className={cn(applied && "opacity-50 pointer-events-none")}>
                   <ProposalCard
                     proposal={p}
                     patient={patient}
@@ -566,17 +584,23 @@ export function PatientChatPanel({ patientId, patient, refreshPatient, onPatient
     : 0;
 
   return (
-    <div className="flex flex-col h-full relative">
+    <div className="flex flex-col h-full relative bg-background">
       <div className="flex-1 overflow-y-auto p-4 space-y-3 pb-2">
         {history.length === 0 && (
-          <p className="text-center text-sm text-gray-400 mt-8">
+          <p className="text-center text-sm text-muted-foreground mt-8">
             Visite, Befunde oder Fragen eingeben…
           </p>
         )}
         {history.map((e, i) => renderEntry(e, i))}
         {chatBusy && (
           <div className="flex justify-start">
-            <div className={`rounded-xl border px-3 py-2 text-sm ${chatBusyLong ? "bg-amber-50 border-amber-200 text-amber-800" : "bg-white border-gray-200 text-gray-400"}`}>
+            <div className={cn(
+              "rounded-md border px-3 py-2 text-sm flex items-center gap-2",
+              chatBusyLong
+                ? "bg-amber-50 border-amber-200 text-amber-900"
+                : "bg-muted/40 text-muted-foreground",
+            )}>
+              <Loader2 className="size-3.5 animate-spin" />
               {chatBusyLong ? "Verarbeitung läuft, kann 30–60 Sekunden dauern…" : "Denkt nach…"}
             </div>
           </div>
@@ -586,38 +610,40 @@ export function PatientChatPanel({ patientId, patient, refreshPatient, onPatient
 
       {/* Sticky-Apply-Bar */}
       {activeProposals && (
-        <div className="border-t border-blue-100 bg-blue-50/80 backdrop-blur px-4 py-2 flex items-center justify-between gap-2">
-          <button
+        <div className="border-t bg-primary/5 px-4 py-2 flex items-center justify-between gap-2">
+          <Button
+            variant="outline"
+            size="sm"
             onClick={handleDiscard}
             disabled={applying || activeProposals.streaming}
-            className="rounded-lg bg-gray-100 px-4 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Verwerfen
-          </button>
+          </Button>
           <div className="flex items-center gap-2">
             {activeProposals.streaming ? (
               <span className="flex items-center gap-1.5 text-sm text-amber-700">
-                <Loader2 className="w-4 h-4 animate-spin" />
+                <Loader2 className="size-4 animate-spin" />
                 Analysiert…
               </span>
             ) : (
-              <span className="text-sm text-blue-900">
-                <span className="font-medium">{selectedActiveCount}</span> von {totalActive} anwenden
+              <span className="text-sm text-foreground">
+                <Badge variant="secondary" className="mr-1">{selectedActiveCount}</Badge>
+                von {totalActive} anwenden
               </span>
             )}
-            <button
+            <Button
+              size="sm"
               onClick={() => handleApply()}
               disabled={applying || selectedActiveCount === 0 || activeProposals.streaming}
-              className="rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {applying ? "Wird übernommen…" : "Anwenden"}
-            </button>
+            </Button>
           </div>
         </div>
       )}
 
       {/* Eingabezeile */}
-      <div className="border-t bg-white px-4 py-3 flex gap-2 items-end">
+      <div className="border-t bg-card px-4 py-3 flex gap-2 items-end">
         <input
           ref={fileInputRef}
           type="file"
@@ -629,15 +655,17 @@ export function PatientChatPanel({ patientId, patient, refreshPatient, onPatient
             e.target.value = "";
           }}
         />
-        <button
+        <Button
+          variant="outline"
+          size="icon"
           onClick={() => fileInputRef.current?.click()}
           disabled={uploading || chatBusy}
           title={uploading ? "Upload läuft…" : "Dokument hochladen"}
-          className="shrink-0 rounded-lg border border-gray-300 px-3 py-2 text-gray-500 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+          className="shrink-0"
         >
-          📎
-        </button>
-        <textarea
+          <Paperclip className="size-4" />
+        </Button>
+        <Textarea
           ref={textareaRef}
           value={input}
           onChange={(e) => setInput(e.target.value)}
@@ -645,31 +673,35 @@ export function PatientChatPanel({ patientId, patient, refreshPatient, onPatient
           disabled={chatBusy || uploading}
           placeholder="Visite, Befunde, Fragen… (Enter = Senden, Shift+Enter = Zeilenumbruch)"
           rows={2}
-          className="flex-1 resize-none rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+          className="flex-1 resize-none min-h-[2.5rem]"
         />
-        <button
+        <Button
           onClick={handleSubmit}
           disabled={chatBusy || uploading || !input.trim()}
-          className="shrink-0 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed"
+          className="shrink-0"
         >
+          <Send className="size-4" />
           Senden
-        </button>
+        </Button>
       </div>
 
       {/* Mismatch-Modal */}
-      {mismatchModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm mx-4 p-6">
-            <h2 className="text-base font-semibold text-gray-900 mb-2">
+      <Dialog open={!!mismatchModal} onOpenChange={(open) => !open && setMismatchModal(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="size-4 text-amber-500" />
               Identitätsfelder geändert
-            </h2>
-            <p className="text-sm text-gray-600 mb-4">
+            </DialogTitle>
+            <DialogDescription>
               Dieses Dokument schlägt Änderungen an Patienten-Identitätsfeldern vor.
               Möglicherweise gehört es zu einem anderen Patienten.
-            </p>
-            <table className="w-full text-xs mb-6 border-collapse">
+            </DialogDescription>
+          </DialogHeader>
+          {mismatchModal && (
+            <table className="w-full text-xs border-collapse">
               <thead>
-                <tr className="text-gray-500 border-b border-gray-200">
+                <tr className="text-muted-foreground border-b">
                   <th className="text-left py-1 pr-3 font-medium">Feld</th>
                   <th className="text-left py-1 pr-3 font-medium">Aktuell</th>
                   <th className="text-left py-1 font-medium">Vorschlag</th>
@@ -677,35 +709,35 @@ export function PatientChatPanel({ patientId, patient, refreshPatient, onPatient
               </thead>
               <tbody>
                 {mismatchModal.map((c) => (
-                  <tr key={c.feld} className="border-b border-gray-100">
-                    <td className="py-1.5 pr-3 text-gray-700 font-medium">
+                  <tr key={c.feld} className="border-b">
+                    <td className="py-1.5 pr-3 font-medium">
                       {STAMMDATEN_FELD_LABELS[c.feld] ?? c.feld}
                     </td>
-                    <td className="py-1.5 pr-3 text-gray-500">{c.current}</td>
-                    <td className="py-1.5 text-gray-900 font-medium">{c.proposed}</td>
+                    <td className="py-1.5 pr-3 text-muted-foreground">{c.current}</td>
+                    <td className="py-1.5 font-medium">{c.proposed}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            <div className="flex gap-2 justify-end">
-              <button
-                onClick={() => setMismatchModal(null)}
-                disabled={applying}
-                className="px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-lg disabled:opacity-50"
-              >
-                Abbrechen
-              </button>
-              <button
-                onClick={handleForceApply}
-                disabled={applying}
-                className="px-4 py-2 text-sm font-medium text-white bg-orange-600 hover:bg-orange-700 rounded-lg disabled:opacity-50"
-              >
-                {applying ? "Wird angewendet…" : "Trotzdem anwenden"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+          )}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setMismatchModal(null)}
+              disabled={applying}
+            >
+              Abbrechen
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleForceApply}
+              disabled={applying}
+            >
+              {applying ? "Wird angewendet…" : "Trotzdem anwenden"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
