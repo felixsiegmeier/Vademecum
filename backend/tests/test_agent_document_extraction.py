@@ -13,14 +13,17 @@ from agent_extraction_core import (
     THINKING_BUDGET_BLOCK_2,
     Proposal,
     ToolCallInfo,
+    _HEARTBEAT_INTERVAL,
     group_proposals,
     run_pass,
+    run_pass_streaming,
 )
 from agent_document_extraction import (
     _PASS2_TOOLS,
     _build_block1_system,
     _build_block2_system,
     extract_proposals,
+    extract_proposals_streaming,
 )
 from agent_tools import add_verlaufsdiagnose, delete_entry
 from models.patient import Diagnose, Patient, Stammdaten, VerlaufsEintrag
@@ -732,3 +735,219 @@ def test_malformed_function_call_retry_exhausted_raises():
 
     assert mock_llm.chat_completion.call_count == 3   # 1 initial + 2 retries
     assert mock_sleep.call_count == 2                  # 2 Retry-Sleeps
+
+
+# ── Streaming: run_pass_streaming / extract_proposals_streaming ───────────────
+
+
+def _collect_streaming(gen) -> list[dict]:
+    """Runs an async generator synchronously and returns all yielded events."""
+    async def _gather():
+        events = []
+        async for event in gen:
+            events.append(event)
+        return events
+    return asyncio.run(_gather())
+
+
+# ── Test 14: status event kommt vor proposals-event in derselben Phase ─────────
+
+
+def test_streaming_status_before_proposals_in_phase():
+    """run_pass_streaming: für jede Iteration kommt status VOR proposals."""
+    tc = _mock_tool_call("add_behandlungsdiagnose", {"text": "COPD", "datum": None, "source_quote": "q"})
+    mock_llm = MagicMock()
+    mock_llm.chat_completion = AsyncMock(side_effect=[
+        _llm_response([tc]),
+        _llm_response(None),
+    ])
+
+    events = _collect_streaming(run_pass_streaming(
+        llm=mock_llm,
+        system_prompt="test",
+        user_messages=[{"role": "user", "content": "doc"}],
+        tools=[],
+        thinking_budget=0,
+        phase="block1",
+    ))
+
+    types = [e["type"] for e in events]
+    assert "status" in types
+    assert "proposals" in types
+    status_idx = types.index("status")
+    proposals_idx = types.index("proposals")
+    assert status_idx < proposals_idx
+
+
+# ── Test 15: Block 1 → Block 2 Phasen-Reihenfolge ────────────────────────────
+
+
+def test_streaming_block1_before_block2_phase_order():
+    """extract_proposals_streaming: alle block1-Events kommen vor block2-Events."""
+    tc1 = _mock_tool_call("add_behandlungsdiagnose", {"text": "COPD", "datum": None, "source_quote": "q"}, tc_id="tc_01")
+    tc2 = _mock_tool_call("add_verlaufseintrag", {"datum": "2026-04-01", "text": "Aufnahme", "source_quote": "q"}, tc_id="tc_02")
+
+    mock_llm = MagicMock()
+    mock_llm.chat_completion = AsyncMock(side_effect=[
+        _llm_response([tc1]),  # Block1 iter1
+        _llm_response(None),   # Block1 done
+        _llm_response([tc2]),  # Block2 iter1
+        _llm_response(None),   # Block2 done
+    ])
+
+    events = _collect_streaming(extract_proposals_streaming(
+        llm=mock_llm,
+        patient=None,
+        content="Test-Dokument",
+        content_type="text",
+    ))
+
+    phases = [e.get("phase") for e in events if e.get("phase")]
+    assert phases  # mindestens ein Status-Event mit phase
+    # Block1 muss vor Block2 kommen
+    last_block1 = max(i for i, p in enumerate(phases) if p == "block1")
+    first_block2 = min(i for i, p in enumerate(phases) if p == "block2")
+    assert last_block1 < first_block2
+
+
+# ── Test 16: proposals-Event enthält Items mit erwartetem Schema ──────────────
+
+
+def test_streaming_proposals_event_schema():
+    """proposals-Event: items ist Liste von Proposal-Dicts mit type + call."""
+    tc = _mock_tool_call("add_behandlungsdiagnose", {"text": "COPD", "datum": None, "source_quote": "zitat"})
+    mock_llm = MagicMock()
+    mock_llm.chat_completion = AsyncMock(side_effect=[
+        _llm_response([tc]),
+        _llm_response(None),
+    ])
+
+    events = _collect_streaming(run_pass_streaming(
+        llm=mock_llm,
+        system_prompt="test",
+        user_messages=[{"role": "user", "content": "doc"}],
+        tools=[],
+        thinking_budget=0,
+        phase="block1",
+    ))
+
+    proposal_events = [e for e in events if e["type"] == "proposals"]
+    assert len(proposal_events) == 1
+    items = proposal_events[0]["items"]
+    assert len(items) == 1
+    item = items[0]
+    assert item["type"] == "add"
+    assert item["call"]["tool"] == "add_behandlungsdiagnose"
+    assert item["call"]["args"]["text"] == "COPD"
+    assert proposal_events[0]["phase"] == "block1"
+
+
+# ── Test 17: done-Event ist final, total_proposals stimmt mit Items überein ────
+
+
+def test_streaming_done_event_total_matches_items():
+    """done-Event kommt zuletzt; total_proposals = Summe aller proposals-Items."""
+    tc1 = _mock_tool_call("add_behandlungsdiagnose", {"text": "COPD", "datum": None, "source_quote": "q"}, tc_id="tc_01")
+    tc2 = _mock_tool_call("add_verlaufseintrag", {"datum": "2026-04-01", "text": "Aufnahme", "source_quote": "q"}, tc_id="tc_02")
+
+    mock_llm = MagicMock()
+    mock_llm.chat_completion = AsyncMock(side_effect=[
+        _llm_response([tc1]),  # Block1 iter1
+        _llm_response(None),   # Block1 done
+        _llm_response([tc2]),  # Block2 iter1
+        _llm_response(None),   # Block2 done
+    ])
+
+    events = _collect_streaming(extract_proposals_streaming(
+        llm=mock_llm,
+        patient=None,
+        content="Test-Dokument",
+        content_type="text",
+    ))
+
+    assert events[-1]["type"] == "done"
+    done = events[-1]
+    total_from_items = sum(len(e["items"]) for e in events if e["type"] == "proposals")
+    assert done["total_proposals"] == total_from_items
+    assert done["auto_skipped"] is False
+
+
+# ── Test 18: Auto-Skip bei 0 Proposals ───────────────────────────────────────
+
+
+def test_streaming_auto_skip_when_zero_proposals():
+    """0 Proposals → done-Event mit auto_skipped=True, total_proposals=0."""
+    mock_llm = MagicMock()
+    mock_llm.chat_completion = AsyncMock(side_effect=[
+        _llm_response(None),  # Block1: keine Tool-Calls → leer
+        _llm_response(None),  # Block2: keine Tool-Calls → leer
+    ])
+
+    events = _collect_streaming(extract_proposals_streaming(
+        llm=mock_llm,
+        patient=None,
+        content="leeres dokument",
+        content_type="text",
+    ))
+
+    done_events = [e for e in events if e["type"] == "done"]
+    assert len(done_events) == 1
+    assert done_events[0]["total_proposals"] == 0
+    assert done_events[0]["auto_skipped"] is True
+    proposal_events = [e for e in events if e["type"] == "proposals"]
+    assert proposal_events == []
+
+
+# ── Test 19: Error-Event bei Retry-Erschöpfung ────────────────────────────────
+
+
+def test_streaming_error_event_on_retry_exhaustion():
+    """3x MALFORMED_FUNCTION_CALL → error-Event mit retryable=True, kein done."""
+    mock_llm = MagicMock()
+    mock_llm.chat_completion = AsyncMock(return_value=_malformed_response())
+
+    with patch("asyncio.sleep", new=AsyncMock()):
+        events = _collect_streaming(run_pass_streaming(
+            llm=mock_llm,
+            system_prompt="test",
+            user_messages=[{"role": "user", "content": "doc"}],
+            tools=[],
+            thinking_budget=0,
+            phase="block1",
+            pass_name="TestPass",
+        ))
+
+    error_events = [e for e in events if e["type"] == "error"]
+    assert len(error_events) == 1
+    assert error_events[0]["retryable"] is True
+    assert "LLM provider instability" in error_events[0]["message"]
+    # done-Event darf nicht kommen
+    assert not any(e["type"] == "done" for e in events)
+
+
+# ── Test 20: Heartbeat-Events erscheinen bei langsamem LLM-Call ───────────────
+
+
+def test_streaming_heartbeat_appears_during_slow_llm():
+    """Heartbeat-Events werden gesendet, wenn der LLM-Call länger als _HEARTBEAT_INTERVAL dauert."""
+    async def slow_chat(*args, **kwargs):
+        # Delay länger als das Test-Heartbeat-Intervall
+        await asyncio.sleep(0.3)
+        return _llm_response(None)
+
+    mock_llm = MagicMock()
+    mock_llm.chat_completion = slow_chat
+
+    # Heartbeat-Intervall für Test auf 0.05 s kürzen
+    with patch("agent_extraction_core._HEARTBEAT_INTERVAL", 0.05):
+        events = _collect_streaming(run_pass_streaming(
+            llm=mock_llm,
+            system_prompt="test",
+            user_messages=[{"role": "user", "content": "doc"}],
+            tools=[],
+            thinking_budget=0,
+            phase="block1",
+        ))
+
+    heartbeats = [e for e in events if e["type"] == "heartbeat"]
+    assert len(heartbeats) >= 1, "Mindestens ein Heartbeat erwartet bei 300ms LLM-Delay und 50ms Intervall"

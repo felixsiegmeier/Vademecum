@@ -436,16 +436,31 @@ def test_chat_text_reply_no_proposals(isolated_data):
     assert body["auto_skipped"] is False
 
 
-# ── Phase-5: Neue Upload-Formate ──────────────────────────────────────────────
+# ── Phase-5: Neue Upload-Formate (Streaming-Endpoint) ────────────────────────
+
+
+async def _streaming_done(*args, **kwargs):
+    """Minimal-Mock für extract_proposals_streaming: liefert sofort done."""
+    yield {"type": "done", "total_proposals": 0, "auto_skipped": True}
+
+
+def _make_upload_mock():
+    """MagicMock für extract_proposals_streaming mit side_effect=_streaming_done."""
+    return MagicMock(side_effect=_streaming_done)
+
+
+def _parse_ndjson(text: str) -> list[dict]:
+    """Parst NDJSON-Response in eine Liste von Event-Dicts."""
+    return [json.loads(line) for line in text.splitlines() if line.strip()]
 
 
 def test_upload_txt_passes_text_to_pipeline(isolated_data):
-    """text/plain wird UTF-8 dekodiert und als content_type='text' an extract_proposals übergeben."""
+    """text/plain wird UTF-8 dekodiert und als content_type='text' an extract_proposals_streaming übergeben."""
     _make_patient("P-0001")
     payload = b"Patient Celik, aufgenommen 23.04. mit kardiogenem Schock."
 
-    with patch("main.extract_proposals", new_callable=AsyncMock) as mock_ep:
-        mock_ep.return_value = []
+    mock_ep = _make_upload_mock()
+    with patch("main.extract_proposals_streaming", mock_ep):
         res = client.post(
             "/api/uploads",
             data={"patient_id": "P-0001"},
@@ -453,8 +468,8 @@ def test_upload_txt_passes_text_to_pipeline(isolated_data):
         )
 
     assert res.status_code == 200
-    _, kwargs = mock_ep.call_args
     args = mock_ep.call_args.args
+    kwargs = mock_ep.call_args.kwargs
     content_passed = args[2] if len(args) > 2 else kwargs.get("content")
     content_type_passed = args[3] if len(args) > 3 else kwargs.get("content_type")
     assert content_type_passed == "text"
@@ -466,8 +481,8 @@ def test_upload_md_accepted(isolated_data):
     _make_patient("P-0001")
     payload = b"# Aufnahme\nPatient kommt mit Dyspnoe."
 
-    with patch("main.extract_proposals", new_callable=AsyncMock) as mock_ep:
-        mock_ep.return_value = []
+    mock_ep = _make_upload_mock()
+    with patch("main.extract_proposals_streaming", mock_ep):
         res = client.post(
             "/api/uploads",
             data={"patient_id": "P-0001"},
@@ -484,8 +499,8 @@ def test_upload_csv_converts_to_markdown_table(isolated_data):
     _make_patient("P-0001")
     payload = b"datum,wert\n2026-04-23,Laktat 3.2\n2026-04-24,Laktat 1.8"
 
-    with patch("main.extract_proposals", new_callable=AsyncMock) as mock_ep:
-        mock_ep.return_value = []
+    mock_ep = _make_upload_mock()
+    with patch("main.extract_proposals_streaming", mock_ep):
         res = client.post(
             "/api/uploads",
             data={"patient_id": "P-0001"},
@@ -514,8 +529,8 @@ def test_upload_xlsx_converts_to_markdown(isolated_data):
     wb.save(buf)
     xlsx_bytes = buf.getvalue()
 
-    with patch("main.extract_proposals", new_callable=AsyncMock) as mock_ep:
-        mock_ep.return_value = []
+    mock_ep = _make_upload_mock()
+    with patch("main.extract_proposals_streaming", mock_ep):
         res = client.post(
             "/api/uploads",
             data={"patient_id": "P-0001"},
@@ -534,7 +549,8 @@ def test_upload_unknown_mime_returns_415(isolated_data):
     """Unbekannter Content-Type → 415 ohne LLM-Call."""
     _make_patient("P-0001")
 
-    with patch("main.extract_proposals", new_callable=AsyncMock) as mock_ep:
+    mock_ep = _make_upload_mock()
+    with patch("main.extract_proposals_streaming", mock_ep):
         res = client.post(
             "/api/uploads",
             data={"patient_id": "P-0001"},
@@ -543,3 +559,25 @@ def test_upload_unknown_mime_returns_415(isolated_data):
 
     assert res.status_code == 415
     mock_ep.assert_not_called()
+
+
+def test_upload_response_is_ndjson_with_done_event(isolated_data):
+    """Streaming-Response enthält valides NDJSON mit done-Event."""
+    _make_patient("P-0001")
+    payload = b"Befundbericht: EF 45%"
+
+    mock_ep = _make_upload_mock()
+    with patch("main.extract_proposals_streaming", mock_ep):
+        res = client.post(
+            "/api/uploads",
+            data={"patient_id": "P-0001"},
+            files={"file": ("befund.txt", payload, "text/plain")},
+        )
+
+    assert res.status_code == 200
+    events = _parse_ndjson(res.text)
+    assert len(events) >= 1
+    done = next((e for e in events if e["type"] == "done"), None)
+    assert done is not None
+    assert "total_proposals" in done
+    assert "auto_skipped" in done
