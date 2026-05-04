@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Loader2 } from "lucide-react";
+import ReactMarkdown from "react-markdown";
 import type {
   ApplyResponse,
   ApplyResult,
@@ -6,10 +8,12 @@ import type {
   ChatResponse,
   Patient,
   Proposal,
-  UploadResponse,
+  StreamEvent,
 } from "../types";
 import { STAMMDATEN_FELD_LABELS } from "../types";
 import { takePendingFile } from "../pendingFileStore";
+import { parseNdjson } from "../utils/ndjson";
+import { formatSectionCounts } from "../utils/streamSection";
 import ProposalCard from "./ProposalCard";
 import Toast, { type ToastMessage } from "./Toast";
 
@@ -34,6 +38,8 @@ interface ProposalsEntry {
   appliedIndices: Set<number>;  // erfolgreich angewendete Indizes
   fullyApplied: boolean;        // alle Cards entweder applied oder abgewählt → Bar weg
   discarded: boolean;           // User hat Vorschläge verworfen → Bar weg
+  streaming: boolean;           // true während NDJSON-Stream aktiv
+  streamStatus: { phase: "block1" | "block2"; iter: number; max_iter: number; items_in_phase: number } | null;
 }
 
 interface AutoSkipEntry {
@@ -65,6 +71,7 @@ function makeProposalsEntry(
   source: "upload" | "chat",
   proposals: Proposal[],
   fileName?: string,
+  streaming = false,
 ): ProposalsEntry {
   return {
     kind: "proposals",
@@ -79,6 +86,8 @@ function makeProposalsEntry(
     appliedIndices: new Set(),
     fullyApplied: false,
     discarded: false,
+    streaming,
+    streamStatus: null,
   };
 }
 
@@ -132,6 +141,17 @@ export function PatientChatPanel({ patientId, patient, refreshPatient, onPatient
 
   function showToast(kind: ToastMessage["kind"], text: string) {
     setToast({ id: Date.now(), kind, text });
+  }
+
+  // Safe for async streaming loops — uses functional setState so closure is never stale
+  function updateEntryById(entryId: string, fn: (e: ProposalsEntry) => ProposalsEntry) {
+    setHistory((prev) => {
+      const next = prev.map((e) =>
+        e.kind === "proposals" && e.id === entryId ? fn(e) : e,
+      );
+      historyStore.set(patientId, next);
+      return next;
+    });
   }
 
   // Letzten noch nicht vollständig angewendeten proposals-Block finden — dieser steuert die Bar
@@ -222,10 +242,10 @@ export function PatientChatPanel({ patientId, patient, refreshPatient, onPatient
     handleFileSelected(file, historyStore.get(patientId) ?? []); // eslint-disable-line react-hooks/exhaustive-deps
   }, [patientId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Datei-Upload ──────────────────────────────────────────────────────────
+  // ── Datei-Upload (NDJSON-Streaming) ──────────────────────────────────────
 
   async function handleFileSelected(file: File, baseHistory?: HistoryEntry[]) {
-    if (uploading) return;  // F5: Concurrent-Schutz
+    if (uploading) return;  // Concurrent-Schutz
     if (!ACCEPTED_MIME.includes(file.type)) {
       const err: ChatTextEntry = {
         kind: "chat-text",
@@ -235,43 +255,71 @@ export function PatientChatPanel({ patientId, patient, refreshPatient, onPatient
       persist([...(baseHistory ?? history), err]);
       return;
     }
+
     const userEntry: ChatTextEntry = {
       kind: "chat-text",
       role: "user",
       content: `[Datei: ${file.name}]`,
     };
     const optimistic = [...(baseHistory ?? history), userEntry];
-    persist(optimistic);
+
+    // Streaming entry added immediately so the live bar appears before first LLM token
+    const streamEntry = makeProposalsEntry("upload", [], file.name, true);
+    persist([...optimistic, streamEntry]);
+    const entryId = streamEntry.id;
+
     setUploading(true);
     try {
       const formData = new FormData();
       formData.append("file", file);
       formData.append("patient_id", patientId);
       const res = await fetch("/api/uploads", { method: "POST", body: formData });
+
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body?.detail ?? `HTTP ${res.status}`);
       }
-      const data = (await res.json()) as UploadResponse & { message?: string };
-      if (data.auto_skipped || data.proposals.length === 0) {
-        const skip: AutoSkipEntry = {
-          kind: "auto-skip",
-          id: `skip-${Date.now()}`,
-          fileName: file.name,
-        };
-        persist([...optimistic, skip]);
-      } else {
-        const propEntry = makeProposalsEntry("upload", data.proposals, file.name);
-        persist([...optimistic, propEntry]);
+      if (!res.body) throw new Error("Keine Stream-Antwort vom Server");
+
+      for await (const event of parseNdjson<StreamEvent>(res.body)) {
+        if (event.type === "heartbeat") continue;
+
+        if (event.type === "status") {
+          updateEntryById(entryId, (e) => ({ ...e, streamStatus: event }));
+        } else if (event.type === "proposals") {
+          updateEntryById(entryId, (e) => {
+            const newProposals = [...e.proposals, ...event.items];
+            const newSelected = new Set(e.selectedIndices);
+            event.items.forEach((_, i) => newSelected.add(e.proposals.length + i));
+            return { ...e, proposals: newProposals, selectedIndices: newSelected };
+          });
+        } else if (event.type === "error") {
+          showToast("error", "Verbindung abgebrochen — bitte erneut hochladen");
+          updateEntryById(entryId, (e) => ({ ...e, streaming: false, discarded: true }));
+          return;
+        } else if (event.type === "done") {
+          if (event.auto_skipped) {
+            // Replace streaming entry with auto-skip entry in the same position
+            const skip: AutoSkipEntry = {
+              kind: "auto-skip",
+              id: `skip-${Date.now()}`,
+              fileName: file.name,
+            };
+            setHistory((prev) => {
+              const next = prev.map((e) =>
+                e.kind === "proposals" && e.id === entryId ? skip : e,
+              );
+              historyStore.set(patientId, next);
+              return next;
+            });
+          } else {
+            updateEntryById(entryId, (e) => ({ ...e, streaming: false, streamStatus: null }));
+          }
+        }
       }
     } catch (e) {
-      const err: ChatTextEntry = {
-        kind: "chat-text",
-        role: "assistant",
-        content: `Upload-Fehler: ${(e as Error).message}`,
-      };
-      persist([...optimistic, err]);
       showToast("error", "Verbindung zum Backend verloren");
+      updateEntryById(entryId, (e) => ({ ...e, streaming: false, discarded: true }));
     } finally {
       setUploading(false);
     }
@@ -410,15 +458,37 @@ export function PatientChatPanel({ patientId, patient, refreshPatient, onPatient
       return (
         <div key={idx} className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
           <div
-            className={`max-w-[80%] rounded-xl px-3 py-2 text-sm whitespace-pre-wrap ${
-              isUser ? "bg-blue-600 text-white" : "bg-white border border-gray-200 text-gray-800"
+            className={`max-w-[80%] rounded-xl px-3 py-2 text-sm ${
+              isUser
+                ? "bg-blue-600 text-white whitespace-pre-wrap"
+                : "bg-white border border-gray-200 text-gray-800"
             }`}
           >
-            {entry.content}
+            {isUser ? (
+              entry.content
+            ) : (
+              // Assistant replies from LLM may contain Markdown — render it properly
+              <ReactMarkdown
+                components={{
+                  p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                  ul: ({ children }) => <ul className="list-disc list-inside space-y-1 mb-2">{children}</ul>,
+                  ol: ({ children }) => <ol className="list-decimal list-inside space-y-1 mb-2">{children}</ol>,
+                  li: ({ children }) => <li>{children}</li>,
+                  strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+                  em: ({ children }) => <em className="italic">{children}</em>,
+                  code: ({ children }) => (
+                    <code className="bg-gray-100 rounded px-1 font-mono text-xs">{children}</code>
+                  ),
+                }}
+              >
+                {entry.content}
+              </ReactMarkdown>
+            )}
           </div>
         </div>
       );
     }
+
     if (entry.kind === "auto-skip") {
       return (
         <div key={idx} className="flex justify-start">
@@ -431,20 +501,40 @@ export function PatientChatPanel({ patientId, patient, refreshPatient, onPatient
         </div>
       );
     }
+
     // proposals block
+    const isStreaming = entry.streaming;
+    const headerCount = isStreaming && entry.proposals.length > 0
+      ? formatSectionCounts(entry.proposals)
+      : `${entry.proposals.length} ${entry.proposals.length === 1 ? "Vorschlag" : "Vorschläge"}`;
+    const liveText = entry.streamStatus
+      ? `Block ${entry.streamStatus.phase === "block1" ? 1 : 2} — Iteration ${entry.streamStatus.iter}/${entry.streamStatus.max_iter}, ${entry.streamStatus.items_in_phase} Items bisher`
+      : "Verbinde…";
+
     return (
       <div key={idx} className="flex justify-start">
         <div className={`rounded-xl border border-gray-200 bg-white text-sm overflow-hidden w-full max-w-[90%] ${entry.discarded ? "opacity-50 pointer-events-none" : ""}`}>
+          {/* Header */}
           <div className="px-3 py-2 border-b border-gray-100 bg-gray-50 flex items-center justify-between gap-2">
             <p className="font-medium text-gray-800 truncate">
               {entry.source === "upload" ? "📎 " : "💬 "}
               {entry.fileName ?? (entry.source === "chat" ? "Chat-Vorschläge" : "Upload")}
             </p>
             <span className="text-xs text-gray-500 shrink-0">
-              {entry.proposals.length} {entry.proposals.length === 1 ? "Vorschlag" : "Vorschläge"}
-              {entry.appliedIndices.size > 0 && ` · ${entry.appliedIndices.size} angewendet`}
+              {headerCount}
+              {!isStreaming && entry.appliedIndices.size > 0 && ` · ${entry.appliedIndices.size} angewendet`}
             </span>
           </div>
+
+          {/* Sticky live bar while streaming */}
+          {isStreaming && (
+            <div className="px-3 py-1.5 border-b border-amber-100 bg-amber-50 flex items-center gap-2 text-xs text-amber-800">
+              <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+              <span>{liveText}</span>
+            </div>
+          )}
+
+          {/* Proposal cards — flow in progressively */}
           <div className="px-3 py-2 space-y-2 max-h-[28rem] overflow-y-auto">
             {entry.proposals.map((p, i) => {
               const applied = entry.appliedIndices.has(i);
@@ -492,13 +582,6 @@ export function PatientChatPanel({ patientId, patient, refreshPatient, onPatient
             </div>
           </div>
         )}
-        {uploading && (
-          <div className="flex justify-start">
-            <div className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-800">
-              Verarbeitung läuft, kann 30–60 Sekunden dauern…
-            </div>
-          </div>
-        )}
         <div ref={bottomRef} />
       </div>
 
@@ -507,18 +590,25 @@ export function PatientChatPanel({ patientId, patient, refreshPatient, onPatient
         <div className="border-t border-blue-100 bg-blue-50/80 backdrop-blur px-4 py-2 flex items-center justify-between gap-2">
           <button
             onClick={handleDiscard}
-            disabled={applying}
+            disabled={applying || activeProposals.streaming}
             className="rounded-lg bg-gray-100 px-4 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Verwerfen
           </button>
           <div className="flex items-center gap-2">
-            <span className="text-sm text-blue-900">
-              <span className="font-medium">{selectedActiveCount}</span> von {totalActive} anwenden
-            </span>
+            {activeProposals.streaming ? (
+              <span className="flex items-center gap-1.5 text-sm text-amber-700">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Analysiert…
+              </span>
+            ) : (
+              <span className="text-sm text-blue-900">
+                <span className="font-medium">{selectedActiveCount}</span> von {totalActive} anwenden
+              </span>
+            )}
             <button
               onClick={() => handleApply()}
-              disabled={applying || selectedActiveCount === 0}
+              disabled={applying || selectedActiveCount === 0 || activeProposals.streaming}
               className="rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {applying ? "Wird übernommen…" : "Anwenden"}
