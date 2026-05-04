@@ -68,9 +68,11 @@ interface ArgFieldProps {
   onChange: (key: string, value: ArgValue) => void;
   readOnly?: boolean;
   isStammdatenFeld?: boolean;
+  /** Value of the `feld` arg when rendering the `wert` key for update_stammdaten. */
+  stammdatenFeldContext?: string;
 }
 
-function ArgField({ argKey, value, onChange, readOnly, isStammdatenFeld }: ArgFieldProps) {
+function ArgField({ argKey, value, onChange, readOnly, isStammdatenFeld, stammdatenFeldContext }: ArgFieldProps) {
   const ro = readOnly || READONLY_KEYS.has(argKey) || isStammdatenFeld;
   const label = (
     <label className="block text-xs font-medium text-gray-600 mb-0.5">{argKey}</label>
@@ -128,6 +130,53 @@ function ArgField({ argKey, value, onChange, readOnly, isStammdatenFeld }: ArgFi
         </div>
       </div>
     );
+  }
+
+  // update_stammdaten: typed input for 'wert' based on which field is being edited
+  if (argKey === "wert" && stammdatenFeldContext) {
+    if (stammdatenFeldContext === "geschlecht") {
+      return (
+        <div>
+          {label}
+          <select
+            value={stringValue}
+            onChange={(e) => onChange(argKey, e.target.value)}
+            className="w-full rounded border border-gray-300 px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
+          >
+            <option value="m">m — männlich</option>
+            <option value="w">w — weiblich</option>
+            <option value="d">d — divers</option>
+          </select>
+        </div>
+      );
+    }
+    if (stammdatenFeldContext === "geburtsdatum" || stammdatenFeldContext === "aufnahmedatum") {
+      return (
+        <div>
+          {label}
+          <input
+            type="date"
+            value={stringValue}
+            onChange={(e) => onChange(argKey, e.target.value)}
+            className="w-full rounded border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
+          />
+        </div>
+      );
+    }
+    if (stammdatenFeldContext === "aufnahme_quelle") {
+      return (
+        <div>
+          {label}
+          <input
+            type="text"
+            value={stringValue}
+            placeholder="z.B. elektiv, notfall, extern"
+            onChange={(e) => onChange(argKey, e.target.value)}
+            className="w-full rounded border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
+          />
+        </div>
+      );
+    }
   }
 
   if (isDateKey(argKey)) {
@@ -373,6 +422,12 @@ export default function ProposalCard({
                 proposal.type === "update_singleton" &&
                 proposal.call?.tool === "update_stammdaten" &&
                 key === "feld";
+              const stammdatenFeldContext =
+                proposal.type === "update_singleton" &&
+                proposal.call?.tool === "update_stammdaten" &&
+                key === "wert"
+                  ? String(localArgs.feld ?? "")
+                  : undefined;
               return (
                 <ArgField
                   key={key}
@@ -380,6 +435,7 @@ export default function ProposalCard({
                   value={value}
                   onChange={handleArgChange}
                   isStammdatenFeld={isStammFeld}
+                  stammdatenFeldContext={stammdatenFeldContext}
                 />
               );
             })}
