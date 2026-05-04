@@ -28,6 +28,12 @@ Klare klinische Trennung — die Verteilung ist NICHT optional, `verlaufsdiagnos
 
 **Vorbekannte Diagnose** = vor Aufnahme bestehend, nicht aktueller Behandlungsanlass. Z.n., chronische Erkrankungen, Allergien. Inhaltsreich: "Z.n. Splenektomie 2013 bei Splenomegalie unklarer Genese" (NICHT kürzen). KHK: Gefäßstatus + Bypässe.
 
+**Granularität bei Vorerkrankungen:** Jede Vorerkrankung als **eigenes** `add_vorbekannte_diagnose`-Item. NICHT clustern.
+
+❌ Falsch: ein Item mit `text: "KHK, aHT, DM II, Z.n. Splenektomie 2013, chron. Thrombozytopenie, Z.n. CCE, Z.n. Appendektomie"`.
+
+✅ Richtig: 7 separate Items — eines für KHK, eines für aHT, eines für DM II, etc. Jedes mit eigener `source_quote`.
+
 ENTSCHEIDUNG: Bei Aufnahme schon da → Behandlungsdiagnose. Im Verlauf neu aufgetreten → Verlaufsdiagnose. Vor Aufenthalt bestehend → Vorbekannte.
 
 Beispiele (klinisch gemischter Fall, postoperativer ITS-Verlauf):
@@ -72,6 +78,10 @@ DATUMS-LOGIK FÜR add_therapie:
 - Einmaliges Event (Eingriff, OP, Bedside-Prozedur): beginn = ende = Datum
 - Laufende Therapie (noch aktiv): beginn = Datum, ende = null
 - Beendete Zeitraum-Therapie (z.B. abgeschlossene AB-Linie): beginn = Startdatum, ende = Enddatum
+
+**`ende`-Datum nur bei expliziter Beendigung:** Setze `ende` nur, wenn die Quelldokumentation eine **Beendigung** der Therapie explizit dokumentiert (z.B. „Antibiose abgesetzt", „Impella explantiert", „Beatmung beendet", „Perfusor aus", festes Stop-Datum). Wenn die Therapie am letzten dokumentierten Tag noch **läuft** — auch wenn das das letzte PDF-Datum ist — bleibt `ende: null`.
+
+Beispiel: Impella läuft am letzten Doku-Tag stabil auf P4, Explantation für den Folgetag geplant aber im PDF nicht dokumentiert → `ende: null`. NICHT `ende = letzter Doku-Tag`.
 
 BEISPIELE:
 - CABG 04.04. → add_therapie(kategorie="operativ", bezeichnung="CABG 3-fach", beginn="2026-04-04", ende="2026-04-04", ...)
@@ -158,6 +168,10 @@ Die Anamnese soll die Aufnahmegeschichte vollständig enthalten:
 - Indikation der Notfall-/elektiven Procedure
 
 Beispiel (kardiochirurgischer Notfall): AP-Symptomatik seit ~18 Uhr → Erstvorstellung Charité Campus Mitte → STEMI-Diagnose und HK mit Hauptstammstenose → Notfall-Verlegung DHZC zur OP → Verlegungs-Trigger: neu aufgetretenes VHF + pulmonale Stauung mit NIV-Bedarf.
+
+STAMMDATEN-KLAUSEL — AUFNAHMEDATUM
+
+**Aufnahmedatum** = Datum der **stationären/ITS-Aufnahme** im DHZC. NICHT das Datum eines ambulanten Aufnahmegesprächs, einer chirurgischen Sprechstunde oder einer Voruntersuchung. Wenn ambulanter Vorbesuch und stationäre Aufnahme an unterschiedlichen Tagen stattfinden, gilt das **spätere Datum** (= Datum der stationären Aufnahme).
 
 STATE-AWARE-LOGIK
 

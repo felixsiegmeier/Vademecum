@@ -541,6 +541,51 @@ def test_block1_prompt_includes_status_pflicht():
     assert "MUSS-Aufrufe" in prompt or "Pflicht" in prompt.lower()
 
 
+def test_block1_aufnahmedatum_clause_present():
+    """Patch C: Aufnahmedatum-Differenzierung (stationär vs. ambulant) ist im Block-1-Prompt."""
+    from pathlib import Path
+    prompt = (Path(__file__).parent.parent / "prompts" / "extraction_block1.txt").read_text(encoding="utf-8")
+
+    required = [
+        "stationär",        # stationäre Aufnahme vs. ambulanter Vorbesuch
+        "ambulant",         # ambulantes Aufnahmegespräch / Vorbesuch
+        "Aufnahmedatum",    # explizit benannte Stammdaten-Klausel
+    ]
+    missing = [t for t in required if t not in prompt]
+    assert missing == [], f"Aufnahmedatum-Klausel fehlt/unvollständig: {missing}"
+
+
+def test_block1_vorerkrankungen_granularity_clause_present():
+    """Patch D: Granularitäts-Klausel + Negativ-Beispiel für Vorerkrankungen im Block-1-Prompt."""
+    from pathlib import Path
+    prompt = (Path(__file__).parent.parent / "prompts" / "extraction_block1.txt").read_text(encoding="utf-8")
+
+    required = [
+        "Granularität bei Vorerkrankungen",   # Klausel-Header
+        "add_vorbekannte_diagnose",            # konkreter Tool-Name
+        "NICHT clustern",                      # Kernanweisung
+        "KHK, aHT, DM II",                    # Negativ-Beispiel-Inhalt
+        "7 separate Items",                    # Positiv-Beispiel
+    ]
+    missing = [t for t in required if t not in prompt]
+    assert missing == [], f"Granularitäts-Klausel fehlt/unvollständig: {missing}"
+
+
+def test_block1_therapie_ende_clause_present():
+    """Patch E: `ende`-Datum nur bei expliziter Beendigung — Klausel im Block-1-Prompt."""
+    from pathlib import Path
+    prompt = (Path(__file__).parent.parent / "prompts" / "extraction_block1.txt").read_text(encoding="utf-8")
+
+    required = [
+        "explizit",                   # Kernbegriff der Klausel
+        "ende`-Datum nur bei",        # Klausel-Header (Backtick-Schreibweise im Prompt)
+        "ende: null",                 # Negativ-Konsequenz wenn kein Stop dokumentiert
+        "letzter Doku-Tag",           # konkreter Fehlerfall
+    ]
+    missing = [t for t in required if t not in prompt]
+    assert missing == [], f"Therapie-ende-Klausel fehlt/unvollständig: {missing}"
+
+
 # ── Test 11: Block-2-Prompt enthält Iter-v2-Konzeptbausteine ─────────────────
 
 
