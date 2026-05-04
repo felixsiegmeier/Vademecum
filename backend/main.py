@@ -1,4 +1,6 @@
+import csv
 import hashlib
+import io
 import json
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -40,8 +42,8 @@ from storage import (
 
 load_dotenv()
 
-# Erlaubte MIME-Typen für alle Upload-Endpoints
-ALLOWED_UPLOAD_MIMES: frozenset[str] = frozenset({
+# Binäre MIME-Typen (PDF + Bilder) — auch für /api/extract-stammdaten akzeptiert
+_BINARY_UPLOAD_MIMES: frozenset[str] = frozenset({
     "application/pdf",
     "image/jpeg",
     "image/jpg",
@@ -51,6 +53,89 @@ ALLOWED_UPLOAD_MIMES: frozenset[str] = frozenset({
     "image/tiff",
     "image/bmp",
 })
+
+_TEXT_MIMES: frozenset[str] = frozenset({
+    "text/plain",
+    "text/markdown",
+})
+_CSV_MIMES: frozenset[str] = frozenset({
+    "text/csv",
+    "application/csv",
+})
+_XLSX_MIMES: frozenset[str] = frozenset({
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+})
+_DOCX_MIMES: frozenset[str] = frozenset({
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+})
+
+# /api/uploads akzeptiert alle Formate; /api/extract-stammdaten nur binäre
+ALLOWED_UPLOAD_MIMES: frozenset[str] = (
+    _BINARY_UPLOAD_MIMES | _TEXT_MIMES | _CSV_MIMES | _XLSX_MIMES | _DOCX_MIMES
+)
+
+
+def _bytes_to_text(file_bytes: bytes) -> str:
+    try:
+        return file_bytes.decode("utf-8")
+    except UnicodeDecodeError:
+        return file_bytes.decode("latin-1")
+
+
+def _csv_to_markdown(file_bytes: bytes) -> str:
+    text = _bytes_to_text(file_bytes)
+    reader = csv.reader(io.StringIO(text))
+    rows = list(reader)
+    if not rows:
+        return text
+    header = rows[0]
+    sep = ["---"] * len(header)
+    lines = (
+        ["| " + " | ".join(header) + " |", "| " + " | ".join(sep) + " |"]
+        + ["| " + " | ".join(row) + " |" for row in rows[1:]]
+    )
+    return "\n".join(lines)
+
+
+def _xlsx_to_markdown(file_bytes: bytes) -> str:
+    import openpyxl
+    wb = openpyxl.load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
+    parts: list[str] = []
+    for sheet_name in wb.sheetnames:
+        ws = wb[sheet_name]
+        rows = [[str(c) if c is not None else "" for c in row] for row in ws.values]
+        if not rows:
+            continue
+        parts.append(f"## {sheet_name}")
+        sep = ["---"] * len(rows[0])
+        parts.append("| " + " | ".join(rows[0]) + " |")
+        parts.append("| " + " | ".join(sep) + " |")
+        parts.extend("| " + " | ".join(row) + " |" for row in rows[1:])
+        parts.append("")
+    return "\n".join(parts)
+
+
+def _docx_to_text(file_bytes: bytes) -> str:
+    from docx import Document
+    doc = Document(io.BytesIO(file_bytes))
+    parts: list[str] = []
+    for block in doc.element.body:
+        tag = block.tag.rsplit("}", 1)[-1]
+        if tag == "p":
+            from docx.text.paragraph import Paragraph
+            text = Paragraph(block, doc).text.strip()
+            if text:
+                parts.append(text)
+        elif tag == "tbl":
+            from docx.table import Table
+            tbl = Table(block, doc)
+            tbl_rows = [[c.text.replace("\n", " ") for c in row.cells] for row in tbl.rows]
+            if tbl_rows:
+                parts.append("| " + " | ".join(tbl_rows[0]) + " |")
+                parts.append("| " + " | ".join(["---"] * len(tbl_rows[0])) + " |")
+                parts.extend("| " + " | ".join(r) + " |" for r in tbl_rows[1:])
+            parts.append("")
+    return "\n".join(parts)
 
 app = FastAPI(title="arztbrief-app")
 # Ein globaler LLM-Client für alle Requests (hält die HTTP-Session offen)
@@ -636,6 +721,7 @@ async def patient_chat(patient_id: str, req: PatientChatRequest):
 # ── Dokument-Upload / Extraktion ──────────────────────────────────────────────
 
 _PDF_MIMES = frozenset({"application/pdf"})
+_IMAGE_MIMES = _BINARY_UPLOAD_MIMES - _PDF_MIMES
 
 
 @app.post("/api/uploads")
@@ -651,7 +737,7 @@ async def upload_document(
     """
     mime_type = file.content_type or "application/octet-stream"
     if mime_type not in ALLOWED_UPLOAD_MIMES:
-        raise HTTPException(400, f"Nicht unterstützter Dateityp: {mime_type}")
+        raise HTTPException(415, f"Nicht unterstützter Dateityp: {mime_type}")
 
     file_bytes = await file.read()
 
@@ -664,12 +750,28 @@ async def upload_document(
 
     if mime_type in _PDF_MIMES:
         content_type: Literal["pdf", "image", "text"] = "pdf"
-    else:
+        file_content: str | bytes = file_bytes
+    elif mime_type in _IMAGE_MIMES:
         content_type = "image"
+        file_content = file_bytes
+    elif mime_type in _TEXT_MIMES:
+        content_type = "text"
+        file_content = _bytes_to_text(file_bytes)
+    elif mime_type in _CSV_MIMES:
+        content_type = "text"
+        file_content = _csv_to_markdown(file_bytes)
+    elif mime_type in _XLSX_MIMES:
+        content_type = "text"
+        file_content = _xlsx_to_markdown(file_bytes)
+    elif mime_type in _DOCX_MIMES:
+        content_type = "text"
+        file_content = _docx_to_text(file_bytes)
+    else:
+        raise HTTPException(415, f"Nicht unterstützter Dateityp: {mime_type}")
 
     try:
         proposals = await extract_proposals(
-            llm, patient, file_bytes, content_type, image_mime_type=mime_type
+            llm, patient, file_content, content_type, image_mime_type=mime_type
         )
     except RateLimitError:
         raise HTTPException(429, "LLM Rate-Limit erreicht. Bitte kurz warten.")
@@ -715,7 +817,7 @@ async def extract_stammdaten_endpoint(file: UploadFile = File(...)):
     Kein Error bei Nicht-Patientendokumenten, nur leeres Ergebnis.
     """
     mime_type = file.content_type or "application/octet-stream"
-    if mime_type not in ALLOWED_UPLOAD_MIMES:
+    if mime_type not in _BINARY_UPLOAD_MIMES:
         raise HTTPException(400, f"Nicht unterstützter Dateityp: {mime_type}")
 
     file_bytes = await file.read()

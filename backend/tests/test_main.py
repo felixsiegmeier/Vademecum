@@ -434,3 +434,112 @@ def test_chat_text_reply_no_proposals(isolated_data):
     assert body["proposals"] == []
     assert body["reply"] == "Bei HIT-Verdacht wäre Argatroban indiziert."
     assert body["auto_skipped"] is False
+
+
+# ── Phase-5: Neue Upload-Formate ──────────────────────────────────────────────
+
+
+def test_upload_txt_passes_text_to_pipeline(isolated_data):
+    """text/plain wird UTF-8 dekodiert und als content_type='text' an extract_proposals übergeben."""
+    _make_patient("P-0001")
+    payload = b"Patient Celik, aufgenommen 23.04. mit kardiogenem Schock."
+
+    with patch("main.extract_proposals", new_callable=AsyncMock) as mock_ep:
+        mock_ep.return_value = []
+        res = client.post(
+            "/api/uploads",
+            data={"patient_id": "P-0001"},
+            files={"file": ("note.txt", payload, "text/plain")},
+        )
+
+    assert res.status_code == 200
+    _, kwargs = mock_ep.call_args
+    args = mock_ep.call_args.args
+    content_passed = args[2] if len(args) > 2 else kwargs.get("content")
+    content_type_passed = args[3] if len(args) > 3 else kwargs.get("content_type")
+    assert content_type_passed == "text"
+    assert "Celik" in content_passed
+
+
+def test_upload_md_accepted(isolated_data):
+    """text/markdown wird wie text/plain behandelt — kein 415."""
+    _make_patient("P-0001")
+    payload = b"# Aufnahme\nPatient kommt mit Dyspnoe."
+
+    with patch("main.extract_proposals", new_callable=AsyncMock) as mock_ep:
+        mock_ep.return_value = []
+        res = client.post(
+            "/api/uploads",
+            data={"patient_id": "P-0001"},
+            files={"file": ("note.md", payload, "text/markdown")},
+        )
+
+    assert res.status_code == 200
+    content_passed = mock_ep.call_args.args[2]
+    assert "Dyspnoe" in content_passed
+
+
+def test_upload_csv_converts_to_markdown_table(isolated_data):
+    """text/csv wird in eine Markdown-Tabelle konvertiert, bevor es die Pipeline erreicht."""
+    _make_patient("P-0001")
+    payload = b"datum,wert\n2026-04-23,Laktat 3.2\n2026-04-24,Laktat 1.8"
+
+    with patch("main.extract_proposals", new_callable=AsyncMock) as mock_ep:
+        mock_ep.return_value = []
+        res = client.post(
+            "/api/uploads",
+            data={"patient_id": "P-0001"},
+            files={"file": ("labor.csv", payload, "text/csv")},
+        )
+
+    assert res.status_code == 200
+    content_passed = mock_ep.call_args.args[2]
+    assert "| datum | wert |" in content_passed
+    assert "| --- | --- |" in content_passed
+    assert "Laktat 3.2" in content_passed
+
+
+def test_upload_xlsx_converts_to_markdown(isolated_data):
+    """xlsx-Datei wird via openpyxl in Markdown-Tabellen umgewandelt."""
+    import io as _io
+    import openpyxl
+
+    _make_patient("P-0001")
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Labor"
+    ws.append(["datum", "wert"])
+    ws.append(["2026-04-23", "Laktat 3.2"])
+    buf = _io.BytesIO()
+    wb.save(buf)
+    xlsx_bytes = buf.getvalue()
+
+    with patch("main.extract_proposals", new_callable=AsyncMock) as mock_ep:
+        mock_ep.return_value = []
+        res = client.post(
+            "/api/uploads",
+            data={"patient_id": "P-0001"},
+            files={"file": ("labor.xlsx", xlsx_bytes,
+                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        )
+
+    assert res.status_code == 200
+    content_passed = mock_ep.call_args.args[2]
+    assert "## Labor" in content_passed
+    assert "| datum | wert |" in content_passed
+    assert "Laktat 3.2" in content_passed
+
+
+def test_upload_unknown_mime_returns_415(isolated_data):
+    """Unbekannter Content-Type → 415 ohne LLM-Call."""
+    _make_patient("P-0001")
+
+    with patch("main.extract_proposals", new_callable=AsyncMock) as mock_ep:
+        res = client.post(
+            "/api/uploads",
+            data={"patient_id": "P-0001"},
+            files={"file": ("weird.bin", b"\x00\x01\x02", "application/octet-stream")},
+        )
+
+    assert res.status_code == 415
+    mock_ep.assert_not_called()

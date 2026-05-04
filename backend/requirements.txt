@@ -7,3 +7,5 @@ pydantic
 pyyaml
 pypdfium2
 python-multipart
+openpyxl
+python-docx

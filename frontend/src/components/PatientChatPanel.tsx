@@ -49,7 +49,17 @@ const historyStore = new Map<string, HistoryEntry[]>();
 
 // ── Hilfsfunktionen ──────────────────────────────────────────────────────────
 
-const ACCEPTED_MIME = ["application/pdf", "image/jpeg", "image/png"];
+const ACCEPTED_MIME = [
+  "application/pdf",
+  "image/jpeg",
+  "image/png",
+  "text/plain",
+  "text/markdown",
+  "text/csv",
+  "application/csv",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+];
 
 function makeProposalsEntry(
   source: "upload" | "chat",
@@ -522,7 +532,7 @@ export function PatientChatPanel({ patientId, patient, refreshPatient, onPatient
         <input
           ref={fileInputRef}
           type="file"
-          accept=".pdf,.jpg,.jpeg,.png"
+          accept=".pdf,.jpg,.jpeg,.png,.txt,.md,.csv,.xlsx,.docx"
           className="hidden"
           onChange={(e) => {
             const file = e.target.files?.[0];
