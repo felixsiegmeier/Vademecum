@@ -1,4 +1,4 @@
-# Backend Context — Stand 2026-05-04 (V1.6 Phase 3.5 Iter v2 Patches C/D/E)
+# Backend Context — Stand 2026-05-04 (Phase D Iter 3 — Streaming Proposals)
 
 ## Pydantic-Modelle (kompakt)
 
@@ -86,8 +86,45 @@
 
 ## Datei-Format-Support (Phase 5)
 
-### /api/uploads — akzeptierte Formate
-Alle Formate werden in die bestehende 2-Pass-Block-1/Block-2-Pipeline eingespeist:
+### POST /api/uploads — Streaming-Endpoint (Phase D Iter 3)
+
+**Transport:** NDJSON über chunked HTTP (`application/x-ndjson`)  
+**Header:** `X-Accel-Buffering: no` (verhindert Nginx-Pufferung in Reverse-Proxy-Setups)  
+**Warum kein SSE:** Endpoint ist POST (File-Upload), Browser `EventSource` unterstützt nur GET/HEAD.
+
+Der Sync-Endpoint wurde gelöscht — kein Dual-Maintenance.
+
+#### Event-Schema (5 Typen, ein JSON-Objekt pro Zeile + `\n`)
+
+```jsonc
+// status — vor jedem LLM-Call; items_in_phase zählt add_*-Calls kumulativ in der Phase
+{"type": "status", "phase": "block1", "iter": 1, "max_iter": 8, "items_in_phase": 0}
+
+// heartbeat — alle ~5s während laufendem LLM-Call (Reverse-Proxy Idle-Timeout-Schutz)
+{"type": "heartbeat"}
+
+// proposals — nach erfolgreichem Tool-Batch (ganzer Batch, kein Drip per Item)
+// items: Liste von gruppierten Proposal-Dicts (gleiche Struktur wie apply-proposals)
+{"type": "proposals", "phase": "block1", "items": [{"type": "add", "call": {...}, ...}]}
+
+// done — am Ende beider Pässe; auto_skipped=true wenn total_proposals==0
+{"type": "done", "total_proposals": 3, "auto_skipped": false}
+
+// error — bei Retry-Erschöpfung oder LLM-Exception; Stream endet danach
+{"type": "error", "message": "LLM provider instability ...", "retryable": true}
+```
+
+**Event-Reihenfolge:** status → heartbeat* → proposals (pro Iteration) → status → ... → done  
+**Bei Error:** alles verwerfen (kein Resume). Frontend soll den User neu starten lassen.
+
+#### Heartbeat-Pattern
+
+- `_yield_heartbeats_and_run(coro, out)` startet den LLM-Call als asyncio.Task
+- Polling via `asyncio.wait([llm_task, heartbeat_task], return_when=FIRST_COMPLETED)`
+- Alle 5 s (`_HEARTBEAT_INTERVAL`) wird `{"type": "heartbeat"}` geliefert
+- Task-Cleanup (cancel + await) im `finally`-Block
+
+#### Akzeptierte Formate
 
 | Format | MIME-Typ | Konvertierung |
 | --- | --- | --- |
@@ -99,9 +136,9 @@ Alle Formate werden in die bestehende 2-Pass-Block-1/Block-2-Pipeline eingespeis
 | XLSX | application/vnd.openxmlformats-officedocument.spreadsheetml.sheet | Sheets als Markdown-Tabellen via openpyxl |
 | DOCX | application/vnd.openxmlformats-officedocument.wordprocessingml.document | Absätze + Tabellen als Text via python-docx |
 
-- TXT/MD/CSV/XLSX/DOCX werden als `content_type="text"` an `extract_proposals` übergeben
+- TXT/MD/CSV/XLSX/DOCX werden als `content_type="text"` an `extract_proposals_streaming` übergeben
 - `/api/extract-stammdaten` akzeptiert weiterhin nur PDF + Bilder (`_BINARY_UPLOAD_MIMES`)
-- Unbekannter MIME → HTTP 415
+- Unbekannter MIME → HTTP 415 (vor Stream-Start, noch als normaler HTTP-Fehler)
 
 ## Stammdaten-Extraktion (V1.6 Phase 2)
 
@@ -183,4 +220,4 @@ POST /api/patients/{id}/apply-proposals
 - `CHAT_2PASS_CUTOFF = 2000` (in `agent_patient_chat.py`)
 
 ## Test-Stand
-106 passed in 0.40s
+124 passed in 0.89s
