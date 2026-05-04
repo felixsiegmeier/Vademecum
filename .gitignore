@@ -32,6 +32,10 @@ backend/data/meilensteine/*.md
 backend/data/meilensteine/*.meta.json
 backend/data/briefe/*.json
 
+# Test-PDFs — echte Patientendaten, dürfen nie ins Remote
+backend/test_data/*.pdf
+backend/test_data/*.PDF
+
 # Editor
 .vscode/
 .idea/
