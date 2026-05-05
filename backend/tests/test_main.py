@@ -793,3 +793,45 @@ def test_meilenstein_konsolidierung_mode(isolated_data):
     content = res.json()["content"]
     assert "```" not in content
     assert "=== Patientenübersicht ===" in content
+
+
+# ── Meilenstein Prompt Smoke Tests (Dateiinhalt-Assertions) ──────────────────
+
+from pathlib import Path as _Path  # noqa: E402
+
+_PROMPT_PATH = _Path(__file__).parent.parent / "prompts" / "meilenstein_system.txt"
+
+
+def _prompt_text() -> str:
+    return _PROMPT_PATH.read_text(encoding="utf-8")
+
+
+def test_meilenstein_prompt_excludes_besonderheiten_section():
+    """Besonderheiten-Sektion ist komplett aus dem Prompt entfernt."""
+    prompt = _prompt_text()
+    assert "== Besonderheiten ==" not in prompt, (
+        "Besonderheiten-Sektion muss aus dem Prompt entfernt sein — "
+        "sie produziert Verlaufs-Floskeln und ist empirisch fehleranfällig."
+    )
+
+
+def test_meilenstein_prompt_contains_antikoag_negativbeispiel():
+    """Antikoag-Sektion enthält Layer-Kumulierung-Beispiel mit bMKE."""
+    prompt = _prompt_text()
+    has_bmke = "bMKE" in prompt
+    has_kumulieren = "kumulativ" in prompt or "kumulieren" in prompt
+    assert has_bmke or has_kumulieren, (
+        "Antikoagulation-Sektion muss ein Negativbeispiel enthalten, "
+        "das alle Layer kumuliert (Stichwort 'bMKE' oder 'kumulativ')."
+    )
+
+
+def test_meilenstein_prompt_contains_allergien_klausel():
+    """Nebendiagnosen-Sektion enthält explizite Allergien-MUSS-Klausel."""
+    prompt = _prompt_text()
+    has_immer = "IMMER" in prompt and ("Allergi" in prompt)
+    has_muss = "MUSS" in prompt and ("Allergi" in prompt)
+    assert has_immer or has_muss, (
+        "Relevante Nebendiagnosen muss eine explizite IMMER/MUSS-Klausel "
+        "für Allergien enthalten."
+    )
