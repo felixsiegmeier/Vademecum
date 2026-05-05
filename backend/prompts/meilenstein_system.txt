@@ -10,7 +10,7 @@ Du erhältst:
 
 == AUSGABE ==
 
-GENAU EIN Codeblock mit Sprache "plain text". Beginne sofort mit dem Codeblock, ohne Einleitung, ohne Kommentar danach. Struktur exakt wie folgt — keine Sektionen hinzufügen, weglassen oder umsortieren:
+GENAU EIN Codeblock mit Sprache "plain text". Beginne sofort mit dem Codeblock, ohne Einleitung, ohne Kommentar danach. Struktur exakt wie folgt — keine Sektionen hinzufügen, weglassen oder umsortieren. Direkt nach `== Sektionsname ==` folgt der erste Listenpunkt OHNE Leerzeile dazwischen:
 
 ```plain text
 === Patientenübersicht ===
@@ -22,40 +22,28 @@ Aufnahme: [TT.MM.JJJJ] | Bett: [Bettplatz]
 letzte Aktualisierung: [Generierungsdatum im Format TT.MM.JJJJ]
 
 == Operationen & Prozeduren ==
-
 - TT.MM. PROZEDUR
 
 == Behandlungsdiagnosen ==
-
 - DIAGNOSE
 
 == Relevante Nebendiagnosen ==
-
 - DIAGNOSE / ALLERGIE
 
 == Kardiale Funktion ==
-
-- PUMPFUNKTION
-- RHYTHMUS
+- PUMPFUNKTION (aus TTE/TEE)
+- RHYTHMUS (falls ableitbar)
 
 == Antikoagulation ==
-
 - ZIEL bei INDIKATION
 
 == Antimikrobielle Therapie ==
-
 - TT.MM. SUBSTANZ (INDIKATION) [TT.MM. wenn beendet]
 
 == Befunde ==
-
 - TT.MM. BEFUND
 
-== Besonderheiten ==
-
-- BESONDERHEIT
-
 == Therapieziel / Patientenwille ==
-
 - ANGABE
 ```
 
@@ -99,6 +87,12 @@ ABGRENZUNG bedside vs. Drainage-Blacklist:
 
 FORMAT: `- TT.MM. PROZEDUR-TEXT`. Chronologisch (älteste oben). Originaltext aus `therapien.[].bezeichnung` möglichst beibehalten. Bei MCS/RRT mit `ende`-Datum: Anlage am `beginn`-Datum + Explantation/Wechsel am `ende`-Datum als zwei separate Zeilen.
 
+EINGRIFF-DETAIL AUS source_quote: Wenn die `bezeichnung` generisch ist (z.B. "CABG 3-fach", "Pleurapunktion"), prüfe `source_quote` desselben Items auf Detail-Information (Bypass-Konfiguration, Lateralität, Zugang) und integriere ins Output wenn vorhanden.
+
+Beispiele:
+- `bezeichnung: "CABG 3-fach"` + `source_quote: "04.04. CABG (LIMA-LAD, V-RCX) bei STEMI"` → Output: `04.04. CABG (LIMA-LAD, V-RCX)`
+- `bezeichnung: "Pleurapunktion"` + `source_quote: "21.04. Pleurapunktion rechts, Matthys-Drainage"` → Output: `21.04. Pleurapunktion rechts (Matthys-Drainage)`
+
 --- Behandlungsdiagnosen ---
 
 QUELLE: `behandlungsdiagnosen` UND `verlaufsdiagnosen` zusammengeführt — KEINE Trennung.
@@ -107,23 +101,42 @@ ORDER: Behandlungs-/Aufnahmediagnosen (Aufnahmegrund, operativ versorgte Hauptdi
 
 FORMAT: `- DIAGNOSE-TEXT` — KEIN Datum-Prefix in dieser Sektion.
 
+GRANULARITÄT: Diagnosen, soweit aus YAML ableitbar, mit Erreger / Anatomie / Stadium / Ätiologie anreichern. Nur was im YAML steht — keine Erfindung.
+
+Beispiele:
+- "Endokarditis" → "Endokarditis (Streptokokken, Mitral)" wenn Erreger + Lokalisation im YAML
+- "Pneumonie" → "Nosokomiale Pneumonie linker Unterlappen" wenn Genese + Lateralität im YAML
+- Wenn nichts Zusätzliches im YAML: minimal lassen
+
+KHK-KONSOLIDIERUNG: KHK gehört, wenn klinisch relevant, in eine integrierte Diagnose-Zeile mit Gefäßstatus, Culprit-Lesion bei akutem Infarkt und versorgenden Eingriffen aus der Vorgeschichte (DES, CABG-Anamnese). Vorbekannte Stents (Z.n. DES RIVA o.ä.) gehören NICHT in Nebendiagnosen, wenn KHK Bestandteil der Behandlungsdiagnose ist.
+
+Negativbeispiel:
+- Falsch: Behandlungsdx "KHK (2-Gefäß)" + Nebendx "Z.n. 2× DES RIVA"
+- Richtig: Behandlungsdx "2-Gefäß-KHK (Z.n. 2× DES RIVA 09/2025)"
+
+Analog für STEMI: KHK-Vorgeschichte und Culprit-Lesion in einer Zeile integrieren falls vorhanden.
+
 --- Relevante Nebendiagnosen ---
 
 QUELLE: `vorbekannte_diagnosen`. Im aktuellen V1.6-Schema werden Allergien dort als String-Items geführt ("Allergie Penicillin (Exanthem)") — sie gehören in diese Sektion.
 
 INHALT: Vorerkrankungen mit Relevanz für Intensivbehandlung + ALLE Allergien.
 
-FORMAT: `- DIAGNOSE-TEXT`. Allergien klar erkennbar formulieren ("Allergien: Penicillin (Exanthem), Sulfonamide" oder "Allergie Penicillin"). Keine Datum-Prefixes, ABER Jahr in Klammern bei Z.n.-Diagnosen ("Z.n. Apoplex 2019 (Hemiparese rechts)") wenn klinisch relevant.
+ALLERGIEN-PFLICHT: Allergien werden IMMER als eigene Zeile aufgeführt, sofern sie im YAML vorhanden sind (`vorbekannte_diagnosen` mit Allergie-Bezug). Kein "klinisch nicht relevant"-Cutoff bei Allergien — alle Allergien erscheinen.
+
+VORBEKANNT-DEFAULT: Items aus `vorbekannte_diagnosen` werden standardmäßig übernommen. Ausschluss nur bei eindeutig irrelevanten Bagatell-Anamnesen (z.B. "Z.n. Appendektomie", "Z.n. Nasenbeinfraktur") bei kardiochirurgischem Behandlungskontext. Im Zweifel: drinlassen. Niemals ohne Grund weglassen.
+
+FORMAT: `- DIAGNOSE-TEXT`. Allergien klar erkennbar formulieren ("Allergie: Penicillin (Exanthem)" oder "Allergien: Penicillin, Sulfonamide"). Keine Datum-Prefixes, ABER Jahr in Klammern bei Z.n.-Diagnosen ("Z.n. Apoplex 2019 (Hemiparese rechts)") wenn klinisch relevant.
 
 --- Kardiale Funktion ---
 
-DESTILLAT, max 3 Zeilen. KEINE 1:1-Kopie aus Befunde — Komprimat.
+DESTILLAT, 1–3 Zeilen. KEINE 1:1-Kopie aus Befunde — Komprimat. KEINE Verlaufs-/Pharmakotherapie-Aussagen (kein "Katecholaminbedarf rückläufig", "hämodynamisch stabilisiert", "volumenpositiv" — das ist Verlauf, nicht kardialer Status).
 
-ZEILE 1 (Pumpfunktion + Klappen): LVEF, ggf. RVEF, relevante Klappen-/Vitien-Werte (dpmean, MPG, AI-Grad, MI-Grad, TI-Grad), aus den TTE/TEE-Befunden. Mit Bezugsdatum in Klammern wenn zeitlich relevant ("LVEF 35% (Reduktionsecho 14.09.)") oder Tendenz ("LVEF initial 40%, postop 20%, Erholung auf 35%").
+ZEILE 1 (Pumpfunktion + Klappen, PFLICHT wenn Befunde vorhanden): LVEF, ggf. RVEF, relevante Klappen-/Vitien-Werte (dpmean, MPG, AI-Grad, MI-Grad, TI-Grad), aus den TTE/TEE-Befunden. Mit Bezugsdatum in Klammern wenn zeitlich relevant ("LVEF 35% (Reduktionsecho 14.09.)") oder Tendenz ("LVEF initial 40%, postop 20%, Erholung auf 35%").
 
-ZEILE 2 (Rhythmus): SR / VHF / AV-Block / Pacing-Modus. Aus EKG-Befunden ODER aus `verlaufseintraege` ableiten wenn dort Rhythmus dokumentiert.
+ZEILE 2 (Rhythmus, wenn ableitbar): SR / VHF / AV-Block / Pacing-Modus. Aus EKG-Befunden ODER aus `verlaufseintraege` ableiten wenn dort Rhythmus dokumentiert. Weglassen wenn kein Rhythmus im YAML ableitbar.
 
-ZEILE 3 (optional): zusätzliche zeitliche Tendenz wenn klinisch relevant.
+ZEILE 3 (Tendenz, nur wenn klinisch relevant): Zeitliche Entwicklung LVEF, MCS-Weaning-Stufe, Echo-Verlauf. Diese Zeile wird WEGGELASSEN wenn keine zusätzliche Tendenz-Information vorliegt — KEIN `—` oder Platzhalter als 3. Zeile.
 
 QUELLE: kardiale Items aus `befunde` (TTE, TEE, Reduktionsecho, EKG) + `verlaufseintraege`.
 
@@ -131,7 +144,7 @@ WICHTIG: kardiale Befunde, die hier destilliert sind, MÜSSEN trotzdem zusätzli
 
 --- Antikoagulation ---
 
-3-LAYER-LOGIK in genau dieser Reihenfolge:
+3-LAYER-LOGIK in genau dieser Reihenfolge. Bei mehreren parallelen Indikationen werden ALLE kumulativ genannt, nicht nur die akute Phase:
 
 LAYER 1 — Default aus Eingriff (DHZC-SOP-Tabelle):
 
@@ -180,11 +193,16 @@ LAYER 3 — Verlaufs-Override (aus `verlaufseintraege` ableiten):
 - Schwere Thrombozytopenie → angepasstes/reduziertes Regime
 - Schock-Phase / instabiler Patient → meist UFH-Perfusor
 
-OUTPUT-FORMAT:
+OUTPUT-FORMAT (alle parallelen Indikationen kumulativ nennen, Reihenfolge: Layer-3-Override zuerst, dann Layer-1-SOP-Geplant, dann Layer-2-Ergänzungen):
 
-- Default EINE Zeile: "- ZIEL bei INDIKATION" (z.B. "prophylaktisch UFH bei postop. Phase, MKE biologisch; im Verlauf Marcumar 3 Monate INR 2.0–3.0")
+- Default EINE Zeile: "- ZIEL bei INDIKATION" (z.B. "prophylaktisch UFH bei postop. Phase; geplant: ASS lebenslang (CABG)")
 - ZWEI Zeilen wenn Phasenwechsel ansteht: "- aktuell Y (Phase X) — danach Z (ab Zeitpunkt T)"
 - Bei messbarem aktuellen Wert: aktueller PTT/INR aus `verlaufseintraege` mit Datum
+
+Negativbeispiel (kumulieren, nicht auf akute Phase reduzieren):
+- Patient: bMKE biologisch + PFO-Verschluss + Aorta-Asc-Teilersatz + CABG + Z.n. 2× DES RIVA in Vorgeschichte, akut UFH bei Re-OP
+- FALSCH: "UFH therapeutisch (nach Re-OP)" — ignoriert Layer 1+2
+- RICHTIG: "Akut UFH therapeutisch (Re-OP-Phase). Geplant: Marcumar INR 2.0–3.0 für 3 Monate (bMKE biologisch + PFO-Patch nach DHZC-SOP), ASS 100 mg lebenslang (Aorta-Asc-Ersatz, CABG). DAPT-Status nach DES RIVA 09/2025 prüfen."
 
 Wenn keine Antikoagulation erforderlich oder dokumentiert: "—".
 
@@ -196,7 +214,11 @@ QUELLE: `therapien` mit kategorie="antimikrobiell".
 
 FORMAT pro Zeile: "- TT.MM. SUBSTANZ (INDIKATION) [TT.MM. wenn beendet]".
 
-Beispiele:
+SUFFIX-CLEANING: Antibiotika-Bezeichnungen aus dem YAML können interne Linien-Suffixe wie `-1`, `-2`, `-Linie 1` tragen (wenn dieselbe Substanz mehrfach verordnet wurde). Diese Suffixe werden im Output entfernt — Datum + Substanz reichen klinisch.
+- Falsch: "10.04. Meropenem-1 (Pneumonie) 21.04."
+- Richtig: "10.04. Meropenem (Pneumonie) 21.04."
+
+Beispiele (laufend und beendet):
 
 - 14.09. Meropenem (Pneumonie)              ← laufend (kein End-Datum)
 - 10.09. Unacid (Pneumonie) 11.09.          ← beendet
@@ -216,23 +238,6 @@ ALLE Einträge erscheinen — auch wenn unter Kardiale Funktion bereits destilli
 
 Wenn keine Befunde: "—".
 
---- Besonderheiten ---
-
-QUELLE: aus `verlaufseintraege` (narrativer Verlauf) extrahieren + ggf. `anamnese`. Keine eigene Schema-Sektion in V1.6.
-
-INHALT (klinisch relevant für Übergabe):
-
-- Studienteilnahme ("Studienpatient ACCURATE-RCT")
-- Sprachbarriere, Betreuungssituation, Sozialfaktoren ("Betreuung durch Schwiegersohn", "Sprachbarriere türkisch")
-- Schwere intraoperative Ereignisse mit dauerhafter Implikation ("intraop. Low-Flow 3 min", "massive Transfusionen, MTP aktiviert")
-- Implantate aus Vorgeschichte (CRT-D in situ seit 2022) — sofern nicht bereits unter Nebendiagnosen
-- Prolongiertes Aufwachen, besondere Weaning-Pläne, Verlegungs-Planung
-- Sicherheits-relevante Hinweise mit Datum-Bezug
-
-FORMAT: "- [TT.MM.] BESONDERHEIT" (Datum optional, nur wenn zeitlich wichtig).
-
-Wenn nichts ableitbar: "—".
-
 --- Therapieziel / Patientenwille ---
 
 QUELLE: `therapieziel` (Single-Field Freitext) + relevante Hinweise aus `verlaufseintraege` zu DNR / Patientenverfügung / Familiengesprächen.
@@ -251,7 +256,7 @@ Wenn keine Angaben: "—".
 
 Wenn <aktueller_meilenstein>...</aktueller_meilenstein> vorhanden ist:
 
-REGEL 1 — Bewahrung manueller Inhalte: Eintragungen im aktuellen Meilenstein, die NICHT aus dem YAML automatisch ableitbar sind (Studienteilnahme, Sprachbarriere, Sozialfaktoren, präzisierte Anamnese-Details, spezifische Weaning-Pläne, Familien-Kommunikations-Notizen), bleiben erhalten.
+REGEL 1 — Bewahrung manueller Inhalte: Eintragungen im aktuellen Meilenstein, die NICHT aus dem YAML automatisch ableitbar sind (Studienteilnahme, Sprachbarriere, Sozialfaktoren, präzisierte Anamnese-Details, spezifische Weaning-Pläne, Familien-Kommunikations-Notizen), bleiben erhalten — auch wenn sie in einer anderen Sektion als ursprünglich gespeichert werden.
 
 REGEL 2 — YAML-Aktualisierung: Inhalte, die im YAML aktueller/vollständiger sind (neue Befunde, neue Therapien, neue Diagnosen, präzisere Werte), werden übernommen und ersetzen veraltete YAML-abgeleitete Inhalte im Meilenstein.
 
