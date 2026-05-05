@@ -400,31 +400,56 @@ Die folgenden Regeln wurden aus früheren manuellen Korrekturen am Meilenstein a
 </gelernte_regeln>
 ```
 
-### Lernlog Schreib-Pfad (V1 B2)
+### Lernlog Schreib-Pfad (V1 B2+B3)
 
 **Agent:** `backend/agent_meilenstein_learning.py`
-**Prompts:** `backend/prompts/learning_rule_extraction.txt`, `backend/prompts/learning_conflict_detection.txt`
+**Prompts:** `learning_rule_extraction.txt`, `learning_conflict_detection.txt`, `learning_rule_rebuild.txt`
 
 **Datenmodelle:**
-- `RuleCandidate(section, rule_text)` — ein extrahierter Regelvorschlag
-- `ExtractionResult(candidates: list[RuleCandidate])` — max 10 Kandidaten
-- `ConflictResult(has_conflict: bool, explanation: str)` — Konflikt-Check gegen Bestandsregeln
+- `RuleCandidate(section, rule_text, reasoning, anchor)` — ein extrahierter Regelvorschlag
+- `TrivialChange(description, anchor)` — triviale Änderung ohne Regelwert
+- `ExtractionResult(candidates, trivial_changes)` — max 10 Kandidaten
+- `ConflictResult(has_conflict, explanation, conflicting_rule_id)` — konfliktauflösend
+- `RebuildResult(rule_text, reasoning)` — verfeinerter Kandidat
 
 **Funktionen:**
 - `extract_rule_candidates(client, last_generated, edited) -> ExtractionResult`
   — JSON-Mode LLM-Call, vergleicht Original vs. Bearbeitung, anonymisiert, max 10 Kandidaten
 - `detect_conflict(client, candidate_rule_text, section, existing_rules) -> ConflictResult`
-  — JSON-Mode LLM-Call; Short-Circuit wenn `existing_rules` leer (kein LLM-Call → `has_conflict=False`)
-  — maximal 20 bestehende Regeln übergeben
+  — Short-Circuit wenn `existing_rules` leer; max 20 Regeln; übergibt IDs als `[ID: xxx]`-Präfix
+- `rebuild_rule_candidate(client, section, original_rule_text, original_reasoning, anchor, clarification) -> RebuildResult`
+  — verfeinert Kandidat anhand Arzt-Klarstellung, section/anchor bleiben fix
 
-**Anonymisierungsklausel:** Beide Prompts enthalten explizite Klausel gegen Patientennamen/MRN/Diagnosen konkreter Patienten in Regeltext.
+**Anonymisierungsklausel:** Alle 3 Prompts enthalten explizite Klausel gegen Patientendaten.
 
-**Endpoint:** `POST /api/meilenstein/learn-from-edits`
-- Body: `{patient_id: str, edited_meilenstein: str}`
-- 404 wenn kein `last_meilenstein` gespeichert (kein generate vorher)
-- Leere `candidates`-Liste wenn `edited_meilenstein.strip() == last_generated.strip()`
-- Sonst: LLM-Extraktion + Konflikt-Check pro Kandidat
-- Antwort: `{candidates: [{section, rule_text, has_conflict, conflict_explanation}, ...]}`
+**Endpoints:**
+
+| Methode | Pfad | Beschreibung |
+|---------|------|-------------|
+| POST | `/api/meilenstein/learn-from-edits` | Extraktion + Konflikt-Check, gibt `{rule_candidates, trivial_changes}` |
+| POST | `/api/meilenstein/save-rules` | Regeln speichern/löschen, Antwort `{saved_count, deleted_count, total_rules}` |
+| POST | `/api/meilenstein/rebuild-rule` | Kandidaten verfeinern per Klarstellung |
+| GET | `/api/meilenstein/system-prompt` | Base-Prompt als Plain-Text lesen (read-only) |
+| GET | `/api/meilenstein/rules` | Alle gespeicherten Regeln |
+| DELETE | `/api/meilenstein/rules/{rule_id}` | Einzelregel löschen (204 / 404) |
+
+**learn-from-edits-Flow:**
+- 404 wenn kein `last_meilenstein` vorhanden
+- Leere Listen wenn Inhalt unverändert
+- Sonst: LLM-Extraktion → per Kandidat detect_conflict → Antwort mit conflict-Objekt (null wenn kein Konflikt)
+
+**save-rules-Flow:**
+- `rule_ids_to_delete` zuerst aus Bestand entfernen (Konflikt-Ersetzen-Pfad)
+- `rules_to_add` via `new_rule()` anhängen (Pydantic-Validation durch Sektion-Whitelist)
+- Atomar speichern
+
+**FE-Komponenten (B3):**
+- `RuleCandidateCard.tsx` — Card mit Checkbox, editierbarer Textarea, Conflict-Box, Klarstellung-Panel
+- `RuleReviewModal.tsx` — Dialog mit ScrollArea, stacked RuleCandidateCards + TrivialChangesList
+- `MeilensteinVisibilityPanel.tsx` — Tabs "Gelernte Regeln" (mit Delete) + "Base-Prompt" (read-only)
+- `MeilensteinPanel.tsx` — Button "Aus Änderungen lernen" (disabled wenn unverändert), Visibility-Toggle unten
+
+**FE-Types (B3):** `LearnRuleCandidate`, `LearnTrivialChange`, `LearnFromEditsResponse`, `StoredRule`, `ConflictResolution`, `MEILENSTEIN_SECTIONS`
 
 ## Test-Stand
-146 passed in 0.86s
+154 passed in 0.92s
