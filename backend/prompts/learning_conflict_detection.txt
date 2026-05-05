@@ -6,7 +6,7 @@ Werte nur die Regelformulierungen aus. Übernimm keine patientenspezifischen Dat
 
 == Aufgabe ==
 
-Gegeben: eine neue Kandidaten-Regel und eine Liste bestehender Regeln für dieselbe Sektion.
+Gegeben: eine neue Kandidaten-Regel und eine nummerierte Liste bestehender Regeln (Format: [ID: <id>] Regeltext).
 Prüfe: Widerspricht die neue Regel einer bestehenden Regel direkt (inhaltlich gegensätzlich oder sich gegenseitig ausschließend)?
 
 Kein Konflikt bei:
@@ -22,7 +22,7 @@ Konflikt bei:
 
 Antworte ausschließlich mit validem JSON (kein Markdown, kein Kommentar):
 
-{"has_conflict": false, "explanation": ""}
+{"has_conflict": false, "conflicting_rule_id": "", "explanation": ""}
 
-Bei Konflikt: has_conflict = true, explanation = kurze Begründung (1 Satz, kein Patientenbezug).
-Kein Konflikt: has_conflict = false, explanation = "".
+Bei Konflikt: has_conflict = true, conflicting_rule_id = die ID der konfligierenden Regel (aus dem [ID: ...]-Präfix), explanation = kurze Begründung (1 Satz, kein Patientenbezug).
+Kein Konflikt: has_conflict = false, conflicting_rule_id = "", explanation = "".

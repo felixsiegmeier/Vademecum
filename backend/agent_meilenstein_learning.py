@@ -1,7 +1,8 @@
-"""LLM-Agenten für den Meilenstein-Lernpfad (B2).
+"""LLM-Agenten für den Meilenstein-Lernpfad (B2/B3).
 
-extract_rule_candidates: vergleicht Original vs. bearbeitet, liefert Regelkandidaten.
+extract_rule_candidates: vergleicht Original vs. bearbeitet, liefert Regelkandidaten + triviale Änderungen.
 detect_conflict:         prüft einen Kandidaten gegen bestehende Regeln auf Widerspruch.
+rebuild_rule_candidate:  verfeinert einen Kandidaten anhand einer Klarstellung.
 """
 import json
 import logging
@@ -16,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 _EXTRACTION_PROMPT_CACHE: str | None = None
 _CONFLICT_PROMPT_CACHE: str | None = None
+_REBUILD_PROMPT_CACHE: str | None = None
 
 _MAX_CANDIDATES = 10
 _MAX_EXISTING_RULES = 20
@@ -37,18 +39,40 @@ def _get_conflict_prompt() -> str:
     return _CONFLICT_PROMPT_CACHE
 
 
+def _get_rebuild_prompt() -> str:
+    global _REBUILD_PROMPT_CACHE
+    if _REBUILD_PROMPT_CACHE is None:
+        path = Path(__file__).parent / "prompts" / "learning_rule_rebuild.txt"
+        _REBUILD_PROMPT_CACHE = path.read_text(encoding="utf-8")
+    return _REBUILD_PROMPT_CACHE
+
+
 class RuleCandidate(BaseModel):
     section: str
     rule_text: str
+    reasoning: str = ""
+    anchor: str = ""
+
+
+class TrivialChange(BaseModel):
+    description: str
+    anchor: str = ""
 
 
 class ExtractionResult(BaseModel):
     candidates: list[RuleCandidate]
+    trivial_changes: list[TrivialChange] = []
 
 
 class ConflictResult(BaseModel):
     has_conflict: bool
     explanation: str
+    conflicting_rule_id: str = ""
+
+
+class RebuildResult(BaseModel):
+    rule_text: str
+    reasoning: str
 
 
 async def extract_rule_candidates(
@@ -102,12 +126,13 @@ async def detect_conflict(
     """Prüft ob candidate_rule_text einer bestehenden Regel widerspricht.
 
     Short-circuit: leere existing_rules → kein Konflikt ohne LLM-Call.
+    Gibt conflicting_rule_id der konfligierenden Regel zurück (oder "").
     """
     if not existing_rules:
-        return ConflictResult(has_conflict=False, explanation="")
+        return ConflictResult(has_conflict=False, explanation="", conflicting_rule_id="")
 
     capped = existing_rules[:_MAX_EXISTING_RULES]
-    existing_lines = "\n".join(f"- {r.rule_text}" for r in capped)
+    existing_lines = "\n".join(f"[ID: {r.id}] {r.rule_text}" for r in capped)
     user_msg = (
         f"Sektion: {section}\n\n"
         f"Neue Regel: {candidate_rule_text}\n\n"
@@ -126,17 +151,62 @@ async def detect_conflict(
         )
     except Exception:
         logger.exception("[detect_conflict] LLM-Aufruf fehlgeschlagen")
-        return ConflictResult(has_conflict=False, explanation="")
+        return ConflictResult(has_conflict=False, explanation="", conflicting_rule_id="")
 
     raw = (response.choices[0].message.content or "").strip()
     try:
         data = json.loads(raw)
     except json.JSONDecodeError:
         logger.warning("[detect_conflict] Kein valides JSON: %s", raw[:200])
-        return ConflictResult(has_conflict=False, explanation="")
+        return ConflictResult(has_conflict=False, explanation="", conflicting_rule_id="")
 
     try:
         return ConflictResult.model_validate(data)
     except Exception:
         logger.warning("[detect_conflict] Pydantic-Validation fehlgeschlagen: %s", data)
-        return ConflictResult(has_conflict=False, explanation="")
+        return ConflictResult(has_conflict=False, explanation="", conflicting_rule_id="")
+
+
+async def rebuild_rule_candidate(
+    client: LLMClient,
+    section: str,
+    original_rule_text: str,
+    original_reasoning: str,
+    anchor: str,
+    clarification: str,
+) -> RebuildResult:
+    """Verfeinert einen Regelkandidaten anhand einer Klarstellung des Arztes."""
+    system_prompt = _get_rebuild_prompt()
+    user_msg = (
+        f"section: {section}\n"
+        f"original_rule_text: {original_rule_text}\n"
+        f"original_reasoning: {original_reasoning}\n"
+        f"anchor: {anchor}\n"
+        f"clarification: {clarification}"
+    )
+    try:
+        response = await client.chat_completion(
+            [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_msg},
+            ],
+            response_format={"type": "json_object"},
+            temperature=0,
+            max_tokens=512,
+        )
+    except Exception:
+        logger.exception("[rebuild_rule_candidate] LLM-Aufruf fehlgeschlagen")
+        return RebuildResult(rule_text=original_rule_text, reasoning=original_reasoning)
+
+    raw = (response.choices[0].message.content or "").strip()
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        logger.warning("[rebuild_rule_candidate] Kein valides JSON: %s", raw[:300])
+        return RebuildResult(rule_text=original_rule_text, reasoning=original_reasoning)
+
+    try:
+        return RebuildResult.model_validate(data)
+    except Exception:
+        logger.warning("[rebuild_rule_candidate] Pydantic-Validation fehlgeschlagen: %s", data)
+        return RebuildResult(rule_text=original_rule_text, reasoning=original_reasoning)

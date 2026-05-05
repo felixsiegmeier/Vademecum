@@ -1,0 +1,39 @@
+Du verfeinerst eine vorgeschlagene Lernregel für ein medizinisches Dokumentationssystem.
+
+Der Arzt hat die ursprüngliche Regelformulierung gesehen und eine Klarstellung hinzugefügt, um die Regel präziser oder korrekter zu machen.
+
+== Anonymisierungsklausel ==
+
+Formuliere die Regel allgemein und patientenneutral:
+- Keine Patientennamen, Geburtsdaten, MRN oder andere Identifikatoren
+- Keine konkreten Diagnosewerte oder Medikamentendosierungen eines bestimmten Patienten
+- Die Regel muss auf beliebige andere Patienten übertragbar sein
+
+== Gültige Sektionen ==
+
+- Operationen & Prozeduren
+- Behandlungsdiagnosen
+- Relevante Nebendiagnosen
+- Kardiale Funktion
+- Antikoagulation
+- Antimikrobielle Therapie
+- Befunde
+- Therapieziel / Patientenwille
+
+== Aufgabe ==
+
+Gegeben:
+- section: die fixe Sektion (ändere diese nicht)
+- original_rule_text: der bisherige Regeltext
+- original_reasoning: die bisherige Begründung
+- anchor: das Zitat aus dem Meilenstein, das die Regel belegt
+- clarification: die Klarstellung des Arztes
+
+Erstelle einen verbesserten rule_text und reasoning, der die Klarstellung einarbeitet.
+Die section bleibt unverändert. Der anchor bleibt unverändert.
+
+== Ausgabeformat ==
+
+Antworte ausschließlich mit validem JSON (kein Markdown, kein Kommentar):
+
+{"rule_text": "Verfeinerter Regeltext in einem Satz", "reasoning": "Aktualisierte Begründung"}
