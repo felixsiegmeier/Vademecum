@@ -308,5 +308,37 @@ POST /api/patients/{id}/apply-proposals
 - **Initial commit `2b1258c` enthält noch Patientendaten in der Git-History**
 - Cleanup: `git filter-repo` oder GitHub Support notwendig (Felix-Entscheidung ausstehend)
 
+## Meilenstein-Endpoint (V1 — Meilenstein-Neufassung)
+
+### POST /api/patients/{id}/meilenstein/generate
+
+**Request Body** (optional JSON):
+```json
+{ "current_meilenstein": "<plain-text>" | null }
+```
+
+**Zwei Modi:**
+- **GENERATIONS-MODUS**: `current_meilenstein` leer/null → Übersicht rein aus YAML
+- **KONSOLIDIERUNGS-MODUS**: `current_meilenstein` gefüllt → LLM bekommt `<aktueller_meilenstein>`-Block; manuelle Einträge (Studienpatient, Sprachbarriere, etc.) werden bewahrt, YAML-Daten aktualisiert
+
+**User-Message-Struktur:**
+```
+<patient_yaml>...YAML...</patient_yaml>
+
+<generierungsdatum>YYYY-MM-DD</generierungsdatum>
+
+<aktueller_meilenstein>...nur wenn gefüllt...</aktueller_meilenstein>
+```
+
+**Response:** `{ "content": "<plain-text>", "generated_at": "ISO", "is_stale": false }`
+
+**Postprocessing:** LLM-Output wird aus ` ```plain text ... ``` ` Code-Block-Markern extrahiert. Kein JSON-Mode.
+
+**Prompt-Cache:** `_MEILENSTEIN_SYSTEM_PROMPT` in `main.py` lädt `prompts/meilenstein_system.txt` beim ersten Request. Bei Prompt-Änderung: Backend-Restart nötig.
+
+**Output-Format (neu, V1):** `=== Patientenübersicht ===` als Haupt-Header, 9 Sektionen mit `== Sektion ==` Format. Keine VERLAUF-Sektion mehr. Antikoagulation per 3-Layer-SOP-Logik. temperature=0.
+
+**Folge-Order ausstehend:** Order B — Lernlog (noch nicht implementiert).
+
 ## Test-Stand
-126 passed in 0.89s
+128 passed in 0.82s
