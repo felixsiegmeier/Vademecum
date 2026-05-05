@@ -348,16 +348,15 @@ POST /api/patients/{id}/apply-proposals
 - Suffix-Cleaning: Meropenem-1 → Meropenem in Antimikrobiell-Output
 - Eingriff-Detail aus source_quote: Bypass-Konfiguration/Lateralität integrieren
 
-**Folge-Order B2 ausstehend:** Schreib-API-Endpoint für Lernlog-Regeln.
-
-## Lernlog (V1 B1 — Lese-Pfad, in Entwicklung)
+## Lernlog (V1 B1+B2 — Lese- und Schreib-Pfad)
 
 ### Storage-Modul `backend/learning_storage.py`
 
-**Storage-Pfad:** `backend/data/learnings/<user_id>/meilenstein.yml`
+**Regelbank-Pfad:** `backend/data/learnings/<user_id>/meilenstein.yml`
+**Last-Generated-Pfad:** `backend/data/learnings/<user_id>/last_meilenstein/<pid>.txt`
 (aktuell user_id=`"default"` hardcoded; Multi-User-Vorbereitung über Pfad-Komponente)
 
-**Schema (YAML, schema_version: "0.1"):**
+**Regelbank-Schema (YAML, schema_version: "0.1"):**
 ```yaml
 schema_version: "0.1"
 rules:
@@ -370,7 +369,10 @@ rules:
 
 **Gültige Sektionen (8):** Operationen & Prozeduren | Behandlungsdiagnosen | Relevante Nebendiagnosen | Kardiale Funktion | Antikoagulation | Antimikrobielle Therapie | Befunde | Therapieziel / Patientenwille
 
-**Funktionen:** `load_rules(user_id)`, `save_rules(rules, user_id)`, `new_rule(section, rule_text)`
+**Funktionen:**
+- `load_rules(user_id)`, `save_rules(rules, user_id)`, `new_rule(section, rule_text)`
+- `save_last_meilenstein(patient_id, content, user_id)` — atomar; wird am Ende von `generate_meilenstein` aufgerufen
+- `load_last_meilenstein(patient_id, user_id) -> str | None` — None wenn Datei fehlt
 
 **Warnung:** Schema-Drift (patient_schema_version_at_creation != PATIENT_SCHEMA_VERSION) → logger.warning, Rule wird trotzdem geladen.
 
@@ -398,8 +400,31 @@ Die folgenden Regeln wurden aus früheren manuellen Korrekturen am Meilenstein a
 </gelernte_regeln>
 ```
 
-**B1-Status:** Lese-Pfad aktiv. FE zeigt keine Lernlog-UI (noch kein Schreib-Endpoint).
-**B2 ausstehend:** POST /api/learnings/rules (Schreib-API + FE-Integration).
+### Lernlog Schreib-Pfad (V1 B2)
+
+**Agent:** `backend/agent_meilenstein_learning.py`
+**Prompts:** `backend/prompts/learning_rule_extraction.txt`, `backend/prompts/learning_conflict_detection.txt`
+
+**Datenmodelle:**
+- `RuleCandidate(section, rule_text)` — ein extrahierter Regelvorschlag
+- `ExtractionResult(candidates: list[RuleCandidate])` — max 10 Kandidaten
+- `ConflictResult(has_conflict: bool, explanation: str)` — Konflikt-Check gegen Bestandsregeln
+
+**Funktionen:**
+- `extract_rule_candidates(client, last_generated, edited) -> ExtractionResult`
+  — JSON-Mode LLM-Call, vergleicht Original vs. Bearbeitung, anonymisiert, max 10 Kandidaten
+- `detect_conflict(client, candidate_rule_text, section, existing_rules) -> ConflictResult`
+  — JSON-Mode LLM-Call; Short-Circuit wenn `existing_rules` leer (kein LLM-Call → `has_conflict=False`)
+  — maximal 20 bestehende Regeln übergeben
+
+**Anonymisierungsklausel:** Beide Prompts enthalten explizite Klausel gegen Patientennamen/MRN/Diagnosen konkreter Patienten in Regeltext.
+
+**Endpoint:** `POST /api/meilenstein/learn-from-edits`
+- Body: `{patient_id: str, edited_meilenstein: str}`
+- 404 wenn kein `last_meilenstein` gespeichert (kein generate vorher)
+- Leere `candidates`-Liste wenn `edited_meilenstein.strip() == last_generated.strip()`
+- Sonst: LLM-Extraktion + Konflikt-Check pro Kandidat
+- Antwort: `{candidates: [{section, rule_text, has_conflict, conflict_explanation}, ...]}`
 
 ## Test-Stand
-138 passed in 0.85s
+146 passed in 0.86s
