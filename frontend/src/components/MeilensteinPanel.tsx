@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { Copy, Check, Loader2, RefreshCw } from "lucide-react";
+import { Copy, Check, Loader2, RefreshCw, GraduationCap, ChevronDown, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -11,6 +11,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import RuleReviewModal from "./RuleReviewModal";
+import MeilensteinVisibilityPanel from "./MeilensteinVisibilityPanel";
+import type { LearnFromEditsResponse } from "../types";
 
 interface MeilensteinData {
   content: string;
@@ -46,6 +49,17 @@ export default function MeilensteinPanel({ patientId }: Props) {
 
   const [copied, setCopied] = useState(false);
 
+  // Track content at last generate to detect user edits
+  const [lastGeneratedContent, setLastGeneratedContent] = useState<string | null>(null);
+
+  // Learn-from-edits modal
+  const [learning, setLearning] = useState(false);
+  const [learnResponse, setLearnResponse] = useState<LearnFromEditsResponse | null>(null);
+  const [showLearnModal, setShowLearnModal] = useState(false);
+
+  // Visibility sub-panel
+  const [showVisibility, setShowVisibility] = useState(false);
+
   const loadMeilenstein = useCallback(() => {
     setLoading(true);
     setError(null);
@@ -56,7 +70,13 @@ export default function MeilensteinPanel({ patientId }: Props) {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json();
       })
-      .then((d) => { if (d) setData(d); })
+      .then((d) => {
+        if (d) {
+          setData(d);
+          // Treat the initially loaded content as the generation baseline
+          setLastGeneratedContent(d.content);
+        }
+      })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
   }, [patientId]);
@@ -107,6 +127,7 @@ export default function MeilensteinPanel({ patientId }: Props) {
       const d = await res.json();
       setData(d);
       setEmpty(false);
+      setLastGeneratedContent(d.content);
     } catch (e) {
       const msg = (e as Error).message;
       setGenError(msg);
@@ -115,6 +136,41 @@ export default function MeilensteinPanel({ patientId }: Props) {
       });
     } finally {
       setGenerating(false);
+    }
+  }
+
+  async function handleLearnFromEdits() {
+    setLearning(true);
+    try {
+      const res = await fetch("/api/meilenstein/learn-from-edits", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          patient_id: patientId,
+          edited_meilenstein: data?.content ?? "",
+        }),
+      });
+      if (res.status === 404) {
+        toast.info("Bitte zuerst Aktualisieren klicken.");
+        return;
+      }
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.detail ?? `HTTP ${res.status}`);
+      }
+      const learnData: LearnFromEditsResponse = await res.json();
+      const hasContent =
+        learnData.rule_candidates.length > 0 || learnData.trivial_changes.length > 0;
+      if (!hasContent) {
+        toast.info("Keine relevanten Änderungen erkannt.");
+        return;
+      }
+      setLearnResponse(learnData);
+      setShowLearnModal(true);
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setLearning(false);
     }
   }
 
@@ -128,6 +184,10 @@ export default function MeilensteinPanel({ patientId }: Props) {
       /* ignore */
     }
   }
+
+  const contentUnchanged =
+    lastGeneratedContent !== null &&
+    (data?.content?.trim() ?? "") === lastGeneratedContent.trim();
 
   if (loading) {
     return <div className="flex items-center justify-center h-full text-sm text-muted-foreground">Lade Meilenstein…</div>;
@@ -189,6 +249,18 @@ export default function MeilensteinPanel({ patientId }: Props) {
             {copied ? "Kopiert" : "Kopieren"}
           </Button>
           <Button
+            variant="outline"
+            size="sm"
+            onClick={handleLearnFromEdits}
+            disabled={learning || contentUnchanged}
+            title={contentUnchanged ? "Keine Änderungen seit letzter Generierung" : "Aus Änderungen lernen"}
+          >
+            {learning
+              ? <><Loader2 className="size-3.5 animate-spin" /> Analysiere…</>
+              : <><GraduationCap className="size-3.5" /> Aus Änderungen lernen</>
+            }
+          </Button>
+          <Button
             size="sm"
             onClick={() => setConfirmRegen(true)}
             disabled={generating}
@@ -207,6 +279,21 @@ export default function MeilensteinPanel({ patientId }: Props) {
           className="w-full h-full resize-none font-mono"
           spellCheck={false}
         />
+      </div>
+
+      {/* Visibility Sub-Panel toggle */}
+      <div className="border-t">
+        <button
+          onClick={() => setShowVisibility((v) => !v)}
+          className="w-full flex items-center gap-1.5 px-4 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
+        >
+          {showVisibility
+            ? <ChevronDown className="size-3" />
+            : <ChevronRight className="size-3" />
+          }
+          Prompt & Regeln
+        </button>
+        {showVisibility && <MeilensteinVisibilityPanel />}
       </div>
 
       {/* Confirm-Dialog */}
@@ -231,6 +318,21 @@ export default function MeilensteinPanel({ patientId }: Props) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Rule-Review-Modal */}
+      {learnResponse && (
+        <RuleReviewModal
+          open={showLearnModal}
+          onOpenChange={(o) => {
+            setShowLearnModal(o);
+            if (!o) setLearnResponse(null);
+          }}
+          response={learnResponse}
+          onRulesSaved={() => {
+            setLastGeneratedContent(data?.content ?? null);
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -102,6 +102,52 @@ export const THERAPIE_KATEGORIEN: Record<string, { label: string; color: string 
   sonstiges:      { label: "Sonstiges",      color: "bg-gray-100 text-gray-700" },
 };
 
+// ─── Lernlog / Rule-Review ───────────────────────────────────────────────────
+
+export interface LearnConflict {
+  conflicting_rule_id: string;
+  explanation: string;
+}
+
+export interface LearnRuleCandidate {
+  section: string;
+  rule_text: string;
+  reasoning: string;
+  anchor: string;
+  conflict: LearnConflict | null;
+}
+
+export interface LearnTrivialChange {
+  description: string;
+  anchor: string;
+}
+
+export interface LearnFromEditsResponse {
+  rule_candidates: LearnRuleCandidate[];
+  trivial_changes: LearnTrivialChange[];
+}
+
+export interface StoredRule {
+  id: string;
+  section: string;
+  rule_text: string;
+  created_at: string;
+  patient_schema_version_at_creation: string;
+}
+
+export type ConflictResolution = "replace" | "keep_both" | "discard_new";
+
+export const MEILENSTEIN_SECTIONS = [
+  "Operationen & Prozeduren",
+  "Behandlungsdiagnosen",
+  "Relevante Nebendiagnosen",
+  "Kardiale Funktion",
+  "Antikoagulation",
+  "Antimikrobielle Therapie",
+  "Befunde",
+  "Therapieziel / Patientenwille",
+] as const;
+
 /** Zentrales Patient-Schema, gespiegelt aus backend/models/patient.py. */
 export interface PatientStammdaten {
   id: string;
