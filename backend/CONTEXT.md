@@ -348,7 +348,58 @@ POST /api/patients/{id}/apply-proposals
 - Suffix-Cleaning: Meropenem-1 → Meropenem in Antimikrobiell-Output
 - Eingriff-Detail aus source_quote: Bypass-Konfiguration/Lateralität integrieren
 
-**Folge-Order ausstehend:** Order B — Lernlog (noch nicht implementiert).
+**Folge-Order B2 ausstehend:** Schreib-API-Endpoint für Lernlog-Regeln.
+
+## Lernlog (V1 B1 — Lese-Pfad, in Entwicklung)
+
+### Storage-Modul `backend/learning_storage.py`
+
+**Storage-Pfad:** `backend/data/learnings/<user_id>/meilenstein.yml`
+(aktuell user_id=`"default"` hardcoded; Multi-User-Vorbereitung über Pfad-Komponente)
+
+**Schema (YAML, schema_version: "0.1"):**
+```yaml
+schema_version: "0.1"
+rules:
+  - id: <ULID>
+    section: <eine der 8 Meilenstein-Sektionen>
+    rule_text: <str>
+    created_at: <ISO-8601>
+    patient_schema_version_at_creation: <str>  # z.B. "0.4"
+```
+
+**Gültige Sektionen (8):** Operationen & Prozeduren | Behandlungsdiagnosen | Relevante Nebendiagnosen | Kardiale Funktion | Antikoagulation | Antimikrobielle Therapie | Befunde | Therapieziel / Patientenwille
+
+**Funktionen:** `load_rules(user_id)`, `save_rules(rules, user_id)`, `new_rule(section, rule_text)`
+
+**Warnung:** Schema-Drift (patient_schema_version_at_creation != PATIENT_SCHEMA_VERSION) → logger.warning, Rule wird trotzdem geladen.
+
+### Generator-Regel-Injection
+
+Bei `POST /api/meilenstein/generate`: `_build_meilenstein_system_prompt(rules)` in `main.py`
+
+- Leere Regelliste → Base-Prompt unverändert (byte-identisch, kein Einfluss auf Output)
+- Nicht-leere Regelliste → Base-Prompt + `<gelernte_regeln>`-Block am Ende
+
+**Format des Injektions-Blocks:**
+```
+<gelernte_regeln>
+
+Die folgenden Regeln wurden aus früheren manuellen Korrekturen am Meilenstein abgeleitet. ...
+
+## Behandlungsdiagnosen
+
+- KHK mit DES-Vorgeschichte konsolidieren
+
+## Antikoagulation
+
+- Bei bMKE biologisch alle Layer nennen
+
+</gelernte_regeln>
+```
+
+**B1-Status:** Lese-Pfad aktiv. FE zeigt keine Lernlog-UI (noch kein Schreib-Endpoint).
+**B2 ausstehend:** POST /api/learnings/rules (Schreib-API + FE-Integration).
 
 ## Test-Stand
-131 passed in 0.85s
+138 passed in 0.85s
