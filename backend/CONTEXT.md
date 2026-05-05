@@ -336,9 +336,19 @@ POST /api/patients/{id}/apply-proposals
 
 **Prompt-Cache:** `_MEILENSTEIN_SYSTEM_PROMPT` in `main.py` lädt `prompts/meilenstein_system.txt` beim ersten Request. Bei Prompt-Änderung: Backend-Restart nötig.
 
-**Output-Format (neu, V1):** `=== Patientenübersicht ===` als Haupt-Header, 9 Sektionen mit `== Sektion ==` Format. Keine VERLAUF-Sektion mehr. Antikoagulation per 3-Layer-SOP-Logik. temperature=0.
+**Output-Format (V1, nach Smoketest-Patches):** `=== Patientenübersicht ===` als Haupt-Header, **8 Sektionen** mit `== Sektion ==` Format (Besonderheiten-Sektion gestrichen — empirisch fehleranfällig). Keine VERLAUF-Sektion. Kein Leerzeilen-Gap zwischen Sektion-Header und erstem Listenpunkt. temperature=0.
+
+**Aktive Klauseln (Smoketest-Patches):**
+- KHK-Konsolidierung: vorbekannte Stents/CABG in Behandlungsdiagnose integrieren, nicht in Nebendiagnosen
+- Diagnose-Granularität: Erreger/Anatomie/Stadium anreichern wenn im YAML
+- Antikoag 3-Layer kumulativ: ALLE parallelen Indikationen nennen (inkl. bMKE-Negativbeispiel)
+- Kardiale Funktion: Zeile 3 weggelassen wenn keine Tendenz (kein `—`-Platzhalter); Verlaufs-Pharmako-Aussagen verboten
+- Allergien-MUSS: IMMER als eigene Zeile, kein klinischer Cutoff
+- Vorbekannt-Default: übernehmen, nur eindeutige Bagatellen filtern
+- Suffix-Cleaning: Meropenem-1 → Meropenem in Antimikrobiell-Output
+- Eingriff-Detail aus source_quote: Bypass-Konfiguration/Lateralität integrieren
 
 **Folge-Order ausstehend:** Order B — Lernlog (noch nicht implementiert).
 
 ## Test-Stand
-128 passed in 0.82s
+131 passed in 0.85s
