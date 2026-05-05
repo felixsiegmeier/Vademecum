@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from dotenv import load_dotenv
 from openai import APIConnectionError, APIStatusError, RateLimitError
 from pydantic import BaseModel
+import learning_storage
 from agent_tools import TOOL_FUNCTIONS
 from agent_document_extraction import extract_proposals, extract_proposals_streaming
 from agent_extraction_core import Proposal
@@ -165,6 +166,54 @@ def _get_meilenstein_system_prompt() -> str:
         prompt_path = Path(__file__).parent / "prompts" / "meilenstein_system.txt"
         _MEILENSTEIN_SYSTEM_PROMPT = prompt_path.read_text(encoding="utf-8")
     return _MEILENSTEIN_SYSTEM_PROMPT
+
+
+# Sektionen in Ausgabe-Reihenfolge — für Regel-Injection in gelernte_regeln-Block
+_MEILENSTEIN_SECTION_ORDER = [
+    "Operationen & Prozeduren",
+    "Behandlungsdiagnosen",
+    "Relevante Nebendiagnosen",
+    "Kardiale Funktion",
+    "Antikoagulation",
+    "Antimikrobielle Therapie",
+    "Befunde",
+    "Therapieziel / Patientenwille",
+]
+
+
+def _build_meilenstein_system_prompt(rules: list) -> str:
+    """Gibt den Meilenstein-System-Prompt zurück, optional mit Regel-Injection.
+
+    Bei leerer Regelliste: Base-Prompt unverändert (byte-identisch).
+    Bei nicht-leerer Regelliste: Base-Prompt + <gelernte_regeln>-Block am Ende.
+    """
+    base = _get_meilenstein_system_prompt()
+    if not rules:
+        return base
+
+    sections: dict[str, list[str]] = {}
+    for rule in rules:
+        sections.setdefault(rule.section, []).append(rule.rule_text)
+
+    lines: list[str] = [
+        "<gelernte_regeln>",
+        "",
+        "Die folgenden Regeln wurden aus früheren manuellen Korrekturen am Meilenstein "
+        "abgeleitet. Beachte sie beim Generieren der entsprechenden Sektion. "
+        "Eine Regel überschreibt im Konfliktfall die allgemeine Klausel-Logik.",
+    ]
+    for section in _MEILENSTEIN_SECTION_ORDER:
+        if section not in sections:
+            continue
+        lines.append("")
+        lines.append(f"## {section}")
+        lines.append("")
+        for rule_text in sections[section]:
+            lines.append(f"- {rule_text}")
+    lines.append("")
+    lines.append("</gelernte_regeln>")
+
+    return base + "\n\n" + "\n".join(lines)
 
 
 _BRIEF_SYSTEM_PROMPT: str | None = None
@@ -384,7 +433,8 @@ async def generate_meilenstein(
         width=100,
     )
     today_iso = date.today().isoformat()
-    system_prompt = _get_meilenstein_system_prompt()
+    rules = learning_storage.load_rules()
+    system_prompt = _build_meilenstein_system_prompt(rules)
 
     current_meilenstein = (req.current_meilenstein if req else None) or ""
     user_blocks = [

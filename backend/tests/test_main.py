@@ -586,6 +586,51 @@ def test_upload_response_is_ndjson_with_done_event(isolated_data):
 # ── Meilenstein V1: generate endpoint ────────────────────────────────────────
 
 import main as _main  # noqa: E402 — needed for patch.object on llm instance
+import learning_storage as _ls  # noqa: E402
+
+
+# ── Meilenstein Prompt-Builder (Regel-Injection) ──────────────────────────────
+
+def test_meilenstein_prompt_unchanged_when_no_rules(isolated_data):
+    """Snapshot: leere Regelliste → System-Prompt byte-identisch zum Base-Prompt."""
+    base = _main._get_meilenstein_system_prompt()
+    built = _main._build_meilenstein_system_prompt([])
+    assert built == base, (
+        "Mit leerer Regelliste darf _build_meilenstein_system_prompt den "
+        "Basis-Prompt nicht verändern."
+    )
+
+
+def test_meilenstein_prompt_includes_rules_block_when_rules_present(isolated_data):
+    """Nicht-leere Regelliste → <gelernte_regeln>-Block im Prompt mit korrekter Sektion-Gruppierung."""
+    rules = [
+        _ls.new_rule("Behandlungsdiagnosen", "KHK mit DES-Vorgeschichte konsolidieren"),
+        _ls.new_rule("Behandlungsdiagnosen", "STEMI mit Culprit-Lesion in einer Zeile"),
+        _ls.new_rule("Antikoagulation", "Bei bMKE biologisch alle Layer nennen"),
+    ]
+    built = _main._build_meilenstein_system_prompt(rules)
+
+    assert "<gelernte_regeln>" in built
+    assert "</gelernte_regeln>" in built
+
+    # Sektion-Header korrekt
+    assert "## Behandlungsdiagnosen" in built
+    assert "## Antikoagulation" in built
+
+    # Beide Behandlungsdx-Regeln vorhanden
+    assert "KHK mit DES-Vorgeschichte konsolidieren" in built
+    assert "STEMI mit Culprit-Lesion in einer Zeile" in built
+
+    # Antikoag-Regel vorhanden
+    assert "bMKE biologisch alle Layer nennen" in built
+
+    # Sektionen erscheinen in der definierten Output-Reihenfolge
+    idx_behandlung = built.index("## Behandlungsdiagnosen")
+    idx_antikoag = built.index("## Antikoagulation")
+    assert idx_behandlung < idx_antikoag, "Behandlungsdiagnosen muss vor Antikoagulation erscheinen"
+
+    # Keine unerwähnten Sektion-Header
+    assert "## Befunde" not in built  # kein Rule in Befunde → kein Header
 
 
 def _make_patient_full(pid: str = "P-0001") -> Patient:
