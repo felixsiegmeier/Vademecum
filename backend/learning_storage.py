@@ -146,3 +146,26 @@ def save_rules(rules: list[Rule], user_id: str = "default") -> None:
     with open(tmp, "w", encoding="utf-8") as f:
         yaml.safe_dump(payload, f, allow_unicode=True, sort_keys=False, default_flow_style=False)
     os.replace(tmp, path)
+
+
+def _last_meilenstein_path(patient_id: str, user_id: str) -> Path:
+    path = LEARNINGS_DIR / user_id / "last_meilenstein" / f"{patient_id}.txt"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def save_last_meilenstein(patient_id: str, content: str, user_id: str = "default") -> None:
+    """Speichert den zuletzt generierten Meilenstein-Text atomar."""
+    path = _last_meilenstein_path(patient_id, user_id)
+    tmp = path.with_suffix(".txt.tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(content)
+    os.replace(tmp, path)
+
+
+def load_last_meilenstein(patient_id: str, user_id: str = "default") -> Optional[str]:
+    """Lädt den zuletzt generierten Meilenstein-Text. None wenn nicht vorhanden."""
+    path = _last_meilenstein_path(patient_id, user_id)
+    if not path.exists():
+        return None
+    return path.read_text(encoding="utf-8")

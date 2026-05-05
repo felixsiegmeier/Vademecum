@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 from openai import APIConnectionError, APIStatusError, RateLimitError
 from pydantic import BaseModel
 import learning_storage
+import agent_meilenstein_learning as _learning_agent
 from agent_tools import TOOL_FUNCTIONS
 from agent_document_extraction import extract_proposals, extract_proposals_streaming
 from agent_extraction_core import Proposal
@@ -286,6 +287,11 @@ class MeilensteinUpdateRequest(BaseModel):
     content: str
 
 
+class LearnFromEditsRequest(BaseModel):
+    patient_id: str
+    edited_meilenstein: str
+
+
 class BriefFieldUpdateRequest(BaseModel):
     content: str
 
@@ -472,6 +478,7 @@ async def generate_meilenstein(
     generated_at = datetime.now(timezone.utc).isoformat()
     meta = {"yaml_hash": yaml_hash, "generated_at": generated_at}
     save_meilenstein(patient_id, md_content, meta)
+    learning_storage.save_last_meilenstein(patient_id, md_content)
 
     return JSONResponse(content={
         "content": md_content,
@@ -496,6 +503,41 @@ def delete_meilenstein_endpoint(patient_id: str):
         raise HTTPException(404, "Kein Meilenstein vorhanden")
     delete_meilenstein(patient_id)
     return JSONResponse(content={"ok": True})
+
+
+@app.post("/api/meilenstein/learn-from-edits")
+async def learn_from_edits(req: LearnFromEditsRequest):
+    """Vergleicht editierten Meilenstein mit dem generierten Original und extrahiert Lernregeln.
+
+    404 wenn kein gespeichertes Original vorhanden.
+    Leere candidates-Liste wenn Inhalt unverändert.
+    """
+    last_generated = learning_storage.load_last_meilenstein(req.patient_id)
+    if last_generated is None:
+        raise HTTPException(404, "Kein generierter Meilenstein als Referenz vorhanden.")
+
+    if req.edited_meilenstein.strip() == last_generated.strip():
+        return JSONResponse(content={"candidates": []})
+
+    extraction = await _learning_agent.extract_rule_candidates(
+        llm, last_generated, req.edited_meilenstein
+    )
+
+    existing_rules = learning_storage.load_rules()
+    result_candidates: list[dict] = []
+    for candidate in extraction.candidates:
+        section_rules = [r for r in existing_rules if r.section == candidate.section]
+        conflict = await _learning_agent.detect_conflict(
+            llm, candidate.rule_text, candidate.section, section_rules
+        )
+        result_candidates.append({
+            "section": candidate.section,
+            "rule_text": candidate.rule_text,
+            "has_conflict": conflict.has_conflict,
+            "conflict_explanation": conflict.explanation,
+        })
+
+    return JSONResponse(content={"candidates": result_candidates})
 
 
 # ── Brief ─────────────────────────────────────────────────────────────────────
