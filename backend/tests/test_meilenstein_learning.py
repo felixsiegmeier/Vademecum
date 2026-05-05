@@ -1,4 +1,4 @@
-"""Tests für B2: last_meilenstein-Persistierung + learn-from-edits-Endpoint."""
+"""Tests für B2+B3: last_meilenstein-Persistierung, learn-from-edits, save-rules, rebuild-rule."""
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -77,7 +77,7 @@ def test_learn_from_edits_404_when_no_reference(isolated_data):
 
 
 def test_learn_from_edits_empty_when_unchanged(isolated_data):
-    """Inhalt unverändert → leere candidates-Liste, kein LLM-Call."""
+    """Inhalt unverändert → leere rule_candidates + trivial_changes, kein LLM-Call."""
     text = "=== Patientenübersicht ===\n\n== Befunde ==\n- TTE: LVEF 30%"
     learning_storage.save_last_meilenstein("P-0001", text)
 
@@ -86,19 +86,29 @@ def test_learn_from_edits_empty_when_unchanged(isolated_data):
         "edited_meilenstein": text,
     })
     assert res.status_code == 200
-    assert res.json()["candidates"] == []
+    body = res.json()
+    assert body["rule_candidates"] == []
+    assert body["trivial_changes"] == []
 
 
 def test_learn_from_edits_returns_candidates_with_conflict_field(isolated_data):
-    """Inhaltsänderung → Kandidaten werden zurückgegeben inkl. has_conflict-Feld."""
+    """Inhaltsänderung → Kandidaten mit conflict-Feld (None wenn kein Konflikt)."""
     learning_storage.save_last_meilenstein("P-0001", _MOCK_CONTENT)
 
-    from agent_meilenstein_learning import ConflictResult, ExtractionResult, RuleCandidate
+    from agent_meilenstein_learning import ConflictResult, ExtractionResult, RuleCandidate, TrivialChange
 
-    extraction = ExtractionResult(candidates=[
-        RuleCandidate(section="Befunde", rule_text="Immer LVEF im Echo nennen"),
-    ])
-    conflict = ConflictResult(has_conflict=False, explanation="")
+    extraction = ExtractionResult(
+        candidates=[
+            RuleCandidate(
+                section="Befunde",
+                rule_text="Immer LVEF im Echo nennen",
+                reasoning="Arzt hat LVEF ergänzt",
+                anchor="TTE: LVEF 30%",
+            )
+        ],
+        trivial_changes=[TrivialChange(description="Tippfehler korrigiert", anchor="LVEF 30%")],
+    )
+    conflict = ConflictResult(has_conflict=False, explanation="", conflicting_rule_id="")
 
     with (
         patch.object(_la, "extract_rule_candidates", new_callable=AsyncMock) as mock_extract,
@@ -114,18 +124,139 @@ def test_learn_from_edits_returns_candidates_with_conflict_field(isolated_data):
 
     assert res.status_code == 200
     body = res.json()
-    assert len(body["candidates"]) == 1
-    c = body["candidates"][0]
+
+    assert len(body["rule_candidates"]) == 1
+    c = body["rule_candidates"][0]
     assert c["section"] == "Befunde"
     assert c["rule_text"] == "Immer LVEF im Echo nennen"
-    assert c["has_conflict"] is False
-    assert "conflict_explanation" in c
+    assert c["reasoning"] == "Arzt hat LVEF ergänzt"
+    assert c["anchor"] == "TTE: LVEF 30%"
+    assert c["conflict"] is None
+
+    assert len(body["trivial_changes"]) == 1
+    tc = body["trivial_changes"][0]
+    assert tc["description"] == "Tippfehler korrigiert"
+
+
+# ── Endpoint: save-rules ─────────────────────────────────────────────────────
+
+def test_save_rules_endpoint_adds_rules(isolated_data):
+    """POST save-rules fügt neue Regeln hinzu."""
+    res = client.post("/api/meilenstein/save-rules", json={
+        "rules_to_add": [
+            {"section": "Befunde", "rule_text": "Immer LVEF im Echo nennen"},
+            {"section": "Behandlungsdiagnosen", "rule_text": "KHK mit DES-Vorgeschichte konsolidieren"},
+        ],
+        "rule_ids_to_delete": [],
+    })
+    assert res.status_code == 200
+    body = res.json()
+    assert body["saved_count"] == 2
+    assert body["deleted_count"] == 0
+    assert body["total_rules"] == 2
+
+    stored = learning_storage.load_rules()
+    assert len(stored) == 2
+
+
+def test_save_rules_endpoint_deletes_then_adds(isolated_data):
+    """POST save-rules löscht alte Regel und fügt neue hinzu (Konflikt-Ersetzen-Pfad)."""
+    # Erstmal eine Regel speichern
+    rule = learning_storage.new_rule("Befunde", "Alte Regel")
+    learning_storage.save_rules([rule])
+
+    res = client.post("/api/meilenstein/save-rules", json={
+        "rules_to_add": [
+            {"section": "Befunde", "rule_text": "Neue bessere Regel"},
+        ],
+        "rule_ids_to_delete": [rule.id],
+    })
+    assert res.status_code == 200
+    body = res.json()
+    assert body["saved_count"] == 1
+    assert body["deleted_count"] == 1
+    assert body["total_rules"] == 1
+
+    stored = learning_storage.load_rules()
+    assert stored[0].rule_text == "Neue bessere Regel"
+
+
+def test_save_rules_endpoint_rejects_invalid_section(isolated_data):
+    """POST save-rules mit ungültiger Sektion → 422."""
+    res = client.post("/api/meilenstein/save-rules", json={
+        "rules_to_add": [
+            {"section": "UNGÜLTIG", "rule_text": "Eine Regel"},
+        ],
+        "rule_ids_to_delete": [],
+    })
+    assert res.status_code == 422
+
+
+# ── Endpoint: rebuild-rule ────────────────────────────────────────────────────
+
+def test_rebuild_rule_endpoint_returns_refined(isolated_data):
+    """POST rebuild-rule liefert verfeinerten rule_text und reasoning (Mock-LLM)."""
+    from agent_meilenstein_learning import RebuildResult
+
+    rebuild_result = RebuildResult(
+        rule_text="KHK mit DES-Vorgeschichte und Bypass-OP konsolidieren",
+        reasoning="Arzt hat klargestellt, dass auch OP-Daten gehören",
+    )
+
+    with patch.object(_la, "rebuild_rule_candidate", new_callable=AsyncMock) as mock_rebuild:
+        mock_rebuild.return_value = rebuild_result
+        res = client.post("/api/meilenstein/rebuild-rule", json={
+            "section": "Behandlungsdiagnosen",
+            "original_rule_text": "KHK mit DES-Vorgeschichte konsolidieren",
+            "original_reasoning": "Arzt hat KHK ergänzt",
+            "anchor": "KHK mit DES 2019",
+            "clarification": "Auch Bypass-OPs sollen erwähnt werden",
+        })
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body["section"] == "Behandlungsdiagnosen"
+    assert body["rule_text"] == "KHK mit DES-Vorgeschichte und Bypass-OP konsolidieren"
+    assert body["anchor"] == "KHK mit DES 2019"
+
+
+# ── Endpoint: rules-list + delete-rule ───────────────────────────────────────
+
+def test_get_rules_endpoint_returns_stored_rules(isolated_data):
+    """GET /api/meilenstein/rules gibt alle gespeicherten Regeln zurück."""
+    rule = learning_storage.new_rule("Befunde", "LVEF immer nennen")
+    learning_storage.save_rules([rule])
+
+    res = client.get("/api/meilenstein/rules")
+    assert res.status_code == 200
+    body = res.json()
+    assert len(body["rules"]) == 1
+    assert body["rules"][0]["rule_text"] == "LVEF immer nennen"
+
+
+def test_delete_rule_endpoint_removes_rule(isolated_data):
+    """DELETE /api/meilenstein/rules/{id} entfernt die Regel."""
+    rule = learning_storage.new_rule("Befunde", "LVEF immer nennen")
+    learning_storage.save_rules([rule])
+
+    res = client.delete(f"/api/meilenstein/rules/{rule.id}")
+    assert res.status_code == 204
+
+    stored = learning_storage.load_rules()
+    assert stored == []
+
+
+def test_delete_rule_endpoint_404_for_unknown(isolated_data):
+    """DELETE /api/meilenstein/rules/{id} mit unbekannter ID → 404."""
+    res = client.delete("/api/meilenstein/rules/UNBEKANNT")
+    assert res.status_code == 404
 
 
 # ── Prompt Smoke Tests ────────────────────────────────────────────────────────
 
 _EXTRACTION_PROMPT_PATH = Path(__file__).parent.parent / "prompts" / "learning_rule_extraction.txt"
 _CONFLICT_PROMPT_PATH = Path(__file__).parent.parent / "prompts" / "learning_conflict_detection.txt"
+_REBUILD_PROMPT_PATH = Path(__file__).parent.parent / "prompts" / "learning_rule_rebuild.txt"
 
 
 def test_extraction_prompt_contains_anonymization_clause():
@@ -145,3 +276,15 @@ def test_extraction_prompt_contains_section_whitelist():
     text = _EXTRACTION_PROMPT_PATH.read_text(encoding="utf-8")
     for section in learning_storage.VALID_SECTIONS:
         assert section in text, f"Sektion '{section}' fehlt im Extraction-Prompt."
+
+
+def test_rebuild_prompt_contains_anonymization_clause():
+    """Rebuild-Prompt enthält Anonymisierungsklausel."""
+    text = _REBUILD_PROMPT_PATH.read_text(encoding="utf-8")
+    has_clause = (
+        "Anonymisierung" in text
+        or "patientenspezifisch" in text
+        or "Identifikator" in text
+        or "Namen" in text
+    )
+    assert has_clause, "Rebuild-Prompt muss eine Anonymisierungsklausel enthalten."
