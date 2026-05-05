@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { Copy, Check, Loader2, RefreshCw } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -90,9 +91,14 @@ export default function MeilensteinPanel({ patientId }: Props) {
     setGenError(null);
     setConfirmRegen(false);
     try {
+      const currentContent = data?.content?.trim() || null;
       const res = await fetch(
         `/api/patients/${patientId}/meilenstein/generate`,
-        { method: "POST" }
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ current_meilenstein: currentContent }),
+        }
       );
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -102,7 +108,11 @@ export default function MeilensteinPanel({ patientId }: Props) {
       setData(d);
       setEmpty(false);
     } catch (e) {
-      setGenError((e as Error).message);
+      const msg = (e as Error).message;
+      setGenError(msg);
+      toast.error(msg, {
+        action: { label: "Erneut versuchen", onClick: doGenerate },
+      });
     } finally {
       setGenerating(false);
     }
@@ -155,7 +165,7 @@ export default function MeilensteinPanel({ patientId }: Props) {
             disabled={generating}
             className="bg-amber-600 hover:bg-amber-700 text-white shrink-0"
           >
-            Neu generieren
+            Aktualisieren
           </Button>
         </div>
       )}
@@ -184,7 +194,7 @@ export default function MeilensteinPanel({ patientId }: Props) {
             disabled={generating}
           >
             {generating ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
-            {generating ? "Generiere…" : "Neu generieren"}
+            {generating ? "Aktualisiere…" : "Aktualisieren"}
           </Button>
         </div>
       </div>
@@ -216,7 +226,7 @@ export default function MeilensteinPanel({ patientId }: Props) {
               Abbrechen
             </Button>
             <Button onClick={doGenerate} disabled={generating}>
-              {generating ? (<><Loader2 className="size-4 animate-spin" /> Generiere…</>) : "Neu generieren"}
+              {generating ? (<><Loader2 className="size-4 animate-spin" /> Aktualisiere…</>) : "Aktualisieren"}
             </Button>
           </DialogFooter>
         </DialogContent>
