@@ -581,3 +581,215 @@ def test_upload_response_is_ndjson_with_done_event(isolated_data):
     assert done is not None
     assert "total_proposals" in done
     assert "auto_skipped" in done
+
+
+# ── Meilenstein V1: generate endpoint ────────────────────────────────────────
+
+import main as _main  # noqa: E402 — needed for patch.object on llm instance
+
+
+def _make_patient_full(pid: str = "P-0001") -> Patient:
+    """Minimal patient with operative therapy, antimicrobial therapy, a Befund, and a Verlaufseintrag."""
+    import uuid
+    from datetime import date as _date
+    from models.patient import Befund, Diagnose, Therapie, VerlaufsEintrag
+
+    def _id() -> str:
+        return str(uuid.uuid4())
+
+    p = Patient(
+        stammdaten=Stammdaten(
+            id=pid,
+            name="Weber, Gertraud",
+            geburtsdatum=_date(1948, 7, 22),
+            geschlecht="w",
+            bettplatz="ITS-1 / Bett 1",
+            aufnahmedatum=_date(2026, 4, 1),
+        ),
+        behandlungsdiagnosen=[
+            Diagnose(
+                id=_id(),
+                text="Postkardiotomie-Schock nach CABG 3-fach",
+                datum=_date(2026, 4, 1),
+                source_quote="Aufnahme",
+            )
+        ],
+        therapien=[
+            Therapie(
+                id=_id(),
+                kategorie="operativ",
+                bezeichnung="CABG 3-fach (LIMA-LAD, Vene-RCX, Vene-RCA)",
+                beginn=_date(2026, 4, 1),
+                ende=_date(2026, 4, 1),
+                source_quote="OP-Bericht",
+            ),
+            Therapie(
+                id=_id(),
+                kategorie="antimikrobiell",
+                bezeichnung="Meropenem",
+                beginn=_date(2026, 4, 3),
+                ende=_date(2026, 4, 7),
+                indikation="Pneumonie",
+                source_quote="AB-Kurve",
+            ),
+        ],
+        befunde=[
+            Befund(
+                id=_id(),
+                datum=_date(2026, 4, 1),
+                text="TTE postop: LVEF 20%, biventrikuläre Dysfunktion",
+                source_quote="Echo",
+            )
+        ],
+        verlaufseintraege=[
+            VerlaufsEintrag(
+                id=_id(),
+                datum=_date(2026, 4, 1),
+                text="Studienpatient ACCURATE-RCT. Postkardiotomie-Schock, LVEF 20% postop.",
+                source_quote="Verlauf",
+            )
+        ],
+    )
+    storage.save_patient(p)
+    return p
+
+
+def _llm_resp(text: str):
+    """Build a mock LLM response object."""
+    resp = MagicMock()
+    resp.choices = [MagicMock()]
+    resp.choices[0].message.content = text
+    return resp
+
+
+_SECTION_HEADERS = [
+    "== Operationen & Prozeduren ==",
+    "== Behandlungsdiagnosen ==",
+    "== Relevante Nebendiagnosen ==",
+    "== Kardiale Funktion ==",
+    "== Antikoagulation ==",
+    "== Antimikrobielle Therapie ==",
+    "== Befunde ==",
+    "== Besonderheiten ==",
+    "== Therapieziel / Patientenwille ==",
+]
+
+_MOCK_MEILENSTEIN_BODY = "\n".join([
+    "=== Patientenübersicht ===",
+    "",
+    "Patient: Weber, Gertraud, *22.07.1948, weiblich",
+    "Aufnahme: 01.04.2026 | Bett: ITS-1 / Bett 1",
+    "letzte Aktualisierung: 05.05.2026",
+    "",
+    "== Operationen & Prozeduren ==",
+    "- 01.04. CABG 3-fach (LIMA-LAD, Vene-RCX, Vene-RCA)",
+    "",
+    "== Behandlungsdiagnosen ==",
+    "- Postkardiotomie-Schock nach CABG 3-fach",
+    "",
+    "== Relevante Nebendiagnosen ==",
+    "—",
+    "",
+    "== Kardiale Funktion ==",
+    "- LVEF 20% postop (TTE 01.04.)",
+    "",
+    "== Antikoagulation ==",
+    "- prophylaktisch UFH bei postop. Phase; danach ASS lebenslang (CABG)",
+    "",
+    "== Antimikrobielle Therapie ==",
+    "- 03.04. Meropenem (Pneumonie) 07.04.",
+    "",
+    "== Befunde ==",
+    "- 01.04. TTE postop: LVEF 20%, biventrikuläre Dysfunktion",
+    "",
+    "== Besonderheiten ==",
+    "- Studienpatient ACCURATE-RCT",
+    "",
+    "== Therapieziel / Patientenwille ==",
+    "—",
+])
+
+_MOCK_LLM_OUTPUT = "```plain text\n" + _MOCK_MEILENSTEIN_BODY + "\n```"
+
+
+def test_meilenstein_generation_mode(isolated_data):
+    """Generations-Modus: kein current_meilenstein → alle Sektion-Header present,
+    antimikrobielle Therapie mit End-Datum, Besonderheiten mit Studienpatient-Marker."""
+    _make_patient_full("P-0001")
+
+    with patch.object(_main.llm, "chat_completion", new_callable=AsyncMock) as mock_llm:
+        mock_llm.return_value = _llm_resp(_MOCK_LLM_OUTPUT)
+        res = client.post(
+            "/api/patients/P-0001/meilenstein/generate",
+            json={},
+        )
+
+    assert res.status_code == 200
+    body = res.json()
+    content = body["content"]
+
+    # Outer header
+    assert "=== Patientenübersicht ===" in content
+    assert "Patient: Weber, Gertraud" in content
+    assert "Aufnahme: 01.04.2026" in content
+
+    # All 9 section headers
+    for header in _SECTION_HEADERS:
+        assert header in content, f"Sektion fehlt: {header}"
+
+    # Operative therapy visible, not antimicrobial
+    assert "CABG 3-fach" in content
+
+    # Antimicrobial with end date
+    assert "Meropenem" in content
+    assert "07.04." in content
+
+    # Besonderheiten preserves Studienpatient marker
+    assert "Studienpatient ACCURATE-RCT" in content
+
+    # Code block markers stripped from content
+    assert "```" not in content
+
+    # LLM called without aktueller_meilenstein block (Generations-Modus)
+    call_args = mock_llm.call_args
+    user_msg = call_args.args[0][-1]["content"]
+    assert "<patient_yaml>" in user_msg
+    assert "<generierungsdatum>" in user_msg
+    assert "<aktueller_meilenstein>" not in user_msg
+
+
+def test_meilenstein_konsolidierung_mode(isolated_data):
+    """Konsolidierungs-Modus: current_meilenstein mitgesendet → LLM erhält
+    <aktueller_meilenstein>-Block mit dem übergebenen Inhalt."""
+    _make_patient_full("P-0001")
+
+    existing = (
+        "=== Patientenübersicht ===\n\n"
+        "Patient: Weber, Gertraud, *22.07.1948, weiblich\n\n"
+        "== Besonderheiten ==\n"
+        "- Sprachbarriere türkisch\n"
+        "- Veraltete Therapie: Unacid (längst beendet)\n"
+    )
+
+    mock_output = "```plain text\n" + _MOCK_MEILENSTEIN_BODY + "\n- Sprachbarriere türkisch\n```"
+
+    with patch.object(_main.llm, "chat_completion", new_callable=AsyncMock) as mock_llm:
+        mock_llm.return_value = _llm_resp(mock_output)
+        res = client.post(
+            "/api/patients/P-0001/meilenstein/generate",
+            json={"current_meilenstein": existing},
+        )
+
+    assert res.status_code == 200
+
+    # LLM received <aktueller_meilenstein> block containing our existing content
+    call_args = mock_llm.call_args
+    user_msg = call_args.args[0][-1]["content"]
+    assert "<aktueller_meilenstein>" in user_msg
+    assert "Sprachbarriere türkisch" in user_msg
+    assert "Veraltete Therapie" in user_msg
+
+    # Response contains the content (code block stripped)
+    content = res.json()["content"]
+    assert "```" not in content
+    assert "=== Patientenübersicht ===" in content

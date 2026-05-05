@@ -2,12 +2,13 @@ import csv
 import hashlib
 import io
 import json
+import re
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Literal, Optional
 
 import yaml
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Body, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from dotenv import load_dotenv
@@ -228,6 +229,10 @@ class AktivRequest(BaseModel):
     aktiv: bool
 
 
+class MeilensteinGenerateRequest(BaseModel):
+    current_meilenstein: Optional[str] = None
+
+
 class MeilensteinUpdateRequest(BaseModel):
     content: str
 
@@ -357,14 +362,20 @@ def get_meilenstein(patient_id: str):
 
 
 @app.post("/api/patients/{patient_id}/meilenstein/generate")
-async def generate_meilenstein(patient_id: str):
-    """LLM generiert Meilenstein aus dem aktuellen Patient-YAML."""
+async def generate_meilenstein(
+    patient_id: str,
+    req: Optional[MeilensteinGenerateRequest] = Body(default=None),
+):
+    """LLM generiert Meilenstein aus dem aktuellen Patient-YAML.
+
+    Wenn req.current_meilenstein gefüllt: Konsolidierungs-Modus (manuelle Änderungen bleiben).
+    Wenn leer/null: Generations-Modus (reine YAML-Extraktion).
+    """
     try:
         patient = load_patient(patient_id)
     except FileNotFoundError:
         raise HTTPException(404, f"Patient {patient_id} nicht gefunden")
 
-    # Patient-Daten als YAML serialisieren — das ist die einzige Quelle für das LLM
     patient_yaml = yaml.safe_dump(
         patient.model_dump(exclude_none=True, mode="json"),
         allow_unicode=True,
@@ -372,13 +383,19 @@ async def generate_meilenstein(patient_id: str):
         default_flow_style=False,
         width=100,
     )
-    today_str = date.today().strftime("%d.%m.%Y")
+    today_iso = date.today().isoformat()
     system_prompt = _get_meilenstein_system_prompt()
-    user_msg = (
-        f"Generiere den Meilenstein für folgenden Patienten. "
-        f"Heutiges Datum (letzte Aktualisierung): {today_str}\n\n"
-        f"YAML:\n{patient_yaml}"
-    )
+
+    current_meilenstein = (req.current_meilenstein if req else None) or ""
+    user_blocks = [
+        f"<patient_yaml>\n{patient_yaml}\n</patient_yaml>",
+        f"<generierungsdatum>{today_iso}</generierungsdatum>",
+    ]
+    if current_meilenstein.strip():
+        user_blocks.append(
+            f"<aktueller_meilenstein>\n{current_meilenstein}\n</aktueller_meilenstein>"
+        )
+    user_msg = "\n\n".join(user_blocks)
 
     try:
         response = await llm.chat_completion(
@@ -396,8 +413,11 @@ async def generate_meilenstein(patient_id: str):
     except APIStatusError as e:
         raise HTTPException(502, f"LLM API Fehler {e.status_code}: {e.message}")
 
-    md_content = (response.choices[0].message.content or "").strip()
-    # Hash speichern, damit später geprüft werden kann, ob Daten sich geändert haben
+    raw = (response.choices[0].message.content or "").strip()
+    # Extract content from ```plain text ... ``` code block (defensive: fall back to raw)
+    m = re.search(r"```[^\n]*\n(.*?)\n```", raw, re.DOTALL)
+    md_content = m.group(1).strip() if m else raw
+
     yaml_hash = patient_yaml_hash(patient_id)
     generated_at = datetime.now(timezone.utc).isoformat()
     meta = {"yaml_hash": yaml_hash, "generated_at": generated_at}
