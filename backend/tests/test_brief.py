@@ -889,6 +889,23 @@ def test_curate_prompt_has_minimal_beispiel(isolated_data):
     assert "Minimal-Beispiel" in prompt
 
 
+def test_collect_prompt_has_pending_marker(isolated_data):
+    """collect-Prompt enthält PENDING-ITEMS-Klausel mit [PENDING]-Marker."""
+    import agent_brief as ab
+    prompt = ab._get_prompt("brief_verlauf_collect.txt")
+    assert "PENDING-ITEMS" in prompt, "PENDING-ITEMS-Sektion fehlt"
+    assert "[PENDING]" in prompt, "[PENDING]-Marker-Anweisung fehlt"
+
+
+def test_curate_prompt_no_im_weiteren_verlauf_in_kohäsion(isolated_data):
+    """'im weiteren Verlauf' als Konnektor-Beispiel wurde aus KOHÄSION a) entfernt."""
+    import agent_brief as ab
+    prompt = ab._get_prompt("brief_verlauf_curate.txt")
+    assert '"im weiteren Verlauf"' not in prompt, (
+        "'im weiteren Verlauf' noch als Konnektor-Beispiel vorhanden — Floskel-Risiko"
+    )
+
+
 def test_curate_prompt_no_pauschales_konnektoren_verbot(isolated_data):
     """Altes pauschales Konnektoren-Verbot ist durch KONNEKTOREN-DISZIPLIN ersetzt."""
     prompt = agent_brief._get_prompt("brief_verlauf_curate.txt")

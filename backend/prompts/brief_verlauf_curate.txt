@@ -100,7 +100,7 @@ Die Übernahme-Klammer (Cluster A, Eröffnungssatz) und die Schluss-Klammer (Sch
 
 Zwischen Sätzen und Cluster-Übergängen müssen sprachliche Verbindungen bestehen, die der Leser als roten Faden erkennt. Konkrete Mittel:
 
-a) Konnektoren mit logischer Funktion einsetzen — kausal ("weshalb", "sodass", "infolgedessen"), konsekutiv ("hierauf", "im weiteren Verlauf"), adversativ ("dennoch", "trotz dessen"), temporal ("zunächst", "anschließend"). Diese ersetzen sprachlich farblose Aneinanderreihungen.
+a) Konnektoren mit logischer Funktion einsetzen — kausal ("weshalb", "sodass", "infolgedessen", "daher"), konsekutiv ("hierauf", "daraufhin"), adversativ ("dennoch", "trotz dessen"), temporal ("zunächst", "anschließend"). Diese ersetzen sprachlich farblose Aneinanderreihungen.
 
 b) Anaphorische Bezüge nutzen — der nachfolgende Satz greift ein Stichwort des vorigen Satzes auf und führt es weiter. Beispiel: "...führte zu einem Hämatothorax. Dieser wurde am 05.04. notfallmäßig ausgeräumt."
 

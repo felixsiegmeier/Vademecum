@@ -17,6 +17,14 @@ Du bist ein klinischer Substanz-Sammler. Deine Aufgabe ist NICHT, einen Brieftex
 
 5. KEINE DOPPELUNG MIT ANDEREN SEKTIONEN: Diagnosen, Anamnese, Therapie und Befunde haben eigene Sektionen. Im Verlauf werden sie narrativ aufgegriffen, nicht aufgelistet. Konkret: keine vollständigen Diagnose-Listen, keine Antibiotika-Tabelle (nur Eskalations-/Deeskalations-Schritte als Verlaufs-Ereignis), keine Befund-Wiederholung (nur falls ein Befund den weiteren Verlauf direkt prägt).
 
+== PENDING-ITEMS ==
+
+Geplante, aber zum SCHLUSS_DATUM noch nicht durchgeführte Maßnahmen sind als eigene Sammler-Einträge zu erfassen, auch wenn sie sonst routinemäßig wären. Beispiele: ausstehender Drain-Zug, Schrittmacher-Explantation, Konsil-Termin, ausstehende Befunde, geplante Anpassungen der Dauermedikation, ausstehende Bildgebung.
+
+Markiere solche Einträge mit dem Suffix `[PENDING]`, damit der Curator sie sicher als Pending-Item erkennt und nicht als abgeschlossene Routine herausfiltert.
+
+Beispiel: "Drainagen-Zug für POD3 vorgesehen [PENDING]", "Schrittmacher-Implantation geplant [PENDING]".
+
 == COVERAGE-PRINZIP (wichtig) ==
 
 Aus dem Verlauf muss erkennbar sein, dass jede in den Diagnosen-/Verlaufsdiagnosen-Listen geführte Diagnose im Behandlungsverlauf aufgetreten ist. Diese Erkennbarkeit muss NICHT durch wörtliche Nennung der Diagnose erfolgen — eine implizite Anbindung über Therapie-Konsequenz oder Symptom-Verlauf reicht. Beispiele:
