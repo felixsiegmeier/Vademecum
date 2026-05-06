@@ -669,3 +669,40 @@ def test_collect_prompt_no_override_noradrenalin(isolated_data):
     prompt = ab._get_prompt("brief_verlauf_collect.txt")
     assert "Noradrenalin" in prompt, "Nicht-Override-Beispiel Noradrenalin fehlt"
     assert "NICHT als Override" in prompt, "Nicht-Override-Klausel fehlt"
+
+
+# ── 31. Prompt-Loader: .md bevorzugt, .txt als Fallback ──────────────────────
+
+def test_prompt_loader_prefers_md_over_txt(isolated_data):
+    """_get_prompt bevorzugt .md wenn beide Varianten existieren."""
+    import agent_brief as ab
+
+    stem = "_test_loader_pref"
+    txt_path = ab._PROMPTS_DIR / f"{stem}.txt"
+    md_path = ab._PROMPTS_DIR / f"{stem}.md"
+    txt_path.write_text("TXT_CONTENT", encoding="utf-8")
+    md_path.write_text("MD_CONTENT", encoding="utf-8")
+    ab._PROMPT_CACHE.pop(f"{stem}.txt", None)
+    try:
+        result = ab._get_prompt(f"{stem}.txt")
+        assert result == "MD_CONTENT", f"Erwartet MD_CONTENT, got {result!r}"
+    finally:
+        txt_path.unlink(missing_ok=True)
+        md_path.unlink(missing_ok=True)
+        ab._PROMPT_CACHE.pop(f"{stem}.txt", None)
+
+
+def test_prompt_loader_txt_fallback(isolated_data):
+    """_get_prompt fällt auf .txt zurück wenn kein .md existiert."""
+    import agent_brief as ab
+
+    stem = "_test_loader_fallback"
+    txt_path = ab._PROMPTS_DIR / f"{stem}.txt"
+    txt_path.write_text("TXT_ONLY", encoding="utf-8")
+    ab._PROMPT_CACHE.pop(f"{stem}.txt", None)
+    try:
+        result = ab._get_prompt(f"{stem}.txt")
+        assert result == "TXT_ONLY", f"Erwartet TXT_ONLY, got {result!r}"
+    finally:
+        txt_path.unlink(missing_ok=True)
+        ab._PROMPT_CACHE.pop(f"{stem}.txt", None)

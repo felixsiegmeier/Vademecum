@@ -43,8 +43,14 @@ def _lite() -> LLMClient:
 
 
 def _get_prompt(name: str) -> str:
+    """Lädt Prompt-Text aus _PROMPTS_DIR. Bevorzugt <stem>.md, fällt auf <stem>.txt zurück."""
     if name not in _PROMPT_CACHE:
-        _PROMPT_CACHE[name] = (_PROMPTS_DIR / name).read_text(encoding="utf-8")
+        stem = name.rsplit(".", 1)[0] if "." in name else name
+        md_path = _PROMPTS_DIR / f"{stem}.md"
+        if md_path.exists():
+            _PROMPT_CACHE[name] = md_path.read_text(encoding="utf-8")
+        else:
+            _PROMPT_CACHE[name] = (_PROMPTS_DIR / name).read_text(encoding="utf-8")
     return _PROMPT_CACHE[name]
 
 
