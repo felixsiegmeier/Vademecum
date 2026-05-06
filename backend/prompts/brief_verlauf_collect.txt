@@ -53,7 +53,18 @@ Zwischen A (Übernahme) und L (Therapieziel) ordnest du die Cluster B-K nach Wuc
 
 == AUFENTHALTSDAUER ALS HARTES SUBSTANZ_TIEFE-LIMIT ==
 
-Berechne aus dem Patient-YAML die Aufenthaltsdauer (Aufnahmedatum bis letzter Verlaufseintrag oder Schluss-Datum). Die SUBSTANZ_TIEFE ist ein hartes Limit, keine Empfehlung:
+AUFENTHALTSDAUER_TAGE bezieht sich auf die ITS-Liegezeit, nicht auf die Hospital-Liegezeit.
+
+Berechnung: Vom Datum der ITS-Aufnahme (oder OP-Datum bei direkt postoperativer ITS-Übernahme) bis zum SCHLUSS_DATUM (oder letztem Verlaufseintrag-Datum).
+
+Identifikation der ITS-Aufnahme:
+- Erstes Verlaufseintrag-Datum mit ITS-Kontext ("Übernahme nach OP", "postoperativ", "POD 0", "Übernahme auf ITS")
+- Bei direkter postoperativer ITS-Aufnahme: OP-Datum aus dem `therapien`-Block (kategorie: operativ) verwenden
+- Falls NICHT eindeutig identifizierbar: Hospital-Aufnahmedatum verwenden und `AUFENTHALTSDAUER_QUELLE: hospital_los_fallback` als zusätzliches Output-Feld ausgeben
+
+Präoperative Normalstations-Aufenthalte werden NICHT mitgezählt. Beispiel: Aufnahme 21.04. zur präoperativen Vorbereitung, OP 25.04., Verlegung 26.04. → ITS-Liegezeit = 2 Tage → SUBSTANZ_TIEFE = minimal.
+
+Die SUBSTANZ_TIEFE ist ein hartes Limit, keine Empfehlung:
 
 - unter 48h (Bed-and-Breakfast): SUBSTANZ_TIEFE = minimal     -- maximal 4-5 Sätze, ein Absatz
 - 2-5 Tage:                      SUBSTANZ_TIEFE = kompakt     -- 5-10 Sätze
@@ -88,9 +99,10 @@ FALSCH: 3 Absätze mit Cluster-Brücken zu Vorerkrankungen, DAPT-Bridge-Erläute
 RICHTIG (minimal): 3-4 Sätze, ein Absatz, keine Cluster-Brücken. Skelett:
 "Aufnahme postoperativ nach CABG am [Datum]. Unkomplizierter Verlauf bei rascher Katecholamin-Entwöhnung und zeitgerechter Extubation. Wiederaufnahme der DAPT am [Datum]. Verlegung in stabilem Zustand am [Datum]."
 
-Gib am Ende deiner Output-Struktur, direkt vor SCHLUSS_INDIKATOR, eine Zeile aus:
+Gib am Ende deiner Output-Struktur, direkt vor SCHLUSS_INDIKATOR, folgende Zeilen aus:
 AUFENTHALTSDAUER_TAGE: <Anzahl>
 SUBSTANZ_TIEFE: <minimal|kompakt|mittel|ausführlich>
+AUFENTHALTSDAUER_QUELLE: hospital_los_fallback  -- nur ausgeben wenn Fallback verwendet
 
 == SCHLUSS-INDIKATOR (kritisch) ==
 
@@ -130,6 +142,7 @@ CLUSTER L -- THERAPIEZIEL/KONSENS
 
 AUFENTHALTSDAUER_TAGE: <Anzahl>
 SUBSTANZ_TIEFE: <minimal|kompakt|mittel|ausführlich>
+[AUFENTHALTSDAUER_QUELLE: hospital_los_fallback]  -- optional, nur bei Fallback
 SCHLUSS_INDIKATOR: KEINE_DOKUMENTATION
 SCHLUSS_DATUM: NONE
 SCHLUSS_ZIEL: NONE

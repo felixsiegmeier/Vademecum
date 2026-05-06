@@ -637,6 +637,15 @@ def test_collect_prompt_has_hard_limit_clause(isolated_data):
     assert "CABG" in prompt, "Negativ-Beispiel-Skelett fehlt"
 
 
+def test_collect_prompt_its_liegezeit_not_hospital_los(isolated_data):
+    """collect-Prompt berechnet ITS-Liegezeit, nicht Hospital-Liegezeit."""
+    import agent_brief as ab
+    prompt = ab._get_prompt("brief_verlauf_collect.txt")
+    assert "ITS-Liegezeit" in prompt, "ITS-Liegezeit-Klausel fehlt"
+    assert "hospital_los_fallback" in prompt, "Fallback-Marker fehlt"
+    assert "Präoperative Normalstations-Aufenthalte werden NICHT mitgezählt" in prompt
+
+
 def test_curate_prompt_has_substanz_tiefe_disziplin(isolated_data):
     """curate-Prompt enthält SUBSTANZ_TIEFE-DISZIPLIN-Klausel."""
     import agent_brief as ab
