@@ -1,4 +1,4 @@
-# Backend Context — Stand 2026-05-06 (BR-B2 — Brief Lernlog FE + Befunde extra_context)
+# Backend Context — Stand 2026-05-06 (BR-B3 — Brief Lifecycle: Onboarding + Reset)
 
 ## Pydantic-Modelle (kompakt)
 
@@ -536,6 +536,7 @@ Alle 4 generierenden Prompts haben `{gelernte_regeln}` + `{extra_context}` vor d
 | POST | `/api/brief/{id}/generate` | Diagnosen+Anamnese+Therapie parallel, dann Verlauf; befunde unverändert; Body: `{extra_context?: str}` |
 | POST | `/api/brief/{id}/generate-section/{section}` | Einzelne Sektion regenerieren (nicht befunde); Body: `{extra_context?: str}` |
 | POST | `/api/brief/{id}/format-befunde` | SAP-Roh-Befunde formatieren + in befunde-Sektion persistieren; Body: `{raw_text: str, extra_context?: str}` |
+| DELETE | `/api/brief/{id}` | Brief-Datei löschen + last-Snapshots aller 4 Sektionen; Regeln bleiben; 404 wenn kein Brief |
 | PUT | `/api/brief/{id}/section/{section}` | User-Edit autosaven (kein LLM); Body: `{content: str}` |
 | POST | `/api/extract-text` | Multipart: Text→direkt, CSV/XLSX/DOCX→Konverter, Binär→LLM; Response: `{combined_text: str}` |
 
@@ -555,8 +556,11 @@ Lazy-Init der LLM-Clients in `agent_brief.py` (kein Import-Zeit-Fehler vor `load
 - `frontend/src/components/BefundeSection.tsx` — paste/view/edit-Mode; Neu-formatieren-Dialog
   + optionaler Zusatzkontext-Textarea (BR-B2); `onFormat(rawText, extraContext?)` Signatur
 - `frontend/src/components/BriefVisibilityPanel.tsx` — Sektion-Tabs × Regeln+Prompt-Unter-Tabs
-- `frontend/src/components/BriefPanel.tsx` — `lastGenerated` State, `handleLearn(section)`,
-  Visibility-Panel-Toggle, BriefVisibilityPanel + RuleReviewModal-Integration
+- `frontend/src/components/BriefOnboarding.tsx` — leerer State: Kontext-Slot + Datei-Upload
+  + SAP-Befunde-Slot + „Brief generieren"-Button; generate + format-befunde laufen parallel
+- `frontend/src/components/BriefPanel.tsx` — isEmpty → BriefOnboarding; filled → dünne
+  Statusbar mit „Brief verwerfen" (Dialog-Confirm, `deleteBrief()`); kein globaler Neu-generieren-
+  Button mehr; `lastGenerated`-State, learn-flow, Visibility-Panel-Toggle, RuleReviewModal
 
 ## Test-Stand
-186 passed (BR-B2: keine neuen Tests; BR-B1 Tests bereits grün)
+188 passed (BR-B3: +2 Tests DELETE-Endpoint)
