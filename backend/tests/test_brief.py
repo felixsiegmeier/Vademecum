@@ -706,3 +706,61 @@ def test_prompt_loader_txt_fallback(isolated_data):
     finally:
         txt_path.unlink(missing_ok=True)
         ab._PROMPT_CACHE.pop(f"{stem}.txt", None)
+
+
+# ── 32. Adressaten-Profil-Mechanik ───────────────────────────────────────────
+
+def test_load_adressatenprofil_existing(isolated_data):
+    """_load_adressatenprofil lädt normalstation_intern erfolgreich."""
+    import agent_brief as ab
+    profil = ab._load_adressatenprofil("normalstation_intern")
+    assert "ADRESSATENPROFIL" in profil, "Header fehlt im Profil"
+    assert "NORMALSTATION" in profil, "Profil-Bezeichnung fehlt"
+
+
+def test_load_adressatenprofil_fallback(isolated_data):
+    """_load_adressatenprofil fällt bei unbekanntem Namen auf normalstation_intern zurück."""
+    import agent_brief as ab
+    profil = ab._load_adressatenprofil("nicht_vorhanden_xyz")
+    # Fallback: normalstation_intern-Inhalt erwartet
+    assert "NORMALSTATION" in profil, "Fallback-Profil nicht geladen"
+
+
+def test_curate_prompt_contains_adressatenprofil(isolated_data):
+    """generate_verlauf: Curate-Prompt (Pass 3) enthält das Adressaten-Profil."""
+    patient = Patient(stammdaten=Stammdaten(id="P-0001", name="Test, Patient", aufnahmedatum="2026-04-01"))
+
+    captured_prompts: list[str] = []
+
+    async def capture(messages, **kwargs):
+        captured_prompts.append(messages[0]["content"])
+        return _llm_resp("ok")
+
+    with patch("agent_brief._lite", return_value=MagicMock(chat_completion=capture)):
+        asyncio.run(agent_brief.generate_verlauf(
+            patient, meilenstein=None, befunde_formatted="", diagnosen="", anamnese="", therapie=""
+        ))
+
+    assert len(captured_prompts) == 3, "Erwartet 3 LLM-Calls"
+    curate_prompt = captured_prompts[2]
+    assert "NORMALSTATION" in curate_prompt, "Adressaten-Profil nicht im Curate-Prompt"
+    assert "ADRESSATENPROFIL" in curate_prompt, "Profil-Header fehlt im Curate-Prompt"
+
+
+def test_generate_verlauf_accepts_adressat_argument(isolated_data):
+    """generate_verlauf akzeptiert adressat-Argument ohne TypeError."""
+    patient = Patient(stammdaten=Stammdaten(id="P-0001", name="Test, Patient", aufnahmedatum="2026-04-01"))
+
+    mock_client = MagicMock()
+    mock_client.chat_completion = AsyncMock(side_effect=[
+        _llm_resp("CLUSTER A\nSCHLUSS_INDIKATOR: KEINE_DOKUMENTATION"),
+        _llm_resp("AUDIT_RESULT: ALLES_ABGEDECKT"),
+        _llm_resp("Komplikationsloser Verlauf."),
+    ])
+
+    with patch("agent_brief._lite", return_value=mock_client):
+        result = asyncio.run(agent_brief.generate_verlauf(
+            patient, meilenstein=None, befunde_formatted="", diagnosen="", anamnese="", therapie="",
+            adressat="normalstation_intern",
+        ))
+    assert result == "Komplikationsloser Verlauf."

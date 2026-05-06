@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)
 _llm_lite: Optional[LLMClient] = None
 
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
+_ADRESSATEN_DIR = _PROMPTS_DIR / "adressaten"
 _PROMPT_CACHE: dict[str, str] = {}
 
 
@@ -52,6 +53,17 @@ def _get_prompt(name: str) -> str:
         else:
             _PROMPT_CACHE[name] = (_PROMPTS_DIR / name).read_text(encoding="utf-8")
     return _PROMPT_CACHE[name]
+
+
+def _load_adressatenprofil(name: str = "normalstation_intern") -> str:
+    """Lädt ein Adressaten-Profil aus prompts/adressaten/. Fällt auf normalstation_intern zurück."""
+    for ext in (".md", ".txt"):
+        path = _ADRESSATEN_DIR / f"{name}{ext}"
+        if path.exists():
+            return path.read_text(encoding="utf-8")
+    if name != "normalstation_intern":
+        return _load_adressatenprofil("normalstation_intern")
+    raise FileNotFoundError(f"Adressaten-Profil '{name}' nicht gefunden")
 
 
 def _to_yaml(patient: Patient) -> str:
@@ -234,6 +246,7 @@ async def generate_verlauf(
     anamnese: str,
     therapie: str,
     extra_context: str = "",
+    adressat: str = "normalstation_intern",
 ) -> str:
     """3-Pass: Substanz-Sammler (collect) → Coverage-Auditor (audit) → Stil-Kurator (curate)."""
     patient_yaml = _to_yaml(patient)
@@ -283,12 +296,16 @@ async def generate_verlauf(
         return collected
     audited = (resp2.choices[0].message.content or "").strip()
 
-    # Pass 3 — Stil-Kurator (mit Regel-Injection)
+    # Pass 3 — Stil-Kurator (mit Regel-Injection und Adressaten-Profil)
     verlauf_rules = learning_storage.load_rules(domain="brief", section="verlauf")
+    adressatenprofil = _load_adressatenprofil(adressat)
     curate_prompt = _inject_rules(
         _fill(
             _get_prompt("brief_verlauf_curate.txt"),
-            extra={"{audited_substance}": audited},
+            extra={
+                "{audited_substance}": audited,
+                "{ADRESSATENPROFIL}": adressatenprofil,
+            },
         ),
         _build_rules_block(verlauf_rules),
     )
