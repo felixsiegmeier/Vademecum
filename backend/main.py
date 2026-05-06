@@ -323,6 +323,10 @@ class BriefRegenRequest(BaseModel):
     custom_prompt: Optional[str] = None
 
 
+class BriefAgentGenerateRequest(BaseModel):
+    extra_context: str = ""
+
+
 # ── Patienten-CRUD ────────────────────────────────────────────────────────────
 
 @app.get("/api/health")
@@ -841,14 +845,18 @@ async def get_brief_agent(patient_id: str):
 
 
 @app.post("/api/brief/{patient_id}/generate")
-async def generate_brief_agent(patient_id: str):
+async def generate_brief_agent(
+    patient_id: str,
+    req: Optional[BriefAgentGenerateRequest] = Body(default=None),
+):
     """Generiert Diagnosen + Anamnese + Therapie parallel, dann Verlauf sequenziell.
-    Befunde-Sektion bleibt unverändert. Persistiert und gibt vollständigen State zurück."""
+    Befunde-Sektion bleibt unverändert. extra_context ist ephemer (nicht persistiert)."""
     try:
         patient = load_patient(patient_id)
     except FileNotFoundError:
         raise HTTPException(404, f"Patient {patient_id} nicht gefunden")
 
+    extra_context = req.extra_context if req else ""
     meilenstein_result = load_meilenstein(patient_id)
     meilenstein_text = meilenstein_result[0] if meilenstein_result else None
 
@@ -856,12 +864,13 @@ async def generate_brief_agent(patient_id: str):
     befunde_existing = current.get("befunde", "")
 
     diag, anam, ther = await asyncio.gather(
-        agent_brief.generate_diagnosen(patient),
-        agent_brief.generate_anamnese(patient),
-        agent_brief.generate_therapie(patient),
+        agent_brief.generate_diagnosen(patient, extra_context=extra_context),
+        agent_brief.generate_anamnese(patient, extra_context=extra_context),
+        agent_brief.generate_therapie(patient, extra_context=extra_context),
     )
     verlauf = await agent_brief.generate_verlauf(
-        patient, meilenstein_text, befunde_existing, diag, anam, ther
+        patient, meilenstein_text, befunde_existing, diag, anam, ther,
+        extra_context=extra_context,
     )
 
     new_brief = {**current, "diagnosen": diag, "anamnese": anam, "therapie": ther, "verlauf": verlauf}
@@ -870,8 +879,12 @@ async def generate_brief_agent(patient_id: str):
 
 
 @app.post("/api/brief/{patient_id}/generate-section/{section}")
-async def regenerate_section_agent(patient_id: str, section: str):
-    """Re-generiert eine einzelne Sektion (nicht befunde). Verlauf bekommt aktuellen Storage-State."""
+async def regenerate_section_agent(
+    patient_id: str,
+    section: str,
+    req: Optional[BriefAgentGenerateRequest] = Body(default=None),
+):
+    """Re-generiert eine einzelne Sektion (nicht befunde). extra_context ephemer."""
     if section not in {"diagnosen", "anamnese", "therapie", "verlauf"}:
         raise HTTPException(400, f"Section '{section}' nicht re-generierbar.")
 
@@ -880,14 +893,15 @@ async def regenerate_section_agent(patient_id: str, section: str):
     except FileNotFoundError:
         raise HTTPException(404, f"Patient {patient_id} nicht gefunden")
 
+    extra_context = req.extra_context if req else ""
     current = brief_storage.load_brief(patient_id)
 
     if section == "diagnosen":
-        result = await agent_brief.generate_diagnosen(patient)
+        result = await agent_brief.generate_diagnosen(patient, extra_context=extra_context)
     elif section == "anamnese":
-        result = await agent_brief.generate_anamnese(patient)
+        result = await agent_brief.generate_anamnese(patient, extra_context=extra_context)
     elif section == "therapie":
-        result = await agent_brief.generate_therapie(patient)
+        result = await agent_brief.generate_therapie(patient, extra_context=extra_context)
     else:  # verlauf
         meilenstein_result = load_meilenstein(patient_id)
         meilenstein_text = meilenstein_result[0] if meilenstein_result else None
@@ -898,6 +912,7 @@ async def regenerate_section_agent(patient_id: str, section: str):
             current.get("diagnosen", ""),
             current.get("anamnese", ""),
             current.get("therapie", ""),
+            extra_context=extra_context,
         )
 
     brief_storage.update_section(patient_id, section, result)
@@ -924,6 +939,39 @@ async def save_section_edit_agent(patient_id: str, section: str, body: dict):
     content = body.get("content", "")
     brief_storage.update_section(patient_id, section, content)
     return {section: content}
+
+
+@app.post("/api/extract-text")
+async def extract_text(files: list[UploadFile] = File(...)):
+    """Extrahiert Text aus einem oder mehreren Dateien.
+    Text-Dateien werden direkt dekodiert; Binärdateien (PDF, Bilder) via LLM.
+    Response: {combined_text: str}."""
+    from llm_client import file_to_content_parts
+
+    parts: list[str] = []
+    for f in files:
+        mime = f.content_type or "application/octet-stream"
+        data = await f.read()
+        if mime in _TEXT_MIMES:
+            parts.append(_bytes_to_text(data))
+        elif mime in _CSV_MIMES:
+            parts.append(_csv_to_markdown(data))
+        elif mime in _XLSX_MIMES:
+            parts.append(_xlsx_to_markdown(data))
+        elif mime in _DOCX_MIMES:
+            parts.append(_docx_to_text(data))
+        else:
+            content_parts = file_to_content_parts(data, mime)
+            resp = await agent_brief._lite().chat_completion(
+                [{"role": "user", "content": content_parts + [
+                    {"type": "text", "text": "Gib den gesamten Text dieses Dokuments wieder. Keine Zusammenfassung, kein Kommentar."}
+                ]}],
+                temperature=0,
+                max_tokens=4096,
+            )
+            parts.append((resp.choices[0].message.content or "").strip())
+
+    return {"combined_text": "\n\n".join(p for p in parts if p)}
 
 
 # ── Allgemeiner Chat (kein Patient-Kontext) ───────────────────────────────────
