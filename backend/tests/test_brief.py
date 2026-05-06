@@ -846,3 +846,31 @@ def test_generate_verlauf_diagnostic_logging(isolated_data, capsys):
     assert "[BR-C1.7-DIAG]" in captured.err, "Diagnose-Log-Marker fehlt auf stderr"
     assert "verlauf_collect" in captured.err, "Pass-1-Marker fehlt"
     assert "verlauf_curate" in captured.err, "Pass-3-Marker fehlt"
+
+
+def test_curate_prompt_has_konnektoren_disziplin(isolated_data):
+    """KONNEKTOREN-DISZIPLIN-Block mit erlaubter und verbotener Kategorie vorhanden."""
+    prompt = agent_brief._get_prompt("brief_verlauf_curate.txt")
+    assert "KONNEKTOREN-DISZIPLIN" in prompt
+    assert "kausal-logisch" in prompt, "Erlaubte Kategorie fehlt"
+    assert "parallel hierzu" in prompt, "Verbotene Beispiel-Phrase fehlt"
+
+
+def test_curate_prompt_has_konnektoren_faustregel(isolated_data):
+    """Faustregel-Marker für den Füllkonnektor-Test vorhanden."""
+    prompt = agent_brief._get_prompt("brief_verlauf_curate.txt")
+    assert "Faustregel" in prompt
+
+
+def test_curate_prompt_has_minimal_beispiel(isolated_data):
+    """Minimal-Beispiel-Marker für few-shot-Kalibrierung kurzer Verläufe vorhanden."""
+    prompt = agent_brief._get_prompt("brief_verlauf_curate.txt")
+    assert "Minimal-Beispiel" in prompt
+
+
+def test_curate_prompt_no_pauschales_konnektoren_verbot(isolated_data):
+    """Altes pauschales Konnektoren-Verbot ist durch KONNEKTOREN-DISZIPLIN ersetzt."""
+    prompt = agent_brief._get_prompt("brief_verlauf_curate.txt")
+    assert "Floskeln, Konnektoren" not in prompt, (
+        "Pauschales Konnektoren-Verbot gefunden — muss durch KONNEKTOREN-DISZIPLIN-Block ersetzt sein"
+    )

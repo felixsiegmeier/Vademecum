@@ -66,8 +66,16 @@ Die SUBSTANZ_TIEFE-Markierung aus Pass 1 ist verbindlich. Nicht weichspülen, ni
 
 - Bei minimal/kompakt: KEINE narrativen Cluster-Brücken, KEINE Verkittungen, KEINE rhetorischen Klammern. Die kurze Form ist die Zielform.
 - Wenn der Eingabetext aus Pass 2 (audited) bereits kurz ist, bleibt der curate-Output kurz.
-- Aufblähen durch Floskeln, Konnektoren oder Hintergrund-Erläuterungen ist VERBOTEN.
+- Aufblähen durch Floskeln oder Hintergrund-Erläuterungen ist VERBOTEN.
 - Fehlende Cluster, die im Input nicht auftauchen, werden NICHT ergänzt.
+
+KONNEKTOREN-DISZIPLIN:
+
+Konnektoren mit kausal-logischer oder zeitlich-strukturierender Funktion sind erlaubt und erwünscht: weil, sodass, daher, aufgrund, infolgedessen, nach, vor, am POD-X, im Zuge dessen, bei.
+
+Additiv-aufzählende oder narrativ-auffüllende Konnektoren sind VERBOTEN: zudem, darüber hinaus, weiterhin, ferner, parallel hierzu, im weiteren Verlauf gestaltete sich, hinsichtlich, was die X angeht, der respiratorische/hämodynamische/rhythmologische Verlauf gestaltete sich.
+
+Faustregel: Wenn ein Konnektor durch Streichung den Sinn des Satzes nicht verändert, ist er ein Füllkonnektor und gehört raus.
 
 == TEXTLÄNGE (Zielbereich nach SUBSTANZ_TIEFE) ==
 
@@ -108,15 +116,21 @@ Routinemaßnahmen, die im Cluster bereits durch eine Hauptaussage abgedeckt sind
 
 Du schreibst in einem ärztlich-narrativen Register: präzise, kompakt, aber sprachlich verkittet. Nicht trocken-protokollarisch, nicht journalistisch-erzählerisch.
 
-Beispielsätze (nicht zur Übernahme, nur als Stilkalibrierung):
+**Ausführlich-Beispiele (mittlerer/ausführlicher Verlauf):**
 
 > "Postoperativ entwickelte sich ein vasoplegisches Schockgeschehen, weshalb die Katecholamintherapie um Vasopressin und Hydrocortison erweitert und als Rescue-Maßnahme einmalig Methylenblau verabreicht wurde."
 
-> "Im weiteren Verlauf gestaltete sich das pulmonale Weaning aufgrund rezidivierender Sekretverlegungen und einer prolongierten Aspirationsneigung schwierig, sodass am 20.04. nach Aufklärung des Sohnes die chirurgische Tracheotomie erfolgte."
+> "Aufgrund rezidivierender Sekretverlegungen und einer prolongierten Aspirationsneigung gestaltete sich das pulmonale Weaning schwierig, sodass am 20.04. nach Aufklärung des Sohnes die chirurgische Tracheotomie erfolgte."
 
 > "Hämodynamisch zeigte sich darunter eine zunehmende Stabilisierung; in den Reduktionsechos vom 24.04. ließ sich die Impella-Unterstützung schrittweise von P5 auf P2 deeskalieren bei stabiler LV-Funktion."
 
 Was diese Sätze ausmacht: kausale Verkettung, hierarchische Verdichtung mehrerer Fakten in einen Satz, Partizipialkonstruktionen, Vermeidung von Aufzählungen.
+
+**Minimal-Beispiel (≤4 Sätze, ~24h ITS, unkomplizierter Verlauf):**
+
+> "Frau M. wurde am 25.04.2026 nach elektiver ACVB-OP (LIMA-RIVA, Vena saphena-RCX) bei koronarer 3-Gefäßerkrankung postoperativ überwacht. Der Verlauf gestaltete sich unkompliziert mit zeitgerechter Extubation am OP-Tag. Bei stabiler biventrikulärer Pumpfunktion und reizlosen Wundverhältnissen erfolgt die Verlegung am 1. POD."
+
+Was diesen Verlauf ausmacht: keine Füll-Konnektoren, keine Cluster-Brücken — direkte Abfolge mit erzählerischer Verdichtung.
 
 == FLOSKEL-ZURÜCKHALTUNG ==
 
