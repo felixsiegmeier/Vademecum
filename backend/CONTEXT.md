@@ -451,21 +451,24 @@ Die folgenden Regeln wurden aus früheren manuellen Korrekturen am Meilenstein a
 
 **FE-Types (B3):** `LearnRuleCandidate`, `LearnTrivialChange`, `LearnFromEditsResponse`, `StoredRule`, `ConflictResolution`, `MEILENSTEIN_SECTIONS`
 
-## Brief-Generator V1 (BR-A1)
+## Brief-Generator V1 (BR-A1 + BR-A2)
 
-### Architektur
+### Architektur Backend
 
 4 LLM-Sub-Agents + 1 Pre-Pass-Helper, alle in `backend/agent_brief.py`.
 Storage in `backend/brief_storage.py`, YAML unter `data/briefs/<patient_id>.yml`.
 
-**5 async-Funktionen:**
+**5 async-Funktionen** (alle generierenden akzeptieren `extra_context: str = ""`):
 | Funktion | Modell | LLM-Mode | Output |
 |---|---|---|---|
-| `generate_diagnosen(patient)` | flash-lite | JSON-Mode | Markdown via `_render_diagnosen()` |
-| `generate_anamnese(patient)` | flash-lite | Plain Text | Markdown-Absatz |
-| `generate_therapie(patient)` | flash-lite | JSON-Mode | Markdown via `_render_therapie()` |
-| `generate_verlauf(patient, meilenstein, befunde, diagnosen, anamnese, therapie)` | flash (`gemini-2.0-flash-preview`) | Plain Text | langer Fließtext |
+| `generate_diagnosen(patient, extra_context)` | flash-lite | JSON-Mode | Markdown via `_render_diagnosen()` |
+| `generate_anamnese(patient, extra_context)` | flash-lite | Plain Text | Markdown-Absatz |
+| `generate_therapie(patient, extra_context)` | flash-lite | JSON-Mode | Markdown via `_render_therapie()` |
+| `generate_verlauf(patient, meilenstein, befunde, diagnosen, anamnese, therapie, extra_context)` | flash (`gemini-2.0-flash-preview`) | Plain Text | langer Fließtext |
 | `format_sap_befunde(raw_text)` | flash-lite | Plain Text | formatierter Markdown |
+
+`extra_context` ist ephemer (kein Persistieren). `_inject_extra_context(prompt, extra)` ersetzt
+`{extra_context}`-Platzhalter in den 4 Prompt-Dateien.
 
 **Storage-Schema (`data/briefs/<pid>.yml`, schema_version "0.1"):**
 ```yaml
@@ -482,20 +485,39 @@ updated_at: <ISO-8601>
 **`BRIEF_SECTIONS`** = `{"diagnosen", "anamnese", "therapie", "befunde", "verlauf"}`
 
 **Prompt-Dateien:** `brief_diagnosen.txt`, `brief_anamnese.txt`, `brief_therapie.txt`,
-`brief_verlauf.txt`, `brief_befunde_format.txt` — alle in `prompts/`.
+`brief_verlauf.txt`, `brief_befunde_format.txt` — alle in `prompts/`. Alle 4 generierenden
+Prompts haben `{extra_context}`-Platzhalter vor dem "Patient (YAML):"-Block.
 
 ### Endpoints (Pfad: `/api/brief/{patient_id}/...`)
 
 | Methode | Pfad | Beschreibung |
 |---|---|---|
 | GET | `/api/brief/{id}` | Aktuellen Brief-State lesen (leeres Skelett wenn nicht vorhanden) |
-| POST | `/api/brief/{id}/generate` | Diagnosen+Anamnese+Therapie parallel, dann Verlauf; befunde unverändert |
-| POST | `/api/brief/{id}/generate-section/{section}` | Einzelne Sektion regenerieren (nicht befunde) |
-| POST | `/api/brief/{id}/format-befunde` | SAP-Roh-Befunde formatieren + in befunde-Sektion persistieren |
-| PUT | `/api/brief/{id}/section/{section}` | User-Edit autosaven (kein LLM) |
+| POST | `/api/brief/{id}/generate` | Diagnosen+Anamnese+Therapie parallel, dann Verlauf; befunde unverändert; Body: `{extra_context?: str}` |
+| POST | `/api/brief/{id}/generate-section/{section}` | Einzelne Sektion regenerieren (nicht befunde); Body: `{extra_context?: str}` |
+| POST | `/api/brief/{id}/format-befunde` | SAP-Roh-Befunde formatieren + in befunde-Sektion persistieren; Body: `{raw_text: str}` |
+| PUT | `/api/brief/{id}/section/{section}` | User-Edit autosaven (kein LLM); Body: `{content: str}` |
+| POST | `/api/extract-text` | Multipart: Text→direkt, CSV/XLSX/DOCX→Konverter, Binär→LLM; Response: `{combined_text: str}` |
 
 Meilenstein-Quelle für Verlauf: `load_meilenstein(patient_id)` aus `storage.py`.
 Lazy-Init der LLM-Clients in `agent_brief.py` (kein Import-Zeit-Fehler vor `load_dotenv()`).
 
+### Architektur Frontend (BR-A2)
+
+**Neue Dateien:**
+- `frontend/src/api/brief.ts` — API-Modul: `getBrief`, `generateBrief`, `regenerateSection`,
+  `formatSapBefunde`, `saveSectionEdit`, `extractFileText`
+- `frontend/src/components/PendingContextZone.tsx` — Einklappbar (Chevron); Textarea + Datei-Upload
+  (via `/api/extract-text`); "Übernehmen" setzt `pendingContext`-State in `BriefPanel`
+- `frontend/src/components/BriefSection.tsx` — Markdown-View / Edit-Toggle; ⟳ Regen; ✏ Bearbeiten;
+  800ms debounced autosave via `saveSectionEdit`
+- `frontend/src/components/BefundeSection.tsx` — paste-Mode (leer) vs. view-Mode (formatiert);
+  "Neu formatieren"-Dialog; edit-Toggle
+
+**Aktualisierte Dateien:**
+- `frontend/src/types.ts` — `Brief` interface + `BriefSectionKey` type
+- `frontend/src/components/BriefPanel.tsx` — komplett neu: lädt `/api/brief/{id}`,
+  `PendingContextZone` + Header-Regen-Button + 5 Sektionen in Reihenfolge
+
 ## Test-Stand
-169 passed
+173 passed
