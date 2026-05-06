@@ -16,16 +16,16 @@ client = TestClient(app)
 # ── Storage: last_meilenstein ─────────────────────────────────────────────────
 
 def test_last_meilenstein_roundtrip(isolated_data):
-    """save_last_meilenstein → load_last_meilenstein gibt gleichen Text zurück."""
+    """save_last_output → load_last_output gibt gleichen Text zurück."""
     text = "=== Patientenübersicht ===\n\n== Befunde ==\n- TTE: LVEF 30%"
-    learning_storage.save_last_meilenstein("P-0001", text)
-    loaded = learning_storage.load_last_meilenstein("P-0001")
+    learning_storage.save_last_output("P-0001", text, domain="meilenstein")
+    loaded = learning_storage.load_last_output("P-0001", domain="meilenstein")
     assert loaded == text
 
 
 def test_load_last_meilenstein_returns_none_when_missing(isolated_data):
     """Datei nicht vorhanden → None, kein Fehler."""
-    result = learning_storage.load_last_meilenstein("P-9999")
+    result = learning_storage.load_last_output("P-9999", domain="meilenstein")
     assert result is None
 
 
@@ -59,7 +59,7 @@ def test_generate_meilenstein_persists_last_meilenstein(isolated_data):
         res = client.post("/api/patients/P-0001/meilenstein/generate", json={})
 
     assert res.status_code == 200
-    saved = learning_storage.load_last_meilenstein("P-0001")
+    saved = learning_storage.load_last_output("P-0001", domain="meilenstein")
     assert saved is not None
     assert "Patientenübersicht" in saved
 
@@ -69,9 +69,9 @@ def test_generate_meilenstein_persists_last_meilenstein(isolated_data):
 def test_learn_from_edits_404_when_no_reference(isolated_data):
     """POST learn-from-edits ohne vorherigen generate → 404."""
     _make_patient_minimal("P-0001")
-    res = client.post("/api/meilenstein/learn-from-edits", json={
+    res = client.post("/api/learn/meilenstein/from-edits", json={
         "patient_id": "P-0001",
-        "edited_meilenstein": "irgendwas",
+        "edited_content": "irgendwas",
     })
     assert res.status_code == 404
 
@@ -79,11 +79,11 @@ def test_learn_from_edits_404_when_no_reference(isolated_data):
 def test_learn_from_edits_empty_when_unchanged(isolated_data):
     """Inhalt unverändert → leere rule_candidates + trivial_changes, kein LLM-Call."""
     text = "=== Patientenübersicht ===\n\n== Befunde ==\n- TTE: LVEF 30%"
-    learning_storage.save_last_meilenstein("P-0001", text)
+    learning_storage.save_last_output("P-0001", text, domain="meilenstein")
 
-    res = client.post("/api/meilenstein/learn-from-edits", json={
+    res = client.post("/api/learn/meilenstein/from-edits", json={
         "patient_id": "P-0001",
-        "edited_meilenstein": text,
+        "edited_content": text,
     })
     assert res.status_code == 200
     body = res.json()
@@ -93,7 +93,7 @@ def test_learn_from_edits_empty_when_unchanged(isolated_data):
 
 def test_learn_from_edits_returns_candidates_with_conflict_field(isolated_data):
     """Inhaltsänderung → Kandidaten mit conflict-Feld (None wenn kein Konflikt)."""
-    learning_storage.save_last_meilenstein("P-0001", _MOCK_CONTENT)
+    learning_storage.save_last_output("P-0001", _MOCK_CONTENT, domain="meilenstein")
 
     from agent_meilenstein_learning import ConflictResult, ExtractionResult, RuleCandidate, TrivialChange
 
@@ -117,9 +117,9 @@ def test_learn_from_edits_returns_candidates_with_conflict_field(isolated_data):
         mock_extract.return_value = extraction
         mock_conflict.return_value = conflict
 
-        res = client.post("/api/meilenstein/learn-from-edits", json={
+        res = client.post("/api/learn/meilenstein/from-edits", json={
             "patient_id": "P-0001",
-            "edited_meilenstein": _MOCK_CONTENT + "\n- EKG: SR",
+            "edited_content": _MOCK_CONTENT + "\n- EKG: SR",
         })
 
     assert res.status_code == 200
@@ -142,7 +142,7 @@ def test_learn_from_edits_returns_candidates_with_conflict_field(isolated_data):
 
 def test_save_rules_endpoint_adds_rules(isolated_data):
     """POST save-rules fügt neue Regeln hinzu."""
-    res = client.post("/api/meilenstein/save-rules", json={
+    res = client.post("/api/learn/meilenstein/save-rules", json={
         "rules_to_add": [
             {"section": "Befunde", "rule_text": "Immer LVEF im Echo nennen"},
             {"section": "Behandlungsdiagnosen", "rule_text": "KHK mit DES-Vorgeschichte konsolidieren"},
@@ -155,7 +155,7 @@ def test_save_rules_endpoint_adds_rules(isolated_data):
     assert body["deleted_count"] == 0
     assert body["total_rules"] == 2
 
-    stored = learning_storage.load_rules()
+    stored = learning_storage.load_rules(domain="meilenstein")
     assert len(stored) == 2
 
 
@@ -163,9 +163,9 @@ def test_save_rules_endpoint_deletes_then_adds(isolated_data):
     """POST save-rules löscht alte Regel und fügt neue hinzu (Konflikt-Ersetzen-Pfad)."""
     # Erstmal eine Regel speichern
     rule = learning_storage.new_rule("Befunde", "Alte Regel")
-    learning_storage.save_rules([rule])
+    learning_storage.save_rules([rule], domain="meilenstein")
 
-    res = client.post("/api/meilenstein/save-rules", json={
+    res = client.post("/api/learn/meilenstein/save-rules", json={
         "rules_to_add": [
             {"section": "Befunde", "rule_text": "Neue bessere Regel"},
         ],
@@ -177,19 +177,8 @@ def test_save_rules_endpoint_deletes_then_adds(isolated_data):
     assert body["deleted_count"] == 1
     assert body["total_rules"] == 1
 
-    stored = learning_storage.load_rules()
+    stored = learning_storage.load_rules(domain="meilenstein")
     assert stored[0].rule_text == "Neue bessere Regel"
-
-
-def test_save_rules_endpoint_rejects_invalid_section(isolated_data):
-    """POST save-rules mit ungültiger Sektion → 422."""
-    res = client.post("/api/meilenstein/save-rules", json={
-        "rules_to_add": [
-            {"section": "UNGÜLTIG", "rule_text": "Eine Regel"},
-        ],
-        "rule_ids_to_delete": [],
-    })
-    assert res.status_code == 422
 
 
 # ── Endpoint: rebuild-rule ────────────────────────────────────────────────────
@@ -205,7 +194,7 @@ def test_rebuild_rule_endpoint_returns_refined(isolated_data):
 
     with patch.object(_la, "rebuild_rule_candidate", new_callable=AsyncMock) as mock_rebuild:
         mock_rebuild.return_value = rebuild_result
-        res = client.post("/api/meilenstein/rebuild-rule", json={
+        res = client.post("/api/learn/meilenstein/rebuild-rule", json={
             "section": "Behandlungsdiagnosen",
             "original_rule_text": "KHK mit DES-Vorgeschichte konsolidieren",
             "original_reasoning": "Arzt hat KHK ergänzt",
@@ -223,11 +212,11 @@ def test_rebuild_rule_endpoint_returns_refined(isolated_data):
 # ── Endpoint: rules-list + delete-rule ───────────────────────────────────────
 
 def test_get_rules_endpoint_returns_stored_rules(isolated_data):
-    """GET /api/meilenstein/rules gibt alle gespeicherten Regeln zurück."""
+    """GET /api/learn/meilenstein/rules gibt alle gespeicherten Regeln zurück."""
     rule = learning_storage.new_rule("Befunde", "LVEF immer nennen")
-    learning_storage.save_rules([rule])
+    learning_storage.save_rules([rule], domain="meilenstein")
 
-    res = client.get("/api/meilenstein/rules")
+    res = client.get("/api/learn/meilenstein/rules")
     assert res.status_code == 200
     body = res.json()
     assert len(body["rules"]) == 1
@@ -235,20 +224,20 @@ def test_get_rules_endpoint_returns_stored_rules(isolated_data):
 
 
 def test_delete_rule_endpoint_removes_rule(isolated_data):
-    """DELETE /api/meilenstein/rules/{id} entfernt die Regel."""
+    """DELETE /api/learn/meilenstein/rules/{id} entfernt die Regel."""
     rule = learning_storage.new_rule("Befunde", "LVEF immer nennen")
-    learning_storage.save_rules([rule])
+    learning_storage.save_rules([rule], domain="meilenstein")
 
-    res = client.delete(f"/api/meilenstein/rules/{rule.id}")
+    res = client.delete(f"/api/learn/meilenstein/rules/{rule.id}")
     assert res.status_code == 204
 
-    stored = learning_storage.load_rules()
+    stored = learning_storage.load_rules(domain="meilenstein")
     assert stored == []
 
 
 def test_delete_rule_endpoint_404_for_unknown(isolated_data):
     """DELETE /api/meilenstein/rules/{id} mit unbekannter ID → 404."""
-    res = client.delete("/api/meilenstein/rules/UNBEKANNT")
+    res = client.delete("/api/learn/meilenstein/rules/UNBEKANNT")
     assert res.status_code == 404
 
 
@@ -274,7 +263,7 @@ def test_extraction_prompt_contains_anonymization_clause():
 def test_extraction_prompt_contains_section_whitelist():
     """Extraction-Prompt listet alle gültigen Sektionen auf."""
     text = _EXTRACTION_PROMPT_PATH.read_text(encoding="utf-8")
-    for section in learning_storage.VALID_SECTIONS:
+    for section in learning_storage.MEILENSTEIN_SECTIONS:
         assert section in text, f"Sektion '{section}' fehlt im Extraction-Prompt."
 
 

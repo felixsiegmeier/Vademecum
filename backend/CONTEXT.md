@@ -1,4 +1,4 @@
-# Backend Context — Stand 2026-05-05 (Phase E — FE shadcn/ui-Migration)
+# Backend Context — Stand 2026-05-06 (BR-B1 — Multi-Domain Lernlog)
 
 ## Pydantic-Modelle (kompakt)
 
@@ -348,12 +348,21 @@ POST /api/patients/{id}/apply-proposals
 - Suffix-Cleaning: Meropenem-1 → Meropenem in Antimikrobiell-Output
 - Eingriff-Detail aus source_quote: Bypass-Konfiguration/Lateralität integrieren
 
-## Lernlog (V1 B1+B2 — Lese- und Schreib-Pfad)
+## Lernlog (BR-B1 — Multi-Domain)
 
 ### Storage-Modul `backend/learning_storage.py`
 
-**Regelbank-Pfad:** `backend/data/learnings/<user_id>/meilenstein.yml`
-**Last-Generated-Pfad:** `backend/data/learnings/<user_id>/last_meilenstein/<pid>.txt`
+**Storage-Layout:**
+```
+data/learnings/<user_id>/
+  meilenstein/
+    rules.yml
+    last/<pid>.txt
+  brief/
+    {diagnosen,anamnese,therapie,verlauf}/
+      rules.yml
+      last/<pid>.txt
+```
 (aktuell user_id=`"default"` hardcoded; Multi-User-Vorbereitung über Pfad-Komponente)
 
 **Regelbank-Schema (YAML, schema_version: "0.1"):**
@@ -361,95 +370,98 @@ POST /api/patients/{id}/apply-proposals
 schema_version: "0.1"
 rules:
   - id: <ULID>
-    section: <eine der 8 Meilenstein-Sektionen>
+    section: <free-form label>
     rule_text: <str>
     created_at: <ISO-8601>
     patient_schema_version_at_creation: <str>  # z.B. "0.4"
 ```
 
-**Gültige Sektionen (8):** Operationen & Prozeduren | Behandlungsdiagnosen | Relevante Nebendiagnosen | Kardiale Funktion | Antikoagulation | Antimikrobielle Therapie | Befunde | Therapieziel / Patientenwille
+`Rule.section` ist **free-form** (kein Whitelist-Validator) — der Pfad (domain+section) scopet die Regeln.
 
-**Funktionen:**
-- `load_rules(user_id)`, `save_rules(rules, user_id)`, `new_rule(section, rule_text)`
-- `save_last_meilenstein(patient_id, content, user_id)` — atomar; wird am Ende von `generate_meilenstein` aufgerufen
-- `load_last_meilenstein(patient_id, user_id) -> str | None` — None wenn Datei fehlt
+**Konstanten:**
+- `MEILENSTEIN_SECTIONS` — 8-Elemente-Liste (für Prompt-Builder-Gruppierung)
+- `BRIEF_SECTIONS_WITH_LEARNING = {"diagnosen", "anamnese", "therapie", "verlauf"}` (befunde ausgeschlossen)
+
+**API:**
+- `load_rules(user_id, domain, section=None) -> list[Rule]`
+- `save_rules(rules, user_id, domain, section=None)` — atomar (tempfile + os.replace)
+- `save_last_output(patient_id, content, user_id, domain, section=None)` — atomar
+- `load_last_output(patient_id, user_id, domain, section=None) -> str | None`
+- `new_rule(section, rule_text) -> Rule`
 
 **Warnung:** Schema-Drift (patient_schema_version_at_creation != PATIENT_SCHEMA_VERSION) → logger.warning, Rule wird trotzdem geladen.
 
-### Generator-Regel-Injection
+### Meilenstein — Regel-Injection
 
-Bei `POST /api/meilenstein/generate`: `_build_meilenstein_system_prompt(rules)` in `main.py`
+Bei `POST /api/patients/{id}/meilenstein/generate`: `_build_meilenstein_system_prompt(rules)` in `main.py`
 
-- Leere Regelliste → Base-Prompt unverändert (byte-identisch, kein Einfluss auf Output)
-- Nicht-leere Regelliste → Base-Prompt + `<gelernte_regeln>`-Block am Ende
+- Leere Regelliste → Base-Prompt unverändert (byte-identisch)
+- Nicht-leere Regelliste → Base-Prompt + `<gelernte_regeln>`-Block am Ende (nach `MEILENSTEIN_SECTION_ORDER` gruppiert)
 
-**Format des Injektions-Blocks:**
-```
-<gelernte_regeln>
+### Brief — Regel-Injection (BR-B1)
 
-Die folgenden Regeln wurden aus früheren manuellen Korrekturen am Meilenstein abgeleitet. ...
+In `agent_brief.py`: `_build_rules_block(rules)` → `_inject_rules(prompt, rules_block)` ersetzt `{gelernte_regeln}`-Platzhalter.
 
-## Behandlungsdiagnosen
+- Leere Regelliste → Platzhalter entfernt
+- Nicht-leere Regelliste → `<gelernte_regeln>`-XML-Block mit einer Regel pro Zeile
 
-- KHK mit DES-Vorgeschichte konsolidieren
+**Injection-Stellen pro Sektion:**
+- `generate_diagnosen/anamnese/therapie`: Regeln aus `(domain=brief, section=<sektion>)` vor `{extra_context}` im Prompt
+- `generate_verlauf`: Regeln aus `(domain=brief, section=verlauf)` NUR in Pass 3 (curate); Pass 1+2 bleiben regelfrei
 
-## Antikoagulation
+**last_output:** Alle 4 generierenden Funktionen rufen `save_last_output(patient.stammdaten.id, result, domain="brief", section=<sektion>)` nach dem LLM-Call auf (Grundlage für `from-edits`).
 
-- Bei bMKE biologisch alle Layer nennen
-
-</gelernte_regeln>
-```
-
-### Lernlog Schreib-Pfad (V1 B2+B3)
+### Lernlog Schreib-Pfad — Agent
 
 **Agent:** `backend/agent_meilenstein_learning.py`
 **Prompts:** `learning_rule_extraction.txt`, `learning_conflict_detection.txt`, `learning_rule_rebuild.txt`
 
 **Datenmodelle:**
-- `RuleCandidate(section, rule_text, reasoning, anchor)` — ein extrahierter Regelvorschlag
-- `TrivialChange(description, anchor)` — triviale Änderung ohne Regelwert
+- `RuleCandidate(section, rule_text, reasoning, anchor)`
+- `TrivialChange(description, anchor)`
 - `ExtractionResult(candidates, trivial_changes)` — max 10 Kandidaten
-- `ConflictResult(has_conflict, explanation, conflicting_rule_id)` — konfliktauflösend
-- `RebuildResult(rule_text, reasoning)` — verfeinerter Kandidat
+- `ConflictResult(has_conflict, explanation, conflicting_rule_id)`
+- `RebuildResult(rule_text, reasoning)`
 
 **Funktionen:**
 - `extract_rule_candidates(client, last_generated, edited) -> ExtractionResult`
-  — JSON-Mode LLM-Call, vergleicht Original vs. Bearbeitung, anonymisiert, max 10 Kandidaten
 - `detect_conflict(client, candidate_rule_text, section, existing_rules) -> ConflictResult`
-  — Short-Circuit wenn `existing_rules` leer; max 20 Regeln; übergibt IDs als `[ID: xxx]`-Präfix
-- `rebuild_rule_candidate(client, section, original_rule_text, original_reasoning, anchor, clarification) -> RebuildResult`
-  — verfeinert Kandidat anhand Arzt-Klarstellung, section/anchor bleiben fix
+- `rebuild_rule_candidate(client, ...) -> RebuildResult`
 
 **Anonymisierungsklausel:** Alle 3 Prompts enthalten explizite Klausel gegen Patientendaten.
 
-**Endpoints:**
+### Endpoints (generisch, alte `/api/meilenstein/*` gestrichen)
+
+**Meilenstein (kein section-Parameter):**
 
 | Methode | Pfad | Beschreibung |
 |---------|------|-------------|
-| POST | `/api/meilenstein/learn-from-edits` | Extraktion + Konflikt-Check, gibt `{rule_candidates, trivial_changes}` |
-| POST | `/api/meilenstein/save-rules` | Regeln speichern/löschen, Antwort `{saved_count, deleted_count, total_rules}` |
-| POST | `/api/meilenstein/rebuild-rule` | Kandidaten verfeinern per Klarstellung |
-| GET | `/api/meilenstein/system-prompt` | Base-Prompt als Plain-Text lesen (read-only) |
-| GET | `/api/meilenstein/rules` | Alle gespeicherten Regeln |
-| DELETE | `/api/meilenstein/rules/{rule_id}` | Einzelregel löschen (204 / 404) |
+| POST | `/api/learn/meilenstein/from-edits` | Extraktion + Konflikt-Check |
+| POST | `/api/learn/meilenstein/save-rules` | Regeln speichern/löschen |
+| POST | `/api/learn/meilenstein/rebuild-rule` | Kandidat verfeinern |
+| GET | `/api/learn/meilenstein/system-prompt` | Base-Prompt lesen |
+| GET | `/api/learn/meilenstein/rules` | Alle Regeln |
+| DELETE | `/api/learn/meilenstein/rules/{rule_id}` | Einzelregel (204/404) |
 
-**learn-from-edits-Flow:**
-- 404 wenn kein `last_meilenstein` vorhanden
+**Brief (mit {section}-Parameter, befunde → 404):**
+
+| Methode | Pfad | Beschreibung |
+|---------|------|-------------|
+| POST | `/api/learn/brief/{section}/from-edits` | Extraktion + Konflikt-Check |
+| POST | `/api/learn/brief/{section}/save-rules` | Regeln speichern/löschen |
+| POST | `/api/learn/brief/{section}/rebuild-rule` | Kandidat verfeinern |
+| GET | `/api/learn/brief/{section}/system-prompt` | Abschnitt-Prompt-Datei lesen |
+| GET | `/api/learn/brief/{section}/rules` | Alle Regeln dieser Sektion |
+| DELETE | `/api/learn/brief/{section}/rules/{rule_id}` | Einzelregel (204/404) |
+
+**from-edits-Flow:**
+- 404 wenn kein `last_output` vorhanden (generate nie aufgerufen)
 - Leere Listen wenn Inhalt unverändert
-- Sonst: LLM-Extraktion → per Kandidat detect_conflict → Antwort mit conflict-Objekt (null wenn kein Konflikt)
+- Sonst: LLM-Extraktion → per Kandidat detect_conflict → `{rule_candidates, trivial_changes}`
 
-**save-rules-Flow:**
-- `rule_ids_to_delete` zuerst aus Bestand entfernen (Konflikt-Ersetzen-Pfad)
-- `rules_to_add` via `new_rule()` anhängen (Pydantic-Validation durch Sektion-Whitelist)
-- Atomar speichern
-
-**FE-Komponenten (B3):**
-- `RuleCandidateCard.tsx` — Card mit Checkbox, editierbarer Textarea, Conflict-Box, Klarstellung-Panel
-- `RuleReviewModal.tsx` — Dialog mit ScrollArea, stacked RuleCandidateCards + TrivialChangesList
-- `MeilensteinVisibilityPanel.tsx` — Tabs "Gelernte Regeln" (mit Delete) + "Base-Prompt" (read-only)
-- `MeilensteinPanel.tsx` — Button "Aus Änderungen lernen" (disabled wenn unverändert), Visibility-Toggle unten
-
-**FE-Types (B3):** `LearnRuleCandidate`, `LearnTrivialChange`, `LearnFromEditsResponse`, `StoredRule`, `ConflictResolution`, `MEILENSTEIN_SECTIONS`
+**FE-Komponenten (B3, Meilenstein):**
+- `RuleCandidateCard.tsx`, `RuleReviewModal.tsx`, `MeilensteinVisibilityPanel.tsx`
+- `MeilensteinPanel.tsx` — "Aus Änderungen lernen"-Button; FE-URLs werden in BR-B2 umgestellt
 
 ## Brief-Generator V1 (BR-A1 + BR-A2 + BR-A2.5)
 
@@ -487,9 +499,9 @@ Qwen-Migration; Coverage-Lücken bei Diagnosen werden systematisch geschlossen.
 
 Gelöschter Prompt: `brief_verlauf.txt` (Single-Pass, ersetzt durch 3-Pass-Architektur).
 
-`extra_context` ist ephemer (kein Persistieren). `_inject_extra_context(prompt, extra)` ersetzt
-`{extra_context}`-Platzhalter in den 4 generierenden Prompt-Dateien (alle 3 Verlauf-Passes
-+ Diagnosen + Anamnese + Therapie).
+`extra_context` ist ephemer (kein Persistieren). `_inject_extra_context(prompt, extra)` ersetzt `{extra_context}`-Platzhalter.
+`_inject_rules(prompt, rules_block)` ersetzt `{gelernte_regeln}`-Platzhalter (BR-B1).
+Beide Platzhalter stehen vor dem "Patient (YAML):"-Block in allen 4 Prompt-Dateien.
 
 **Storage-Schema (`data/briefs/<pid>.yml`, schema_version "0.1"):**
 ```yaml
@@ -506,8 +518,10 @@ updated_at: <ISO-8601>
 **`BRIEF_SECTIONS`** = `{"diagnosen", "anamnese", "therapie", "befunde", "verlauf"}`
 
 **Prompt-Dateien:** `brief_diagnosen.txt`, `brief_anamnese.txt`, `brief_therapie.txt`,
-`brief_verlauf.txt`, `brief_befunde_format.txt` — alle in `prompts/`. Alle 4 generierenden
-Prompts haben `{extra_context}`-Platzhalter vor dem "Patient (YAML):"-Block.
+`brief_verlauf_collect.txt`, `brief_verlauf_audit.txt`, `brief_verlauf_curate.txt`,
+`brief_befunde_format.txt` — alle in `prompts/`.
+Alle 4 generierenden Prompts haben `{gelernte_regeln}` + `{extra_context}` vor dem "Patient (YAML):"-Block.
+`format_sap_befunde` hat weder Regel- noch extra_context-Injektion (befunde ausgeschlossen).
 
 ### Endpoints (Pfad: `/api/brief/{patient_id}/...`)
 
@@ -541,4 +555,4 @@ Lazy-Init der LLM-Clients in `agent_brief.py` (kein Import-Zeit-Fehler vor `load
   `PendingContextZone` + Header-Regen-Button + 5 Sektionen in Reihenfolge
 
 ## Test-Stand
-177 passed
+186 passed

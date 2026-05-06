@@ -15,7 +15,7 @@ def _make_rule(section: str = "Behandlungsdiagnosen", rule_text: str = "KHK imme
 
 def test_load_rules_empty_returns_empty_list(isolated_data):
     """Datei existiert nicht → leere Liste, kein Fehler."""
-    result = load_rules(user_id="default")
+    result = load_rules(user_id="default", domain="meilenstein")
     assert result == []
 
 
@@ -28,8 +28,8 @@ def test_save_and_load_rules_roundtrip(isolated_data):
         _make_rule("Antikoagulation", "Bei bMKE biologisch alle Layer nennen"),
         _make_rule("Befunde", "Nur TTE/TEE, keine Routine-Labore"),
     ]
-    save_rules(rules, user_id="default")
-    loaded = load_rules(user_id="default")
+    save_rules(rules, user_id="default", domain="meilenstein")
+    loaded = load_rules(user_id="default", domain="meilenstein")
 
     assert len(loaded) == 3
     for orig, back in zip(rules, loaded):
@@ -46,7 +46,7 @@ def test_load_rules_logs_warning_on_schema_drift(isolated_data, caplog):
     """Rule mit veralteter patient_schema_version_at_creation → Warning, Rule trotzdem geladen."""
     # Regel mit veralteter Schema-Version direkt als Dict speichern
     import yaml, os
-    path = learning_storage._storage_path("default")
+    path = learning_storage._rules_path("default", "meilenstein")
     payload = {
         "schema_version": learning_storage.SCHEMA_VERSION,
         "rules": [
@@ -78,18 +78,6 @@ def test_load_rules_logs_warning_on_schema_drift(isolated_data, caplog):
 
 
 # ── Pydantic-Validation ───────────────────────────────────────────────────────
-
-def test_rule_invalid_section_raises():
-    """Ungültige Sektion → Pydantic-Fehler."""
-    with pytest.raises(Exception, match="Ungültige Sektion"):
-        Rule(
-            id="X",
-            section="VERLAUF",  # nicht mehr gültig
-            rule_text="Test",
-            created_at="2026-01-01T00:00:00+00:00",
-            patient_schema_version_at_creation="0.4",
-        )
-
 
 def test_rule_empty_rule_text_raises():
     """Leerer rule_text → Pydantic-Fehler."""
