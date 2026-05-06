@@ -451,5 +451,51 @@ Die folgenden Regeln wurden aus früheren manuellen Korrekturen am Meilenstein a
 
 **FE-Types (B3):** `LearnRuleCandidate`, `LearnTrivialChange`, `LearnFromEditsResponse`, `StoredRule`, `ConflictResolution`, `MEILENSTEIN_SECTIONS`
 
+## Brief-Generator V1 (BR-A1)
+
+### Architektur
+
+4 LLM-Sub-Agents + 1 Pre-Pass-Helper, alle in `backend/agent_brief.py`.
+Storage in `backend/brief_storage.py`, YAML unter `data/briefs/<patient_id>.yml`.
+
+**5 async-Funktionen:**
+| Funktion | Modell | LLM-Mode | Output |
+|---|---|---|---|
+| `generate_diagnosen(patient)` | flash-lite | JSON-Mode | Markdown via `_render_diagnosen()` |
+| `generate_anamnese(patient)` | flash-lite | Plain Text | Markdown-Absatz |
+| `generate_therapie(patient)` | flash-lite | JSON-Mode | Markdown via `_render_therapie()` |
+| `generate_verlauf(patient, meilenstein, befunde, diagnosen, anamnese, therapie)` | flash (`gemini-2.0-flash-preview`) | Plain Text | langer Fließtext |
+| `format_sap_befunde(raw_text)` | flash-lite | Plain Text | formatierter Markdown |
+
+**Storage-Schema (`data/briefs/<pid>.yml`, schema_version "0.1"):**
+```yaml
+schema_version: "0.1"
+patient_id: <str>
+diagnosen: <markdown>
+anamnese: <markdown>
+therapie: <markdown>
+befunde: <markdown>     # via format-befunde oder User-Edit; generate überschreibt NICHT
+verlauf: <markdown>
+updated_at: <ISO-8601>
+```
+
+**`BRIEF_SECTIONS`** = `{"diagnosen", "anamnese", "therapie", "befunde", "verlauf"}`
+
+**Prompt-Dateien:** `brief_diagnosen.txt`, `brief_anamnese.txt`, `brief_therapie.txt`,
+`brief_verlauf.txt`, `brief_befunde_format.txt` — alle in `prompts/`.
+
+### Endpoints (Pfad: `/api/brief/{patient_id}/...`)
+
+| Methode | Pfad | Beschreibung |
+|---|---|---|
+| GET | `/api/brief/{id}` | Aktuellen Brief-State lesen (leeres Skelett wenn nicht vorhanden) |
+| POST | `/api/brief/{id}/generate` | Diagnosen+Anamnese+Therapie parallel, dann Verlauf; befunde unverändert |
+| POST | `/api/brief/{id}/generate-section/{section}` | Einzelne Sektion regenerieren (nicht befunde) |
+| POST | `/api/brief/{id}/format-befunde` | SAP-Roh-Befunde formatieren + in befunde-Sektion persistieren |
+| PUT | `/api/brief/{id}/section/{section}` | User-Edit autosaven (kein LLM) |
+
+Meilenstein-Quelle für Verlauf: `load_meilenstein(patient_id)` aus `storage.py`.
+Lazy-Init der LLM-Clients in `agent_brief.py` (kein Import-Zeit-Fehler vor `load_dotenv()`).
+
 ## Test-Stand
-154 passed in 0.92s
+169 passed

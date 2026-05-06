@@ -31,6 +31,7 @@ backend/data/patients/*.yml
 backend/data/meilensteine/*.md
 backend/data/meilensteine/*.meta.json
 backend/data/briefe/*.json
+backend/data/briefs/*.yml
 
 # Test-PDFs — echte Patientendaten, dürfen nie ins Remote
 backend/test_data/*.pdf
