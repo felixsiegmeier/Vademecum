@@ -16,6 +16,7 @@ import {
   getBrief,
   formatSapBefunde,
   regenerateSection,
+  polishSection,
   saveSectionEdit,
   learnFromEdits,
   deleteBrief,
@@ -120,6 +121,19 @@ export default function BriefPanel({ patientId }: Props) {
     setGenerating((prev) => ({ ...prev, [section]: true }));
     try {
       const result = await regenerateSection(patientId, section, extraContext);
+      setBrief((prev) => prev ? { ...prev, ...result } as Brief : null);
+      markGenerated(result);
+    } catch (e) {
+      toast.error(`${SECTION_LABELS[section]}: ${(e as Error).message}`);
+    } finally {
+      setGenerating((prev) => ({ ...prev, [section]: false }));
+    }
+  }
+
+  async function handlePolish(section: BriefSectionKey, extraContext?: string) {
+    setGenerating((prev) => ({ ...prev, [section]: true }));
+    try {
+      const result = await polishSection(patientId, section, extraContext);
       setBrief((prev) => prev ? { ...prev, ...result } as Brief : null);
       markGenerated(result);
     } catch (e) {
@@ -270,6 +284,7 @@ export default function BriefPanel({ patientId }: Props) {
             content={brief?.[section] ?? ""}
             generating={generating[section]}
             onRegenerate={(extraContext) => handleRegenerate(section, extraContext)}
+            onPolish={(extraContext) => handlePolish(section, extraContext)}
             onLearn={LEARNABLE.includes(section) ? () => handleLearn(section) : undefined}
             canLearn={canLearn(section)}
             onSave={handleSave(section)}
@@ -290,6 +305,7 @@ export default function BriefPanel({ patientId }: Props) {
           content={brief?.verlauf ?? ""}
           generating={generating["verlauf"]}
           onRegenerate={(extraContext) => handleRegenerate("verlauf", extraContext)}
+          onPolish={(extraContext) => handlePolish("verlauf", extraContext)}
           onLearn={() => handleLearn("verlauf")}
           canLearn={canLearn("verlauf")}
           onSave={handleSave("verlauf")}

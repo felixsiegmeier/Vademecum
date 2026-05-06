@@ -1078,6 +1078,55 @@ async def save_section_edit_agent(patient_id: str, section: str, body: dict):
     return {section: content}
 
 
+@app.post("/api/brief/{patient_id}/polish-section/{section}")
+async def polish_section_agent(
+    patient_id: str,
+    section: str,
+    req: Optional[BriefAgentGenerateRequest] = Body(default=None),
+):
+    """Stilistische Überarbeitung einer einzelnen Sektion ohne Fakten-Änderung.
+    Für Verlauf: Curate-Pass mit aktuellem Text als audited_substance.
+    body: {extra_context?: str}. Returns: {<section>: <polished>}."""
+    if section not in {"diagnosen", "anamnese", "therapie", "verlauf"}:
+        raise HTTPException(400, f"Section '{section}' nicht polierbar.")
+
+    try:
+        patient = load_patient(patient_id)
+    except FileNotFoundError:
+        raise HTTPException(404, f"Patient {patient_id} nicht gefunden")
+
+    extra_context = req.extra_context if req else ""
+    current = brief_storage.load_brief(patient_id)
+    current_text = current.get(section, "")
+    if not current_text:
+        raise HTTPException(400, f"Sektion '{section}' ist leer — bitte zuerst generieren.")
+
+    if section == "verlauf":
+        meilenstein_result = load_meilenstein(patient_id)
+        meilenstein_text = meilenstein_result[0] if meilenstein_result else None
+        result = await agent_brief.polish_section(
+            section=section,
+            current_text=current_text,
+            extra_context=extra_context,
+            patient=patient,
+            meilenstein=meilenstein_text,
+            befunde_formatted=current.get("befunde", ""),
+            diagnosen=current.get("diagnosen", ""),
+            anamnese=current.get("anamnese", ""),
+            therapie=current.get("therapie", ""),
+        )
+    else:
+        result = await agent_brief.polish_section(
+            section=section,
+            current_text=current_text,
+            extra_context=extra_context,
+            patient=patient,
+        )
+
+    brief_storage.update_section(patient_id, section, result)
+    return {section: result}
+
+
 @app.post("/api/extract-text")
 async def extract_text(files: list[UploadFile] = File(...)):
     """Extrahiert Text aus einem oder mehreren Dateien.

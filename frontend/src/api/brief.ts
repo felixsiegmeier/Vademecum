@@ -82,6 +82,23 @@ export async function extractFileText(files: File[]): Promise<string> {
   return data.combined_text;
 }
 
+export async function polishSection(
+  patientId: string,
+  section: BriefSectionKey,
+  extraContext = ""
+): Promise<Partial<Brief>> {
+  const res = await fetch(`${base(patientId)}/polish-section/${section}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ extra_context: extraContext }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error((body as { detail?: string }).detail ?? `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
 export async function deleteBrief(patientId: string): Promise<void> {
   const res = await fetch(base(patientId), { method: "DELETE" });
   if (!res.ok && res.status !== 204) {

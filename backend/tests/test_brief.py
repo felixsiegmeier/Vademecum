@@ -506,3 +506,47 @@ def test_delete_brief_endpoint_404_when_no_brief(isolated_data):
     _make_patient("P-0001")
     res = client.delete("/api/brief/P-0001")
     assert res.status_code == 404
+
+
+# ── 25. POST /api/brief/{patient_id}/polish-section/{section} ─────────────────
+
+def test_polish_section_endpoint(isolated_data):
+    """POST /api/brief/{id}/polish-section/anamnese → LLM-Call + gespeicherter Result."""
+    pid = "P-0001"
+    _make_patient(pid)
+    brief_storage.save_brief(pid, {
+        "diagnosen": "AKS", "anamnese": "Patient wurde aufgenommen.",
+        "therapie": "AVR", "befunde": "", "verlauf": "",
+    })
+
+    polished = "Frau Test wurde am 01.04.2026 aufgenommen."
+    mock_resp = _llm_resp(polished)
+
+    with patch.object(agent_brief._lite(), "chat_completion", new=AsyncMock(return_value=mock_resp)):
+        res = client.post("/api/brief/P-0001/polish-section/anamnese", json={})
+    assert res.status_code == 200
+    data = res.json()
+    assert data["anamnese"] == polished
+
+    loaded = brief_storage.load_brief(pid)
+    assert loaded["anamnese"] == polished
+
+
+def test_polish_section_endpoint_empty_section(isolated_data):
+    """POST /api/brief/{id}/polish-section/diagnosen auf leerer Sektion → 400."""
+    pid = "P-0001"
+    _make_patient(pid)
+    # Brief mit leerer diagnosen-Sektion
+    brief_storage.save_brief(pid, {
+        "diagnosen": "", "anamnese": "x", "therapie": "y", "befunde": "", "verlauf": "",
+    })
+    res = client.post("/api/brief/P-0001/polish-section/diagnosen", json={})
+    assert res.status_code == 400
+
+
+def test_polish_section_endpoint_invalid_section(isolated_data):
+    """POST /api/brief/{id}/polish-section/befunde → 400 (befunde nicht polierbar)."""
+    pid = "P-0001"
+    _make_patient(pid)
+    res = client.post("/api/brief/P-0001/polish-section/befunde", json={})
+    assert res.status_code == 400
