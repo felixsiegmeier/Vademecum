@@ -1158,6 +1158,31 @@ async def extract_text(files: list[UploadFile] = File(...)):
     return {"combined_text": "\n\n".join(p for p in parts if p)}
 
 
+# ── Chat-History (persistente Text-Messages pro Patient) ─────────────────────
+
+from chat_storage import delete_chat, load_chat, save_chat
+from models.chat import ChatHistory
+
+
+@app.get("/api/chat/{patient_id}")
+async def get_patient_chat_history(patient_id: str):
+    """Gibt die gespeicherten Text-Chat-Nachrichten eines Patienten zurück."""
+    return load_chat(patient_id).model_dump()
+
+
+@app.put("/api/chat/{patient_id}")
+async def put_patient_chat_history(patient_id: str, body: ChatHistory):
+    """Überschreibt die Chat-History eines Patienten vollständig."""
+    save_chat(patient_id, body)
+    return {"ok": True}
+
+
+@app.delete("/api/chat/{patient_id}", status_code=204)
+async def delete_patient_chat_history(patient_id: str):
+    """Löscht die Chat-History eines Patienten."""
+    delete_chat(patient_id)
+
+
 # ── Allgemeiner Chat (kein Patient-Kontext) ───────────────────────────────────
 
 @app.post("/api/chat")

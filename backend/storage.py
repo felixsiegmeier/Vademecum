@@ -68,12 +68,14 @@ def save_patient(patient: Patient) -> None:
 
 
 def delete_patient(patient_id: str) -> None:
-    """Löscht YAML, Meilenstein- und Brief-Dateien eines Patienten."""
+    """Löscht YAML, Meilenstein-, Brief- und Chat-Dateien eines Patienten."""
     yaml_path = PATIENTS_DIR / f"{patient_id}.yml"
     if yaml_path.exists():
         yaml_path.unlink()
     delete_brief(patient_id)
     delete_meilenstein(patient_id)
+    from chat_storage import delete_chat
+    delete_chat(patient_id)
 
 # ── Staleness-Erkennung ───────────────────────────────────────────────────────
 # Wir erkennen veraltete Generierungen durch Vergleich von SHA-256-Hashes.

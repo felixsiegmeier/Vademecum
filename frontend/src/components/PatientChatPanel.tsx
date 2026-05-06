@@ -11,6 +11,7 @@ import type {
   StreamEvent,
 } from "../types";
 import { STAMMDATEN_FELD_LABELS } from "../types";
+import { getChatHistory, saveChatHistory } from "../api/chat";
 import { takePendingFile } from "../pendingFileStore";
 import { parseNdjson } from "../utils/ndjson";
 import { formatSectionCounts } from "../utils/streamSection";
@@ -143,9 +144,23 @@ export function PatientChatPanel({ patientId, patient, refreshPatient, onPatient
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    setHistory(historyStore.get(patientId) ?? []);
     setPendingFile(null);
-  }, [patientId]);
+    const cached = historyStore.get(patientId);
+    if (cached) {
+      setHistory(cached);
+      return;
+    }
+    // Fresh session: load text history from server
+    getChatHistory(patientId).then((messages) => {
+      const entries: ChatTextEntry[] = messages.map((m) => ({
+        kind: "chat-text",
+        role: m.role,
+        content: m.content,
+      }));
+      historyStore.set(patientId, entries);
+      setHistory(entries);
+    });
+  }, [patientId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Tick every second while uploading to drive the elapsed-seconds counter in the live bar
   const [tickMs, setTickMs] = useState(Date.now());
@@ -162,6 +177,13 @@ export function PatientChatPanel({ patientId, patient, refreshPatient, onPatient
   function persist(next: HistoryEntry[]) {
     historyStore.set(patientId, next);
     setHistory(next);
+  }
+
+  function persistChatToServer(entries: HistoryEntry[]) {
+    const messages = entries
+      .filter((e): e is ChatTextEntry => e.kind === "chat-text")
+      .map((e) => ({ role: e.role, content: e.content }));
+    saveChatHistory(patientId, messages); // fire-and-forget
   }
 
   function showToast(kind: "success" | "error" | "warning" | "info", text: string) {
@@ -226,25 +248,27 @@ export function PatientChatPanel({ patientId, patient, refreshPatient, onPatient
       }
       const data = (await res.json()) as ChatResponse;
       if (data.reply) {
-        // Single-Pass Text-Antwort des LLM
         const replyEntry: ChatTextEntry = {
           kind: "chat-text",
           role: "assistant",
           content: data.reply,
         };
-        persist([...optimistic, replyEntry]);
+        const next = [...optimistic, replyEntry];
+        persist(next);
+        persistChatToServer(next);
       } else if (data.proposals.length > 0) {
-        // Tool-Calls → Proposals (Single-Pass oder 2-Pass)
         const propEntry = makeProposalsEntry("chat", data.proposals);
         persist([...optimistic, propEntry]);
+        persistChatToServer(optimistic); // save user message; proposals are ephemeral
       } else {
-        // Keine Proposals, kein Reply — Fallback-Meldung
         const msgEntry: ChatTextEntry = {
           kind: "chat-text",
           role: "assistant",
           content: data.message ?? "Keine Änderungen am Patienten vorgeschlagen.",
         };
-        persist([...optimistic, msgEntry]);
+        const next = [...optimistic, msgEntry];
+        persist(next);
+        persistChatToServer(next);
       }
     } catch (e) {
       const err: ChatTextEntry = {
@@ -252,7 +276,9 @@ export function PatientChatPanel({ patientId, patient, refreshPatient, onPatient
         role: "assistant",
         content: `Fehler: ${(e as Error).message}`,
       };
-      persist([...optimistic, err]);
+      const next = [...optimistic, err];
+      persist(next);
+      persistChatToServer(next);
       showToast("error", "Verbindung zum Backend verloren");
     } finally {
       setChatBusy(false);
