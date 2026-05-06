@@ -294,7 +294,7 @@ class MeilensteinUpdateRequest(BaseModel):
 
 class LearnFromEditsRequest(BaseModel):
     patient_id: str
-    edited_meilenstein: str
+    edited_content: str
 
 
 class SaveRulesRuleItem(BaseModel):
@@ -466,7 +466,7 @@ async def generate_meilenstein(
         width=100,
     )
     today_iso = date.today().isoformat()
-    rules = learning_storage.load_rules()
+    rules = learning_storage.load_rules(domain="meilenstein")
     system_prompt = _build_meilenstein_system_prompt(rules)
 
     current_meilenstein = (req.current_meilenstein if req else None) or ""
@@ -505,7 +505,7 @@ async def generate_meilenstein(
     generated_at = datetime.now(timezone.utc).isoformat()
     meta = {"yaml_hash": yaml_hash, "generated_at": generated_at}
     save_meilenstein(patient_id, md_content, meta)
-    learning_storage.save_last_meilenstein(patient_id, md_content)
+    learning_storage.save_last_output(patient_id, md_content, domain="meilenstein")
 
     return JSONResponse(content={
         "content": md_content,
@@ -532,25 +532,23 @@ def delete_meilenstein_endpoint(patient_id: str):
     return JSONResponse(content={"ok": True})
 
 
-@app.post("/api/meilenstein/learn-from-edits")
-async def learn_from_edits(req: LearnFromEditsRequest):
-    """Vergleicht editierten Meilenstein mit dem generierten Original und extrahiert Lernregeln.
+# ── Learn — Meilenstein ───────────────────────────────────────────────────────
 
-    404 wenn kein gespeichertes Original vorhanden.
-    Leere Listen wenn Inhalt unverändert.
-    """
-    last_generated = learning_storage.load_last_meilenstein(req.patient_id)
+@app.post("/api/learn/meilenstein/from-edits")
+async def learn_meilenstein_from_edits(req: LearnFromEditsRequest):
+    """Vergleicht editierten Meilenstein mit dem generierten Original und extrahiert Lernregeln."""
+    last_generated = learning_storage.load_last_output(req.patient_id, domain="meilenstein")
     if last_generated is None:
         raise HTTPException(404, "Kein generierter Meilenstein als Referenz vorhanden.")
 
-    if req.edited_meilenstein.strip() == last_generated.strip():
+    if req.edited_content.strip() == last_generated.strip():
         return JSONResponse(content={"rule_candidates": [], "trivial_changes": []})
 
     extraction = await _learning_agent.extract_rule_candidates(
-        llm, last_generated, req.edited_meilenstein
+        llm, last_generated, req.edited_content
     )
 
-    existing_rules = learning_storage.load_rules()
+    existing_rules = learning_storage.load_rules(domain="meilenstein")
     result_candidates: list[dict] = []
     for candidate in extraction.candidates:
         section_rules = [r for r in existing_rules if r.section == candidate.section]
@@ -579,13 +577,9 @@ async def learn_from_edits(req: LearnFromEditsRequest):
     })
 
 
-@app.post("/api/meilenstein/save-rules")
-def save_rules_endpoint(req: SaveRulesRequest):
-    """Speichert neue Regeln und löscht optional konfliktauflösend alte Regeln.
-
-    Validation: section gegen 8-Sektion-Whitelist (via new_rule → Pydantic).
-    """
-    existing = learning_storage.load_rules()
+@app.post("/api/learn/meilenstein/save-rules")
+def learn_meilenstein_save_rules(req: SaveRulesRequest):
+    existing = learning_storage.load_rules(domain="meilenstein")
 
     deleted_count = 0
     if req.rule_ids_to_delete:
@@ -603,7 +597,7 @@ def save_rules_endpoint(req: SaveRulesRequest):
         existing.append(rule)
         saved_count += 1
 
-    learning_storage.save_rules(existing)
+    learning_storage.save_rules(existing, domain="meilenstein")
     return JSONResponse(content={
         "saved_count": saved_count,
         "deleted_count": deleted_count,
@@ -611,9 +605,8 @@ def save_rules_endpoint(req: SaveRulesRequest):
     })
 
 
-@app.post("/api/meilenstein/rebuild-rule")
-async def rebuild_rule_endpoint(req: RebuildRuleRequest):
-    """Verfeinert einen Regelkandidaten anhand einer Klarstellung des Arztes."""
+@app.post("/api/learn/meilenstein/rebuild-rule")
+async def learn_meilenstein_rebuild_rule(req: RebuildRuleRequest):
     result = await _learning_agent.rebuild_rule_candidate(
         client=llm,
         section=req.section,
@@ -630,28 +623,160 @@ async def rebuild_rule_endpoint(req: RebuildRuleRequest):
     })
 
 
-@app.get("/api/meilenstein/system-prompt")
-def get_system_prompt_endpoint():
-    """Liefert den aktuellen Meilenstein-System-Prompt (read-only, für Visibility-Panel)."""
+@app.get("/api/learn/meilenstein/system-prompt")
+def learn_meilenstein_system_prompt():
     prompt = _get_meilenstein_system_prompt()
     return JSONResponse(content={"content": prompt})
 
 
-@app.get("/api/meilenstein/rules")
-def get_rules_endpoint():
-    """Liefert alle gespeicherten Lernregeln."""
-    rules = learning_storage.load_rules()
+@app.get("/api/learn/meilenstein/rules")
+def learn_meilenstein_rules():
+    rules = learning_storage.load_rules(domain="meilenstein")
     return JSONResponse(content={"rules": [r.model_dump() for r in rules]})
 
 
-@app.delete("/api/meilenstein/rules/{rule_id}", status_code=204)
-def delete_rule_endpoint(rule_id: str):
-    """Löscht eine gespeicherte Lernregel per ID."""
-    existing = learning_storage.load_rules()
+@app.delete("/api/learn/meilenstein/rules/{rule_id}", status_code=204)
+def learn_meilenstein_delete_rule(rule_id: str):
+    existing = learning_storage.load_rules(domain="meilenstein")
     filtered = [r for r in existing if r.id != rule_id]
     if len(filtered) == len(existing):
         raise HTTPException(404, f"Regel {rule_id} nicht gefunden.")
-    learning_storage.save_rules(filtered)
+    learning_storage.save_rules(filtered, domain="meilenstein")
+
+
+# ── Learn — Brief ─────────────────────────────────────────────────────────────
+
+_BRIEF_SECTION_PROMPT_FILES: dict[str, str] = {
+    "diagnosen": "brief_diagnosen.txt",
+    "anamnese": "brief_anamnese.txt",
+    "therapie": "brief_therapie.txt",
+    "verlauf": "brief_verlauf_curate.txt",
+}
+
+
+def _assert_valid_brief_section(section: str) -> None:
+    if section not in learning_storage.BRIEF_SECTIONS_WITH_LEARNING:
+        raise HTTPException(404, f"Sektion '{section}' nicht lernfähig.")
+
+
+def _get_brief_section_system_prompt(section: str) -> str:
+    filename = _BRIEF_SECTION_PROMPT_FILES[section]
+    return (Path(__file__).parent / "prompts" / filename).read_text(encoding="utf-8")
+
+
+@app.post("/api/learn/brief/{section}/from-edits")
+async def learn_brief_from_edits(section: str, req: LearnFromEditsRequest):
+    _assert_valid_brief_section(section)
+    last_generated = learning_storage.load_last_output(req.patient_id, domain="brief", section=section)
+    if last_generated is None:
+        raise HTTPException(404, "Kein generierter Output als Referenz vorhanden.")
+
+    if req.edited_content.strip() == last_generated.strip():
+        return JSONResponse(content={"rule_candidates": [], "trivial_changes": []})
+
+    extraction = await _learning_agent.extract_rule_candidates(
+        llm, last_generated, req.edited_content
+    )
+
+    existing_rules = learning_storage.load_rules(domain="brief", section=section)
+    result_candidates: list[dict] = []
+    for candidate in extraction.candidates:
+        section_rules = [r for r in existing_rules if r.section == candidate.section]
+        conflict = await _learning_agent.detect_conflict(
+            llm, candidate.rule_text, candidate.section, section_rules
+        )
+        result_candidates.append({
+            "section": candidate.section,
+            "rule_text": candidate.rule_text,
+            "reasoning": candidate.reasoning,
+            "anchor": candidate.anchor,
+            "conflict": {
+                "conflicting_rule_id": conflict.conflicting_rule_id,
+                "explanation": conflict.explanation,
+            } if conflict.has_conflict else None,
+        })
+
+    trivial_changes = [
+        {"description": tc.description, "anchor": tc.anchor}
+        for tc in extraction.trivial_changes
+    ]
+
+    return JSONResponse(content={
+        "rule_candidates": result_candidates,
+        "trivial_changes": trivial_changes,
+    })
+
+
+@app.post("/api/learn/brief/{section}/save-rules")
+def learn_brief_save_rules(section: str, req: SaveRulesRequest):
+    _assert_valid_brief_section(section)
+    existing = learning_storage.load_rules(domain="brief", section=section)
+
+    deleted_count = 0
+    if req.rule_ids_to_delete:
+        ids_to_delete = set(req.rule_ids_to_delete)
+        before = len(existing)
+        existing = [r for r in existing if r.id not in ids_to_delete]
+        deleted_count = before - len(existing)
+
+    saved_count = 0
+    for item in req.rules_to_add:
+        try:
+            rule = learning_storage.new_rule(section=item.section, rule_text=item.rule_text)
+        except Exception as exc:
+            raise HTTPException(422, f"Ungültige Regel: {exc}")
+        existing.append(rule)
+        saved_count += 1
+
+    learning_storage.save_rules(existing, domain="brief", section=section)
+    return JSONResponse(content={
+        "saved_count": saved_count,
+        "deleted_count": deleted_count,
+        "total_rules": len(existing),
+    })
+
+
+@app.post("/api/learn/brief/{section}/rebuild-rule")
+async def learn_brief_rebuild_rule(section: str, req: RebuildRuleRequest):
+    _assert_valid_brief_section(section)
+    result = await _learning_agent.rebuild_rule_candidate(
+        client=llm,
+        section=req.section,
+        original_rule_text=req.original_rule_text,
+        original_reasoning=req.original_reasoning,
+        anchor=req.anchor,
+        clarification=req.clarification,
+    )
+    return JSONResponse(content={
+        "section": req.section,
+        "rule_text": result.rule_text,
+        "reasoning": result.reasoning,
+        "anchor": req.anchor,
+    })
+
+
+@app.get("/api/learn/brief/{section}/system-prompt")
+def learn_brief_system_prompt(section: str):
+    _assert_valid_brief_section(section)
+    prompt = _get_brief_section_system_prompt(section)
+    return JSONResponse(content={"content": prompt})
+
+
+@app.get("/api/learn/brief/{section}/rules")
+def learn_brief_rules(section: str):
+    _assert_valid_brief_section(section)
+    rules = learning_storage.load_rules(domain="brief", section=section)
+    return JSONResponse(content={"rules": [r.model_dump() for r in rules]})
+
+
+@app.delete("/api/learn/brief/{section}/rules/{rule_id}", status_code=204)
+def learn_brief_delete_rule(section: str, rule_id: str):
+    _assert_valid_brief_section(section)
+    existing = learning_storage.load_rules(domain="brief", section=section)
+    filtered = [r for r in existing if r.id != rule_id]
+    if len(filtered) == len(existing):
+        raise HTTPException(404, f"Regel {rule_id} nicht gefunden.")
+    learning_storage.save_rules(filtered, domain="brief", section=section)
 
 
 # ── Brief ─────────────────────────────────────────────────────────────────────

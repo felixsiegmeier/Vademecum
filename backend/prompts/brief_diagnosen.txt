@@ -22,6 +22,7 @@ Regeln:
 - Keine Floskeln, keine Erklärungen, keine Empfehlungen, keine Therapien.
 - Wenn ein Feld leer ist, gib eine leere Liste zurück.
 
+{gelernte_regeln}
 {extra_context}
 Patient (YAML):
 {patient_yaml}

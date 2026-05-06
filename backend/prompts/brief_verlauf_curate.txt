@@ -116,6 +116,9 @@ Therapie-Sektion:
 Befunde-Sektion:
 {befunde_or_empty}
 
+Gelernte Regeln:
+{gelernte_regeln}
+
 Zusatzkontext:
 {extra_context}
 

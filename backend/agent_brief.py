@@ -21,6 +21,7 @@ from typing import Optional
 
 import yaml
 
+import learning_storage
 from llm_client import LLMClient
 from models.patient import Patient
 
@@ -70,6 +71,29 @@ def _inject_extra_context(prompt: str, extra_context: str) -> str:
     return prompt.replace("{extra_context}", block)
 
 
+def _build_rules_block(rules: list) -> str:
+    if not rules:
+        return ""
+    lines = [
+        "<gelernte_regeln>",
+        "",
+        "Die folgenden Regeln wurden aus früheren manuellen Korrekturen abgeleitet. "
+        "Beachte sie beim Formulieren dieser Sektion.",
+    ]
+    for rule in rules:
+        lines.append(f"- {rule.rule_text}")
+    lines.append("")
+    lines.append("</gelernte_regeln>")
+    return "\n".join(lines)
+
+
+def _inject_rules(prompt: str, rules_block: str) -> str:
+    """Ersetzt {gelernte_regeln}-Platzhalter. Non-empty → XML-Block; leer → entfernt."""
+    if not rules_block:
+        return prompt.replace("{gelernte_regeln}\n", "").replace("{gelernte_regeln}", "")
+    return prompt.replace("{gelernte_regeln}", rules_block)
+
+
 def _render_diagnosen(data: dict) -> str:
     lines: list[str] = []
     behandlung = data.get("behandlung") or []
@@ -114,9 +138,13 @@ def _render_therapie(data: dict) -> str:
 
 
 async def generate_diagnosen(patient: Patient, extra_context: str = "") -> str:
-    filled = _inject_extra_context(
-        _get_prompt("brief_diagnosen.txt").replace("{patient_yaml}", _to_yaml(patient)),
-        extra_context,
+    rules = learning_storage.load_rules(domain="brief", section="diagnosen")
+    filled = _inject_rules(
+        _inject_extra_context(
+            _get_prompt("brief_diagnosen.txt").replace("{patient_yaml}", _to_yaml(patient)),
+            extra_context,
+        ),
+        _build_rules_block(rules),
     )
     try:
         resp = await _lite().chat_completion(
@@ -134,13 +162,19 @@ async def generate_diagnosen(patient: Patient, extra_context: str = "") -> str:
     except json.JSONDecodeError:
         logger.warning("[generate_diagnosen] Kein valides JSON: %s", raw[:300])
         return raw
-    return _render_diagnosen(data)
+    result = _render_diagnosen(data)
+    learning_storage.save_last_output(patient.stammdaten.id, result, domain="brief", section="diagnosen")
+    return result
 
 
 async def generate_anamnese(patient: Patient, extra_context: str = "") -> str:
-    filled = _inject_extra_context(
-        _get_prompt("brief_anamnese.txt").replace("{patient_yaml}", _to_yaml(patient)),
-        extra_context,
+    rules = learning_storage.load_rules(domain="brief", section="anamnese")
+    filled = _inject_rules(
+        _inject_extra_context(
+            _get_prompt("brief_anamnese.txt").replace("{patient_yaml}", _to_yaml(patient)),
+            extra_context,
+        ),
+        _build_rules_block(rules),
     )
     try:
         resp = await _lite().chat_completion(
@@ -151,13 +185,19 @@ async def generate_anamnese(patient: Patient, extra_context: str = "") -> str:
     except Exception:
         logger.exception("[generate_anamnese] LLM-Aufruf fehlgeschlagen")
         return ""
-    return (resp.choices[0].message.content or "").strip()
+    result = (resp.choices[0].message.content or "").strip()
+    learning_storage.save_last_output(patient.stammdaten.id, result, domain="brief", section="anamnese")
+    return result
 
 
 async def generate_therapie(patient: Patient, extra_context: str = "") -> str:
-    filled = _inject_extra_context(
-        _get_prompt("brief_therapie.txt").replace("{patient_yaml}", _to_yaml(patient)),
-        extra_context,
+    rules = learning_storage.load_rules(domain="brief", section="therapie")
+    filled = _inject_rules(
+        _inject_extra_context(
+            _get_prompt("brief_therapie.txt").replace("{patient_yaml}", _to_yaml(patient)),
+            extra_context,
+        ),
+        _build_rules_block(rules),
     )
     try:
         resp = await _lite().chat_completion(
@@ -175,7 +215,9 @@ async def generate_therapie(patient: Patient, extra_context: str = "") -> str:
     except json.JSONDecodeError:
         logger.warning("[generate_therapie] Kein valides JSON: %s", raw[:300])
         return raw
-    return _render_therapie(data)
+    result = _render_therapie(data)
+    learning_storage.save_last_output(patient.stammdaten.id, result, domain="brief", section="therapie")
+    return result
 
 
 async def generate_verlauf(
@@ -235,10 +277,14 @@ async def generate_verlauf(
         return collected
     audited = (resp2.choices[0].message.content or "").strip()
 
-    # Pass 3 — Stil-Kurator
-    curate_prompt = _fill(
-        _get_prompt("brief_verlauf_curate.txt"),
-        extra={"{audited_substance}": audited},
+    # Pass 3 — Stil-Kurator (mit Regel-Injection)
+    verlauf_rules = learning_storage.load_rules(domain="brief", section="verlauf")
+    curate_prompt = _inject_rules(
+        _fill(
+            _get_prompt("brief_verlauf_curate.txt"),
+            extra={"{audited_substance}": audited},
+        ),
+        _build_rules_block(verlauf_rules),
     )
     try:
         resp3 = await _lite().chat_completion(
@@ -249,7 +295,9 @@ async def generate_verlauf(
     except Exception:
         logger.exception("[generate_verlauf/curate] LLM-Aufruf fehlgeschlagen")
         return audited
-    return (resp3.choices[0].message.content or "").strip()
+    result = (resp3.choices[0].message.content or "").strip()
+    learning_storage.save_last_output(patient.stammdaten.id, result, domain="brief", section="verlauf")
+    return result
 
 
 async def format_sap_befunde(raw_text: str) -> str:
