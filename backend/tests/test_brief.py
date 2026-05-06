@@ -259,7 +259,7 @@ def test_endpoint_regenerate_section_verlauf_uses_current_state(isolated_data):
 
     captured: dict = {}
 
-    async def capture_verlauf(patient, meilenstein, befunde, diagnosen, anamnese, therapie):
+    async def capture_verlauf(patient, meilenstein, befunde, diagnosen, anamnese, therapie, extra_context=""):
         captured["diagnosen"] = diagnosen
         captured["anamnese"] = anamnese
         captured["therapie"] = therapie
@@ -320,3 +320,75 @@ def test_endpoint_save_section_edit(isolated_data):
 
     stored = brief_storage.load_brief("P-0001")
     assert stored["verlauf"] == "Manuell bearbeiteter Verlauf"
+
+
+# ── 16. extra_context: Helper injiziert Block bei nicht-leerem Context ─────────
+
+def test_inject_extra_context_nonempty(isolated_data):
+    """_inject_extra_context ersetzt Platzhalter mit Hinweis-Block bei nicht-leerem Context."""
+    prompt = "Prefix\n{extra_context}\nSuffix"
+    result = agent_brief._inject_extra_context(prompt, "Wichtige Zusatzinfo")
+    assert "Zusätzliche Anmerkungen" in result
+    assert "Wichtige Zusatzinfo" in result
+    assert "{extra_context}" not in result
+
+
+# ── 17. extra_context: Helper entfernt Platzhalter bei leerem Context ──────────
+
+def test_inject_extra_context_empty(isolated_data):
+    """_inject_extra_context entfernt Platzhalter spurlos bei leerem extra_context."""
+    prompt = "Prefix\n{extra_context}\nSuffix"
+    result = agent_brief._inject_extra_context(prompt, "")
+    assert "{extra_context}" not in result
+    assert "Zusätzliche Anmerkungen" not in result
+    assert "Prefix" in result
+    assert "Suffix" in result
+
+
+# ── 18. Endpoint /generate: extra_context Body wird durchgereicht ──────────────
+
+def test_endpoint_generate_accepts_extra_context_body(isolated_data):
+    """POST /generate mit extra_context-Body → Context wird an Sub-Agents weitergegeben."""
+    _make_patient("P-0001")
+
+    captured: dict = {}
+
+    async def capture_diag(patient, extra_context=""):
+        captured["extra_context"] = extra_context
+        return "D"
+
+    with (
+        patch("agent_brief.generate_diagnosen", side_effect=capture_diag),
+        patch("agent_brief.generate_anamnese", new_callable=AsyncMock, return_value="A"),
+        patch("agent_brief.generate_therapie", new_callable=AsyncMock, return_value="T"),
+        patch("agent_brief.generate_verlauf", new_callable=AsyncMock, return_value="V"),
+    ):
+        res = client.post(
+            "/api/brief/P-0001/generate",
+            json={"extra_context": "Spezieller Hinweis für alle Sektionen"},
+        )
+
+    assert res.status_code == 200
+    assert captured.get("extra_context") == "Spezieller Hinweis für alle Sektionen"
+
+
+# ── 19. Endpoint /generate-section: extra_context wird weitergereicht ──────────
+
+def test_endpoint_regenerate_section_passes_extra_context(isolated_data):
+    """POST /generate-section/anamnese mit extra_context-Body → Context korrekt übergeben."""
+    _make_patient("P-0001")
+
+    captured: dict = {}
+
+    async def capture_anam(patient, extra_context=""):
+        captured["extra_context"] = extra_context
+        return "Neue Anamnese"
+
+    with patch("agent_brief.generate_anamnese", side_effect=capture_anam):
+        res = client.post(
+            "/api/brief/P-0001/generate-section/anamnese",
+            json={"extra_context": "Hinweis nur für Anamnese"},
+        )
+
+    assert res.status_code == 200
+    assert captured.get("extra_context") == "Hinweis nur für Anamnese"
