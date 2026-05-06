@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Loader2, Paperclip, MessageSquare, Send, AlertTriangle, CheckCircle2, X } from "lucide-react";
+import { Loader2, Paperclip, MessageSquare, Send, AlertTriangle, CheckCircle2, X, ChevronDown, ChevronRight } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import type {
   ApplyResponse,
@@ -55,6 +55,7 @@ interface ProposalsEntry {
   streamStatus: { phase: "block1" | "block2"; iter: number; max_iter: number; items_in_phase: number } | null;
   phaseLabel: string | null;    // z.B. "Block 1 — Themenextraktion"
   phaseStartedAt: number | null; // Date.now() beim phase_start-Event
+  collapsed: boolean;           // true nach Auto-Collapse (alle entschieden)
 }
 
 interface AutoSkipEntry {
@@ -105,6 +106,7 @@ function makeProposalsEntry(
     streamStatus: null,
     phaseLabel: null,
     phaseStartedAt: null,
+    collapsed: false,
   };
 }
 
@@ -211,6 +213,19 @@ export function PatientChatPanel({ patientId, patient, refreshPatient, onPatient
   }, [history]);
 
   const activeProposals = activeProposalsIdx >= 0 ? (history[activeProposalsIdx] as ProposalsEntry) : null;
+
+  // Auto-collapse decided (fullyApplied or discarded) proposals entries after 500ms
+  useEffect(() => {
+    const decided = history.filter(
+      (e): e is ProposalsEntry =>
+        e.kind === "proposals" && (e.fullyApplied || e.discarded) && !e.collapsed && !e.streaming,
+    );
+    if (decided.length === 0) return;
+    const id = setTimeout(() => {
+      decided.forEach((e) => updateEntryById(e.id, (entry) => ({ ...entry, collapsed: true })));
+    }, 500);
+    return () => clearTimeout(id);
+  }, [history]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Chat-Send (Text) ──────────────────────────────────────────────────────
 
@@ -591,15 +606,49 @@ export function PatientChatPanel({ patientId, patient, refreshPatient, onPatient
       ? `Block ${entry.streamStatus.phase === "block1" ? 1 : 2} — Iter ${entry.streamStatus.iter}/${entry.streamStatus.max_iter}, ${entry.streamStatus.items_in_phase} Items`
       : "Verbinde…";
 
+    const isDecided = entry.fullyApplied || entry.discarded;
+    const canCollapse = isDecided && !isStreaming;
+
+    // Collapsed: single header row only
+    if (entry.collapsed) {
+      return (
+        <div key={idx} className="flex justify-start">
+          <button
+            className="rounded-md border bg-card text-sm w-full max-w-[92%] shadow-sm px-3 py-2 flex items-center gap-2 text-left hover:bg-muted/20 transition-colors opacity-60"
+            onClick={() => updateEntryById(entry.id, (e) => ({ ...e, collapsed: false }))}
+          >
+            <ChevronRight className="size-3.5 text-muted-foreground shrink-0" />
+            {entry.source === "upload"
+              ? <Paperclip className="size-3.5 text-muted-foreground shrink-0" />
+              : <MessageSquare className="size-3.5 text-muted-foreground shrink-0" />}
+            <span className="flex-1 truncate font-medium text-foreground">
+              {entry.fileName ?? (entry.source === "chat" ? "Chat-Vorschläge" : "Upload")}
+            </span>
+            <span className="text-xs text-muted-foreground shrink-0">
+              {headerCount}
+              {entry.appliedIndices.size > 0 && ` · ${entry.appliedIndices.size} angewendet`}
+            </span>
+          </button>
+        </div>
+      );
+    }
+
     return (
       <div key={idx} className="flex justify-start">
         <div className={cn(
           "rounded-md border bg-card text-sm overflow-hidden w-full max-w-[92%] shadow-sm",
           entry.discarded && "opacity-50 pointer-events-none",
         )}>
-          {/* Header */}
-          <div className="px-3 py-2 border-b bg-muted/40 flex items-center justify-between gap-2">
+          {/* Header — clickable to collapse when decided */}
+          <div
+            className={cn(
+              "px-3 py-2 border-b bg-muted/40 flex items-center justify-between gap-2",
+              canCollapse && "cursor-pointer hover:bg-muted/60 transition-colors",
+            )}
+            onClick={canCollapse ? () => updateEntryById(entry.id, (e) => ({ ...e, collapsed: true })) : undefined}
+          >
             <p className="font-medium text-foreground truncate flex items-center gap-1.5">
+              {canCollapse && <ChevronDown className="size-3.5 text-muted-foreground shrink-0" />}
               {entry.source === "upload"
                 ? <Paperclip className="size-3.5 text-muted-foreground shrink-0" />
                 : <MessageSquare className="size-3.5 text-muted-foreground shrink-0" />}
@@ -621,12 +670,12 @@ export function PatientChatPanel({ patientId, patient, refreshPatient, onPatient
             </div>
           )}
 
-          {/* Proposal cards — flow in progressively */}
-          <div className="px-3 py-2 space-y-2 max-h-[28rem] overflow-y-auto">
+          {/* Proposal cards — flow in progressively; read-only when decided */}
+          <div className={cn("px-3 py-2 space-y-2 max-h-[28rem] overflow-y-auto", isDecided && "pointer-events-none")}>
             {entry.proposals.map((p, i) => {
               const applied = entry.appliedIndices.has(i);
               return (
-                <div key={i} className={cn(applied && "opacity-50 pointer-events-none")}>
+                <div key={i} className={cn(applied && "opacity-50")}>
                   <ProposalCard
                     proposal={p}
                     patient={patient}
