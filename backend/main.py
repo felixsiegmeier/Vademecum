@@ -1051,7 +1051,8 @@ async def format_befunde_agent(patient_id: str, body: dict):
     raw = body.get("raw_text", "").strip()
     if not raw:
         raise HTTPException(400, "raw_text leer.")
-    formatted = await agent_brief.format_sap_befunde(raw)
+    extra_context = body.get("extra_context", "")
+    formatted = await agent_brief.format_sap_befunde(raw, extra_context=extra_context)
     brief_storage.update_section(patient_id, "befunde", formatted)
     return {"befunde": formatted}
 

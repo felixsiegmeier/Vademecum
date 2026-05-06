@@ -15,5 +15,6 @@ Vorgaben:
 
 Output: Plain Markdown, sonst nichts.
 
+{extra_context}
 Roh-Befunde:
 {raw_text}

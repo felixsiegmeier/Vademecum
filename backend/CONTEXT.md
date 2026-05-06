@@ -1,4 +1,4 @@
-# Backend Context — Stand 2026-05-06 (BR-B1 — Multi-Domain Lernlog)
+# Backend Context — Stand 2026-05-06 (BR-B2 — Brief Lernlog FE + Befunde extra_context)
 
 ## Pydantic-Modelle (kompakt)
 
@@ -459,9 +459,13 @@ In `agent_brief.py`: `_build_rules_block(rules)` → `_inject_rules(prompt, rule
 - Leere Listen wenn Inhalt unverändert
 - Sonst: LLM-Extraktion → per Kandidat detect_conflict → `{rule_candidates, trivial_changes}`
 
-**FE-Komponenten (B3, Meilenstein):**
-- `RuleCandidateCard.tsx`, `RuleReviewModal.tsx`, `MeilensteinVisibilityPanel.tsx`
-- `MeilensteinPanel.tsx` — "Aus Änderungen lernen"-Button; FE-URLs werden in BR-B2 umgestellt
+**FE-Komponenten (BR-B2, Meilenstein + Brief):**
+- `RuleCandidateCard.tsx` — standalone Card, onRebuild callback
+- `RuleReviewModal.tsx` — generisch: `domain`, `section?`, `sections?` Props; nutzt `api/brief.ts`-Funktionen
+- `MeilensteinVisibilityPanel.tsx` — Prompt & Regeln-Panel (Meilenstein); nutzt API-Funktionen
+- `MeilensteinPanel.tsx` — "Aus Änderungen lernen"-Button; nutzt `learnFromEdits("meilenstein", ...)`
+- `BriefVisibilityPanel.tsx` — Sektion-Tabs (Diagnosen/Anamnese/Therapie/Verlauf) + Regeln+Prompt-Unter-Tabs
+- `BriefPanel.tsx` — `lastGenerated`-State per Sektion; `handleLearn(section)` → RuleReviewModal mit `domain="brief", section=section`; Visibility-Panel-Toggle
 
 ## Brief-Generator V1 (BR-A1 + BR-A2 + BR-A2.5)
 
@@ -480,7 +484,7 @@ vollständig via `LLM_BACKEND` Env-Variable steuerbar (vorbereitet für Qwen-Mig
 | `generate_anamnese(patient, extra_context)` | 1 (Plain Text) | Markdown-Absatz |
 | `generate_therapie(patient, extra_context)` | 1 (JSON-Mode) | Markdown via `_render_therapie()` |
 | `generate_verlauf(patient, meilenstein, befunde, diagnosen, anamnese, therapie, extra_context)` | **3-Pass** (Plain Text) | Fließtext |
-| `format_sap_befunde(raw_text)` | 1 (Plain Text) | formatierter Markdown |
+| `format_sap_befunde(raw_text, extra_context)` | 1 (Plain Text) | formatierter Markdown |
 
 **Verlauf-Sub-Agent — 3-Pass-Architektur (BR-A2.5):**
 - Pass 1 `brief_verlauf_collect.txt` — Substanz-Sammler: filtert Fakten, sortiert Cluster nach
@@ -521,7 +525,8 @@ updated_at: <ISO-8601>
 `brief_verlauf_collect.txt`, `brief_verlauf_audit.txt`, `brief_verlauf_curate.txt`,
 `brief_befunde_format.txt` — alle in `prompts/`.
 Alle 4 generierenden Prompts haben `{gelernte_regeln}` + `{extra_context}` vor dem "Patient (YAML):"-Block.
-`format_sap_befunde` hat weder Regel- noch extra_context-Injektion (befunde ausgeschlossen).
+`brief_befunde_format.txt` hat `{extra_context}` (BR-B2), aber kein `{gelernte_regeln}` (befunde nicht lernfähig).
+`format_sap_befunde(raw_text, extra_context="")` akzeptiert seit BR-B2 optionalen Kontext.
 
 ### Endpoints (Pfad: `/api/brief/{patient_id}/...`)
 
@@ -530,7 +535,7 @@ Alle 4 generierenden Prompts haben `{gelernte_regeln}` + `{extra_context}` vor d
 | GET | `/api/brief/{id}` | Aktuellen Brief-State lesen (leeres Skelett wenn nicht vorhanden) |
 | POST | `/api/brief/{id}/generate` | Diagnosen+Anamnese+Therapie parallel, dann Verlauf; befunde unverändert; Body: `{extra_context?: str}` |
 | POST | `/api/brief/{id}/generate-section/{section}` | Einzelne Sektion regenerieren (nicht befunde); Body: `{extra_context?: str}` |
-| POST | `/api/brief/{id}/format-befunde` | SAP-Roh-Befunde formatieren + in befunde-Sektion persistieren; Body: `{raw_text: str}` |
+| POST | `/api/brief/{id}/format-befunde` | SAP-Roh-Befunde formatieren + in befunde-Sektion persistieren; Body: `{raw_text: str, extra_context?: str}` |
 | PUT | `/api/brief/{id}/section/{section}` | User-Edit autosaven (kein LLM); Body: `{content: str}` |
 | POST | `/api/extract-text` | Multipart: Text→direkt, CSV/XLSX/DOCX→Konverter, Binär→LLM; Response: `{combined_text: str}` |
 
@@ -539,20 +544,19 @@ Lazy-Init der LLM-Clients in `agent_brief.py` (kein Import-Zeit-Fehler vor `load
 
 ### Architektur Frontend (BR-A2)
 
-**Neue Dateien:**
+**Dateien (BR-A2 + BR-B2):**
 - `frontend/src/api/brief.ts` — API-Modul: `getBrief`, `generateBrief`, `regenerateSection`,
-  `formatSapBefunde`, `saveSectionEdit`, `extractFileText`
-- `frontend/src/components/PendingContextZone.tsx` — Einklappbar (Chevron); Textarea + Datei-Upload
-  (via `/api/extract-text`); "Übernehmen" setzt `pendingContext`-State in `BriefPanel`
-- `frontend/src/components/BriefSection.tsx` — Markdown-View / Edit-Toggle; ⟳ Regen; ✏ Bearbeiten;
-  800ms debounced autosave via `saveSectionEdit`
-- `frontend/src/components/BefundeSection.tsx` — paste-Mode (leer) vs. view-Mode (formatiert);
-  "Neu formatieren"-Dialog; edit-Toggle
-
-**Aktualisierte Dateien:**
-- `frontend/src/types.ts` — `Brief` interface + `BriefSectionKey` type
-- `frontend/src/components/BriefPanel.tsx` — komplett neu: lädt `/api/brief/{id}`,
-  `PendingContextZone` + Header-Regen-Button + 5 Sektionen in Reihenfolge
+  `formatSapBefunde(patientId, rawText, extraContext?)`, `saveSectionEdit`, `extractFileText`;
+  + Lernlog-API: `learnFromEdits(domain, section?, patientId, editedContent)`, `getLearnRules`,
+  `deleteLearnRule`, `saveLearnRules`, `rebuildLearnRule`, `getSystemPrompt`
+- `frontend/src/components/PendingContextZone.tsx` — Einklappbar; Textarea + Datei-Upload
+- `frontend/src/components/BriefSection.tsx` — Markdown-View / Edit-Toggle; ⟳ Regen mit inline
+  Kontext-Textarea (MessageSquarePlus-Button); 🎓 Lernen-Button (`onLearn`, `canLearn` Props)
+- `frontend/src/components/BefundeSection.tsx` — paste/view/edit-Mode; Neu-formatieren-Dialog
+  + optionaler Zusatzkontext-Textarea (BR-B2); `onFormat(rawText, extraContext?)` Signatur
+- `frontend/src/components/BriefVisibilityPanel.tsx` — Sektion-Tabs × Regeln+Prompt-Unter-Tabs
+- `frontend/src/components/BriefPanel.tsx` — `lastGenerated` State, `handleLearn(section)`,
+  Visibility-Panel-Toggle, BriefVisibilityPanel + RuleReviewModal-Integration
 
 ## Test-Stand
-186 passed
+186 passed (BR-B2: keine neuen Tests; BR-B1 Tests bereits grün)

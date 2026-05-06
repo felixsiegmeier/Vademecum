@@ -300,8 +300,11 @@ async def generate_verlauf(
     return result
 
 
-async def format_sap_befunde(raw_text: str) -> str:
-    filled = _get_prompt("brief_befunde_format.txt").replace("{raw_text}", raw_text)
+async def format_sap_befunde(raw_text: str, extra_context: str = "") -> str:
+    filled = _inject_extra_context(
+        _get_prompt("brief_befunde_format.txt").replace("{raw_text}", raw_text),
+        extra_context,
+    )
     try:
         resp = await _lite().chat_completion(
             [{"role": "user", "content": filled}],

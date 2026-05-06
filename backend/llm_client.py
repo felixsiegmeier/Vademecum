@@ -17,7 +17,7 @@ _BACKENDS = {
     "gemini": {
         "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
         "api_key_env": "GEMINI_API_KEY",
-        "model": "gemini-3.1-flash-lite-preview",
+        "model": "gemini-3-flash-preview",
     },
     "lmstudio": {
         "base_url": "http://localhost:1234/v1",
