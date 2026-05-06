@@ -458,3 +458,51 @@ def test_collect_prompt_includes_aufenthaltsdauer_logic(isolated_data):
     assert "mittel" in prompt
     assert "ausführlich" in prompt
     assert "AUFENTHALTSDAUER_TAGE" in prompt
+
+
+# ── 24. DELETE /api/brief/{patient_id} ────────────────────────────────────────
+
+def test_delete_brief_endpoint_removes_brief_and_snapshots(isolated_data):
+    """DELETE /api/brief/{id} löscht Brief + last-Snapshots, lässt rules.yml in Ruhe."""
+    import learning_storage
+
+    pid = "P-0001"
+    _make_patient(pid)
+
+    # Brief anlegen
+    brief_storage.save_brief(pid, {
+        "diagnosen": "AKS", "anamnese": "x", "therapie": "y",
+        "befunde": "", "verlauf": "z",
+    })
+
+    # Last-Snapshots für alle Sections anlegen
+    for section in learning_storage.BRIEF_SECTIONS_WITH_LEARNING:
+        learning_storage.save_last_output(pid, f"snapshot-{section}", domain="brief", section=section)
+
+    # Regel anlegen — sollte nach Delete NICHT gelöscht werden
+    rule = learning_storage.new_rule("Diagnosen", "Regel bleibt erhalten")
+    learning_storage.save_rules([rule], domain="brief", section="diagnosen")
+
+    res = client.delete(f"/api/brief/{pid}")
+    assert res.status_code == 204
+
+    # Brief weg
+    loaded = brief_storage.load_brief(pid)
+    for section in brief_storage.BRIEF_SECTIONS:
+        assert loaded[section] == "", f"Sektion '{section}' sollte leer sein"
+
+    # Snapshots weg
+    for section in learning_storage.BRIEF_SECTIONS_WITH_LEARNING:
+        snap = learning_storage.load_last_output(pid, domain="brief", section=section)
+        assert snap is None, f"Snapshot für '{section}' sollte gelöscht sein"
+
+    # Regeln noch da
+    rules = learning_storage.load_rules(domain="brief", section="diagnosen")
+    assert len(rules) == 1
+
+
+def test_delete_brief_endpoint_404_when_no_brief(isolated_data):
+    """DELETE /api/brief/{id} ohne existierenden Brief → 404."""
+    _make_patient("P-0001")
+    res = client.delete("/api/brief/P-0001")
+    assert res.status_code == 404

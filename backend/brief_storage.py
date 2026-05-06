@@ -67,6 +67,15 @@ def save_brief(patient_id: str, brief: dict) -> None:
     os.replace(tmp, path)
 
 
+def delete_brief(patient_id: str) -> bool:
+    """Löscht Brief-Datei. Gibt True zurück wenn vorhanden, False wenn nicht."""
+    path = _brief_path(patient_id)
+    if not path.exists():
+        return False
+    path.unlink()
+    return True
+
+
 def update_section(patient_id: str, section: str, content: str) -> dict:
     """Lädt, patcht eine Sektion, speichert, gibt neuen State zurück."""
     if section not in BRIEF_SECTIONS:

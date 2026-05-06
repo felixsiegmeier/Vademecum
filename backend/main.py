@@ -969,6 +969,17 @@ async def get_brief_agent(patient_id: str):
     return brief_storage.load_brief(patient_id)
 
 
+@app.delete("/api/brief/{patient_id}", status_code=204)
+def delete_brief_agent_endpoint(patient_id: str):
+    """Löscht Brief-Datei + last-Snapshots für alle Brief-Sektionen. Lernlog-Regeln bleiben."""
+    if not brief_storage.delete_brief(patient_id):
+        raise HTTPException(404, "Kein Brief vorhanden.")
+    for section in learning_storage.BRIEF_SECTIONS_WITH_LEARNING:
+        snap = learning_storage.LEARNINGS_DIR / "default" / "brief" / section / "last" / f"{patient_id}.txt"
+        if snap.exists():
+            snap.unlink()
+
+
 @app.post("/api/brief/{patient_id}/generate")
 async def generate_brief_agent(
     patient_id: str,
