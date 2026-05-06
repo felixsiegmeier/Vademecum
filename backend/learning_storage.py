@@ -1,10 +1,14 @@
-"""Lernlog-Storage für Meilenstein-Regeln.
+"""Lernlog-Storage — Multi-Domain (domain, section?)-Adressierung.
 
-Schreibt/liest strukturierte Regel-Listen als YAML unter
-data/learnings/<user_id>/meilenstein.yml.
-
-B1 (dieser Stand): Lese-Pfad.
-B2 (geplant): Schreib-API-Endpoint.
+Layout:
+  data/learnings/<user_id>/
+    meilenstein/
+      rules.yml
+      last/<pid>.txt
+    brief/
+      {diagnosen,anamnese,therapie,verlauf}/
+        rules.yml
+        last/<pid>.txt
 """
 
 import logging
@@ -19,16 +23,13 @@ from pydantic import BaseModel, field_validator
 
 logger = logging.getLogger(__name__)
 
-# Aktuelles Patient-Schema — muss synchron mit storage.save_patient bleiben.
-# Beim Schema-Bump: diese Konstante erhöhen.
 PATIENT_SCHEMA_VERSION = "0.4"
-
-# Lernlog-Datei-Schemaversion (unabhängig vom Patient-Schema).
 SCHEMA_VERSION = "0.1"
 
 LEARNINGS_DIR = Path(__file__).parent / "data" / "learnings"
 
-VALID_SECTIONS = [
+# Meilenstein-Sektionen — für Regel-Grouping im System-Prompt-Builder.
+MEILENSTEIN_SECTIONS = [
     "Operationen & Prozeduren",
     "Behandlungsdiagnosen",
     "Relevante Nebendiagnosen",
@@ -39,7 +40,9 @@ VALID_SECTIONS = [
     "Therapieziel / Patientenwille",
 ]
 
-# Crockford-Base32 ULID (analog agent_tools.py)
+# Brief-Sektionen mit Lernlog (befunde explizit ausgeschlossen).
+BRIEF_SECTIONS_WITH_LEARNING = {"diagnosen", "anamnese", "therapie", "verlauf"}
+
 _CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
 
@@ -56,17 +59,10 @@ def _generate_ulid() -> str:
 
 class Rule(BaseModel):
     id: str
-    section: str
+    section: str  # free-form label; für meilenstein: einer der MEILENSTEIN_SECTIONS
     rule_text: str
     created_at: str
     patient_schema_version_at_creation: str
-
-    @field_validator("section")
-    @classmethod
-    def section_must_be_valid(cls, v: str) -> str:
-        if v not in VALID_SECTIONS:
-            raise ValueError(f"Ungültige Sektion: '{v}'. Erlaubt: {VALID_SECTIONS}")
-        return v
 
     @field_validator("rule_text")
     @classmethod
@@ -77,7 +73,6 @@ class Rule(BaseModel):
 
 
 def new_rule(section: str, rule_text: str) -> Rule:
-    """Erzeugt eine neue Rule mit frischer ID + Timestamps."""
     return Rule(
         id=_generate_ulid(),
         section=section,
@@ -87,18 +82,31 @@ def new_rule(section: str, rule_text: str) -> Rule:
     )
 
 
-def _storage_path(user_id: str) -> Path:
-    path = LEARNINGS_DIR / user_id / "meilenstein.yml"
+def _rules_path(user_id: str, domain: str, section: Optional[str] = None) -> Path:
+    if section:
+        path = LEARNINGS_DIR / user_id / domain / section / "rules.yml"
+    else:
+        path = LEARNINGS_DIR / user_id / domain / "rules.yml"
     path.parent.mkdir(parents=True, exist_ok=True)
     return path
 
 
-def load_rules(user_id: str = "default") -> list[Rule]:
-    """Lädt Regeln für user_id. Nicht-existente Datei → leere Liste.
+def _last_path(user_id: str, domain: str, section: Optional[str], patient_id: str) -> Path:
+    if section:
+        path = LEARNINGS_DIR / user_id / domain / section / "last" / f"{patient_id}.txt"
+    else:
+        path = LEARNINGS_DIR / user_id / domain / "last" / f"{patient_id}.txt"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
 
-    Warnt bei Schema-Versionsmismatch, lädt trotzdem weiter.
-    """
-    path = _storage_path(user_id)
+
+def load_rules(
+    user_id: str = "default",
+    domain: str = "meilenstein",
+    section: Optional[str] = None,
+) -> list[Rule]:
+    """Lädt Regeln. Nicht-existente Datei → leere Liste."""
+    path = _rules_path(user_id, domain, section)
     if not path.exists():
         return []
 
@@ -108,8 +116,7 @@ def load_rules(user_id: str = "default") -> list[Rule]:
     file_schema = data.get("schema_version", "")
     if file_schema != SCHEMA_VERSION:
         logger.warning(
-            "learning_storage: schema_version '%s' != erwartet '%s' — "
-            "Forward-Compat-Modus, lade weiter.",
+            "learning_storage: schema_version '%s' != erwartet '%s' — Forward-Compat-Modus.",
             file_schema,
             SCHEMA_VERSION,
         )
@@ -121,11 +128,10 @@ def load_rules(user_id: str = "default") -> list[Rule]:
         except Exception as exc:
             logger.warning("learning_storage: Überspringe ungültige Regel %s: %s", raw, exc)
             continue
-
         if rule.patient_schema_version_at_creation != PATIENT_SCHEMA_VERSION:
             logger.warning(
-                "learning_storage: Regel '%s' wurde bei patient_schema_version '%s' erstellt, "
-                "aktuell ist '%s' — möglicherweise veraltet.",
+                "learning_storage: Regel '%s' bei patient_schema_version '%s' erstellt, "
+                "aktuell '%s' — möglicherweise veraltet.",
                 rule.id,
                 rule.patient_schema_version_at_creation,
                 PATIENT_SCHEMA_VERSION,
@@ -135,9 +141,14 @@ def load_rules(user_id: str = "default") -> list[Rule]:
     return rules
 
 
-def save_rules(rules: list[Rule], user_id: str = "default") -> None:
+def save_rules(
+    rules: list[Rule],
+    user_id: str = "default",
+    domain: str = "meilenstein",
+    section: Optional[str] = None,
+) -> None:
     """Schreibt Regeln atomar (tempfile + os.replace)."""
-    path = _storage_path(user_id)
+    path = _rules_path(user_id, domain, section)
     payload = {
         "schema_version": SCHEMA_VERSION,
         "rules": [r.model_dump() for r in rules],
@@ -148,24 +159,29 @@ def save_rules(rules: list[Rule], user_id: str = "default") -> None:
     os.replace(tmp, path)
 
 
-def _last_meilenstein_path(patient_id: str, user_id: str) -> Path:
-    path = LEARNINGS_DIR / user_id / "last_meilenstein" / f"{patient_id}.txt"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    return path
-
-
-def save_last_meilenstein(patient_id: str, content: str, user_id: str = "default") -> None:
-    """Speichert den zuletzt generierten Meilenstein-Text atomar."""
-    path = _last_meilenstein_path(patient_id, user_id)
+def save_last_output(
+    patient_id: str,
+    content: str,
+    user_id: str = "default",
+    domain: str = "meilenstein",
+    section: Optional[str] = None,
+) -> None:
+    """Speichert den zuletzt generierten Output atomar."""
+    path = _last_path(user_id, domain, section, patient_id)
     tmp = path.with_suffix(".txt.tmp")
     with open(tmp, "w", encoding="utf-8") as f:
         f.write(content)
     os.replace(tmp, path)
 
 
-def load_last_meilenstein(patient_id: str, user_id: str = "default") -> Optional[str]:
-    """Lädt den zuletzt generierten Meilenstein-Text. None wenn nicht vorhanden."""
-    path = _last_meilenstein_path(patient_id, user_id)
+def load_last_output(
+    patient_id: str,
+    user_id: str = "default",
+    domain: str = "meilenstein",
+    section: Optional[str] = None,
+) -> Optional[str]:
+    """Lädt den zuletzt generierten Output. None wenn nicht vorhanden."""
+    path = _last_path(user_id, domain, section, patient_id)
     if not path.exists():
         return None
     return path.read_text(encoding="utf-8")
