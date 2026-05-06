@@ -73,12 +73,12 @@ Die SUBSTANZ_TIEFE-Markierung aus Pass 1 ist verbindlich. Nicht weichspülen, ni
 
 Die Substanz-Übersicht enthält eine Markierung SUBSTANZ_TIEFE (vom Sammler gesetzt nach Aufenthaltsdauer und Wucht). Richte die Textlänge des Verlaufs daran aus:
 
-- minimal: 2-4 Sätze, ein einziger Absatz, keine Cluster-Untergliederung. Beispiel-Form: "Herr X wurde am TT.MM. nach elektiver Bypass-Operation übernommen. Der postoperative Verlauf gestaltete sich komplikationslos; bei stabiler Hämodynamik und unauffälligem Weaning konnte am TT.MM. die Verlegung erfolgen."
-- kompakt: 1 Absatz, etwa 5-10 Sätze. Cluster-Übergänge möglich, aber ohne Absatz-Trennung.
-- mittel: 2-4 Absätze, etwa 150-300 Wörter. Cluster-weise Absätze für die prägenden Themen, gemeinsame Absätze für eng gekoppelte Cluster.
-- ausführlich: 3-6 Absätze, etwa 300-600 Wörter. Eigener Absatz pro prägender Themenlinie, plus Eröffnungs- und Schluss-Absatz.
+- minimal: MAXIMAL 4 Sätze
+- kompakt: MAXIMAL 8 Sätze  
+- mittel: MAXIMAL 200 Wörter
+- ausführlich: MAXIMAL 400 Wörter
 
-Diese Bandbreiten sind Richtwerte, keine Wortlängen-Quoten. Wichtiger als die exakte Länge ist die Angemessenheit zur Substanz: lieber kürzer als künstlich gestreckt. Ein leerer Cluster wird nicht durch sprachliche Aufpolsterung gefüllt — er entfällt.
+Diese Werte sind OBERGRENZEN, keine Zielgrößen. Kürzer ist immer besser. Wenn ein 3-Satz-Verlauf das Geschehen vollständig beschreibt, ist das das richtige Ergebnis - auch bei kompakt-Substanz. Auffüllen zur "gefühlten Norm" ist verboten.
 
 Die Übernahme-Klammer (Cluster A, Eröffnungssatz) und die Schluss-Klammer (Schluss-Pattern oder Stand-Satz) sind in jeder Tiefen-Stufe vorhanden, auch in "minimal".
 
@@ -90,7 +90,8 @@ a) Konnektoren mit logischer Funktion einsetzen — kausal ("weshalb", "sodass",
 
 b) Anaphorische Bezüge nutzen — der nachfolgende Satz greift ein Stichwort des vorigen Satzes auf und führt es weiter. Beispiel: "...führte zu einem Hämatothorax. Dieser wurde am 05.04. notfallmäßig ausgeräumt."
 
-c) Cluster-Übergänge moderieren — beim Wechsel des Themas einen Brückensatz, der den vorigen Cluster rekapituliert oder das neue Thema kausal/zeitlich anbindet. NICHT einfach "Hämodynamisch zeigte sich..." als Allzweck-Eröffnung jedes Clusters. Beispiel-Brücke: "Parallel zur respiratorischen Situation gestaltete sich die Hämodynamik problematisch."
+c) Cluster-Übergänge moderieren (nur bei SUBSTANZ_TIEFE mittel/ausführlich) — beim Wechsel des Themas einen Brückensatz, der den vorigen Cluster rekapituliert oder das neue Thema kausal/zeitlich anbindet. NICHT einfach "Hämodynamisch zeigte sich..." als Allzweck-Eröffnung jedes Clusters. Beispiel-Brücke: "Parallel zur respiratorischen Situation gestaltete sich die Hämodynamik problematisch."
+   Bei SUBSTANZ_TIEFE minimal/kompakt: KEIN separater Brückensatz. Direkter Einstieg in den nächsten Cluster — die SUBSTANZ_TIEFE-DISZIPLIN-Regel hat Vorrang.
 
 d) Keine isolierten Sätze — jeder Satz ist entweder durch den Vorgängersatz vorbereitet oder leitet einen klar markierten Themenwechsel ein. Ein Satz wie "Die Ernährung erfolgte über eine Magensonde." ohne Kontext-Anbindung wirkt fremdkörperhaft.
 
