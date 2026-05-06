@@ -1016,3 +1016,53 @@ def test_block1_streaming_patient_state_in_system_prompt():
     assert "<aktueller_stand>" in system_prompt, "Patientenstand fehlt im System-Prompt"
     assert "STEMI Vorderwand" in system_prompt, "Diagnose-Text fehlt im State-Block"
     assert "D-001" in system_prompt, "Diagnose-ID fehlt (benötigt für delete_entry bei UPDATE)"
+
+
+# ── Test 22: stream_opened ist das allererste Event ────────────────────────────
+
+
+def test_stream_opened_is_first_event():
+    """extract_proposals_streaming: erstes Event ist immer stream_opened."""
+    mock_llm = MagicMock()
+    mock_llm.chat_completion = AsyncMock(side_effect=[
+        _llm_response(None),  # Block1 done immediately
+        _llm_response(None),  # Block2 done immediately
+    ])
+
+    events = _collect_streaming(extract_proposals_streaming(
+        llm=mock_llm,
+        patient=None,
+        content="doc",
+        content_type="text",
+    ))
+
+    assert events, "Keine Events erhalten"
+    assert events[0]["type"] == "stream_opened", (
+        f"Erstes Event ist '{events[0]['type']}', erwartet 'stream_opened'"
+    )
+    assert "ts" in events[0], "stream_opened fehlt 'ts'-Feld"
+
+
+# ── Test 23: LLM-Timeout liefert error-Event mit reason=llm_timeout ───────────
+
+
+def test_timeout_yields_error_event():
+    """extract_proposals_streaming: asyncio.TimeoutError → error-Event mit reason=llm_timeout."""
+    mock_llm = MagicMock()
+    mock_llm.chat_completion = AsyncMock(side_effect=asyncio.TimeoutError())
+
+    events = _collect_streaming(extract_proposals_streaming(
+        llm=mock_llm,
+        patient=None,
+        content="doc",
+        content_type="text",
+    ))
+
+    error_events = [e for e in events if e["type"] == "error"]
+    assert error_events, "Kein error-Event bei TimeoutError"
+    err = error_events[0]
+    assert err.get("reason") == "llm_timeout", f"Falscher reason: {err.get('reason')}"
+    assert err.get("retryable") is True
+    assert err.get("phase") == "block1"
+    # Kein done-Event nach timeout
+    assert not any(e["type"] == "done" for e in events), "done-Event nach Timeout unerwünscht"

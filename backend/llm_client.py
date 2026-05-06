@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import io
 import logging
@@ -48,7 +49,7 @@ class LLMClient:
     def client(self) -> AsyncOpenAI:
         return self._client
 
-    async def chat_completion(self, messages: list[dict], thinking_budget: int | None = None, **kwargs):
+    async def chat_completion(self, messages: list[dict], thinking_budget: int | None = None, timeout_s: int = 90, **kwargs):
         # Thinking-Budget: None = kein Thinking (Budget 0), sonst Gemini-spezifische Config.
         budget = thinking_budget if thinking_budget is not None else 0
         caller_extra = kwargs.pop("extra_body", {})
@@ -62,10 +63,13 @@ class LLMClient:
             kwargs.get("extra_body"),
         )
         try:
-            return await self._client.chat.completions.create(
-                model=self.model,
-                messages=messages,  # type: ignore[arg-type]
-                **kwargs,
+            return await asyncio.wait_for(
+                self._client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,  # type: ignore[arg-type]
+                    **kwargs,
+                ),
+                timeout=timeout_s,
             )
         except Exception as e:
             logger.error("[LLM-FAIL] %s: %s", type(e).__name__, e)

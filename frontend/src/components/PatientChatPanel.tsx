@@ -52,6 +52,8 @@ interface ProposalsEntry {
   discarded: boolean;           // User hat Vorschläge verworfen → Bar weg
   streaming: boolean;           // true während NDJSON-Stream aktiv
   streamStatus: { phase: "block1" | "block2"; iter: number; max_iter: number; items_in_phase: number } | null;
+  phaseLabel: string | null;    // z.B. "Block 1 — Themenextraktion"
+  phaseStartedAt: number | null; // Date.now() beim phase_start-Event
 }
 
 interface AutoSkipEntry {
@@ -100,6 +102,8 @@ function makeProposalsEntry(
     discarded: false,
     streaming,
     streamStatus: null,
+    phaseLabel: null,
+    phaseStartedAt: null,
   };
 }
 
@@ -140,6 +144,14 @@ export function PatientChatPanel({ patientId, patient, refreshPatient, onPatient
   useEffect(() => {
     setHistory(historyStore.get(patientId) ?? []);
   }, [patientId]);
+
+  // Tick every second while uploading to drive the elapsed-seconds counter in the live bar
+  const [tickMs, setTickMs] = useState(Date.now());
+  useEffect(() => {
+    if (!uploading) return;
+    const id = setInterval(() => setTickMs(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [uploading]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -295,7 +307,19 @@ export function PatientChatPanel({ patientId, patient, refreshPatient, onPatient
       for await (const event of parseNdjson<StreamEvent>(res.body)) {
         if (event.type === "heartbeat") continue;
 
-        if (event.type === "status") {
+        if (event.type === "stream_opened") {
+          // Connection confirmed — "Verbinde…" transitions to phase label on next phase_start
+        } else if (event.type === "phase_start") {
+          const label = event.phase === "block1" ? "Block 1 — Themenextraktion" : "Block 2 — Verlauf";
+          updateEntryById(entryId, (e) => ({
+            ...e,
+            phaseLabel: label,
+            phaseStartedAt: Date.now(),
+            streamStatus: null,
+          }));
+        } else if (event.type === "phase_done") {
+          // phase_done: keep phaseLabel visible until next phase_start or done clears it
+        } else if (event.type === "status") {
           updateEntryById(entryId, (e) => ({ ...e, streamStatus: event }));
         } else if (event.type === "proposals") {
           updateEntryById(entryId, (e) => {
@@ -305,7 +329,10 @@ export function PatientChatPanel({ patientId, patient, refreshPatient, onPatient
             return { ...e, proposals: newProposals, selectedIndices: newSelected };
           });
         } else if (event.type === "error") {
-          showToast("error", "Verbindung abgebrochen — bitte erneut hochladen");
+          const msg = event.reason === "llm_timeout"
+            ? "LLM-Timeout — bitte Dokument erneut hochladen"
+            : "Verbindung abgebrochen — bitte erneut hochladen";
+          showToast("error", msg);
           updateEntryById(entryId, (e) => ({ ...e, streaming: false, discarded: true }));
           return;
         } else if (event.type === "done") {
@@ -517,8 +544,11 @@ export function PatientChatPanel({ patientId, patient, refreshPatient, onPatient
     const headerCount = isStreaming && entry.proposals.length > 0
       ? formatSectionCounts(entry.proposals)
       : `${entry.proposals.length} ${entry.proposals.length === 1 ? "Vorschlag" : "Vorschläge"}`;
-    const liveText = entry.streamStatus
-      ? `Block ${entry.streamStatus.phase === "block1" ? 1 : 2} — Iteration ${entry.streamStatus.iter}/${entry.streamStatus.max_iter}, ${entry.streamStatus.items_in_phase} Items bisher`
+    const elapsedS = entry.phaseStartedAt ? Math.floor((tickMs - entry.phaseStartedAt) / 1000) : 0;
+    const liveText = entry.phaseLabel
+      ? `${entry.phaseLabel} (${elapsedS}s)…`
+      : entry.streamStatus
+      ? `Block ${entry.streamStatus.phase === "block1" ? 1 : 2} — Iter ${entry.streamStatus.iter}/${entry.streamStatus.max_iter}, ${entry.streamStatus.items_in_phase} Items`
       : "Verbinde…";
 
     return (

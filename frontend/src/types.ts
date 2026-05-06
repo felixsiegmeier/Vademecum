@@ -30,11 +30,14 @@ export interface Proposal {
  * Transport: application/x-ndjson over chunked HTTP (not SSE — POST upload).
  */
 export type StreamEvent =
+  | { type: "stream_opened"; ts: string }
   | { type: "status"; phase: "block1" | "block2"; iter: number; max_iter: number; items_in_phase: number }
+  | { type: "phase_start"; phase: "block1" | "block2"; ts: string }
+  | { type: "phase_done"; phase: "block1" | "block2"; duration_s: number; ts: string }
   | { type: "proposals"; phase: "block1" | "block2"; items: Proposal[] }
   | { type: "heartbeat" }
   | { type: "done"; total_proposals: number; auto_skipped: boolean }
-  | { type: "error"; message: string; retryable: boolean };
+  | { type: "error"; message: string; retryable: boolean; reason?: string; phase?: "block1" | "block2" };
 
 /** @deprecated Upload endpoint now streams NDJSON — kept for reference only. */
 export interface UploadResponse {

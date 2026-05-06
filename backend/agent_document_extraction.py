@@ -1,4 +1,6 @@
-from datetime import date
+import asyncio
+import time
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import AsyncGenerator, Literal
 
@@ -184,7 +186,14 @@ async def extract_proposals_streaming(
     block2_system = _build_block2_system(patient)
     total_proposals = 0
 
+    def _ts() -> str:
+        return datetime.now(timezone.utc).isoformat()
+
+    yield {"type": "stream_opened", "ts": _ts()}
+
     # Pass 1: themen-quer — catch APIStatusError for PDF-fallback to images
+    t0 = time.monotonic()
+    yield {"type": "phase_start", "phase": "block1", "ts": _ts()}
     try:
         async for event in run_pass_streaming(
             llm=llm,
@@ -202,6 +211,16 @@ async def extract_proposals_streaming(
             yield event
             if event["type"] == "proposals":
                 total_proposals += len(event["items"])
+    except asyncio.TimeoutError:
+        yield {
+            "type": "error",
+            "phase": "block1",
+            "reason": "llm_timeout",
+            "message": "LLM-Timeout in Block 1 (>90s) — bitte erneut hochladen",
+            "retryable": True,
+            "duration_s": round(time.monotonic() - t0, 1),
+        }
+        return
     except APIStatusError:
         if content_type != "pdf":
             yield {"type": "error", "message": "LLM API error in Block1", "retryable": False}
@@ -227,6 +246,16 @@ async def extract_proposals_streaming(
                 yield event
                 if event["type"] == "proposals":
                     total_proposals += len(event["items"])
+        except asyncio.TimeoutError:
+            yield {
+                "type": "error",
+                "phase": "block1",
+                "reason": "llm_timeout",
+                "message": "LLM-Timeout in Block 1 Fallback (>90s) — bitte erneut hochladen",
+                "retryable": True,
+                "duration_s": round(time.monotonic() - t0, 1),
+            }
+            return
         except (APIStatusError, RateLimitError, APIConnectionError) as e:
             yield {"type": "error", "message": str(e), "retryable": False}
             return
@@ -237,7 +266,11 @@ async def extract_proposals_streaming(
         yield {"type": "error", "message": f"LLM nicht erreichbar: {e}", "retryable": True}
         return
 
+    yield {"type": "phase_done", "phase": "block1", "duration_s": round(time.monotonic() - t0, 1), "ts": _ts()}
+
     # Pass 2: chronologisch
+    t1 = time.monotonic()
+    yield {"type": "phase_start", "phase": "block2", "ts": _ts()}
     try:
         async for event in run_pass_streaming(
             llm=llm,
@@ -255,8 +288,20 @@ async def extract_proposals_streaming(
             yield event
             if event["type"] == "proposals":
                 total_proposals += len(event["items"])
+    except asyncio.TimeoutError:
+        yield {
+            "type": "error",
+            "phase": "block2",
+            "reason": "llm_timeout",
+            "message": "LLM-Timeout in Block 2 (>90s) — bitte erneut hochladen",
+            "retryable": True,
+            "duration_s": round(time.monotonic() - t1, 1),
+        }
+        return
     except (APIStatusError, RateLimitError, APIConnectionError) as e:
         yield {"type": "error", "message": str(e), "retryable": False}
         return
+
+    yield {"type": "phase_done", "phase": "block2", "duration_s": round(time.monotonic() - t1, 1), "ts": _ts()}
 
     yield {"type": "done", "total_proposals": total_proposals, "auto_skipped": total_proposals == 0}
