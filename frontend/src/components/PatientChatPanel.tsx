@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Loader2, Paperclip, MessageSquare, Send, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { Loader2, Paperclip, MessageSquare, Send, AlertTriangle, CheckCircle2, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import type {
   ApplyResponse,
@@ -128,6 +128,7 @@ interface Props {
 
 export function PatientChatPanel({ patientId, patient, refreshPatient, onPatientChanged }: Props) {
   const [history, setHistory] = useState<HistoryEntry[]>(() => historyStore.get(patientId) ?? []);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [input, setInput] = useState("");
   const [uploading, setUploading] = useState(false);   // F5: globaler Upload-Guard
   const [chatBusy, setChatBusy] = useState(false);
@@ -143,6 +144,7 @@ export function PatientChatPanel({ patientId, patient, refreshPatient, onPatient
 
   useEffect(() => {
     setHistory(historyStore.get(patientId) ?? []);
+    setPendingFile(null);
   }, [patientId]);
 
   // Tick every second while uploading to drive the elapsed-seconds counter in the live bar
@@ -191,7 +193,18 @@ export function PatientChatPanel({ patientId, patient, refreshPatient, onPatient
   // ── Chat-Send (Text) ──────────────────────────────────────────────────────
 
   async function handleSubmit() {
-    if (!input.trim() || chatBusy || uploading) return;
+    if (chatBusy || uploading) return;
+
+    if (pendingFile) {
+      const ctx = input.trim() || undefined;
+      const file = pendingFile;
+      setPendingFile(null);
+      setInput("");
+      await handleFileSelected(file, undefined, ctx);
+      return;
+    }
+
+    if (!input.trim()) return;
     const text = input;
     const isLong = text.length > 2000; // CHAT_2PASS_CUTOFF — gespiegelt aus Backend
     const userEntry: ChatTextEntry = { kind: "chat-text", role: "user", content: text };
@@ -267,7 +280,7 @@ export function PatientChatPanel({ patientId, patient, refreshPatient, onPatient
 
   // ── Datei-Upload (NDJSON-Streaming) ──────────────────────────────────────
 
-  async function handleFileSelected(file: File, baseHistory?: HistoryEntry[]) {
+  async function handleFileSelected(file: File, baseHistory?: HistoryEntry[], extraContext?: string) {
     if (uploading) return;  // Concurrent-Schutz
     if (!ACCEPTED_MIME.includes(file.type)) {
       const err: ChatTextEntry = {
@@ -282,7 +295,7 @@ export function PatientChatPanel({ patientId, patient, refreshPatient, onPatient
     const userEntry: ChatTextEntry = {
       kind: "chat-text",
       role: "user",
-      content: `[Datei: ${file.name}]`,
+      content: extraContext ? `[Datei: ${file.name}]\n${extraContext}` : `[Datei: ${file.name}]`,
     };
     const optimistic = [...(baseHistory ?? history), userEntry];
 
@@ -296,6 +309,7 @@ export function PatientChatPanel({ patientId, patient, refreshPatient, onPatient
       const formData = new FormData();
       formData.append("file", file);
       formData.append("patient_id", patientId);
+      if (extraContext) formData.append("extra_context", extraContext);
       const res = await fetch("/api/uploads", { method: "POST", body: formData });
 
       if (!res.ok) {
@@ -673,7 +687,26 @@ export function PatientChatPanel({ patientId, patient, refreshPatient, onPatient
       )}
 
       {/* Eingabezeile */}
-      <div className="border-t bg-card px-4 py-3 flex gap-2 items-end">
+      <div className="border-t bg-card">
+        {/* Pending file card */}
+        {pendingFile && (
+          <div className="flex items-center gap-2 px-4 pt-2">
+            <div className="flex-1 flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-1.5 text-sm min-w-0">
+              <Paperclip className="size-3.5 text-muted-foreground shrink-0" />
+              <span className="truncate text-foreground">{pendingFile.name}</span>
+            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setPendingFile(null)}
+              title="Datei entfernen"
+              className="shrink-0 size-7"
+            >
+              <X className="size-3.5" />
+            </Button>
+          </div>
+        )}
+        <div className="px-4 py-3 flex gap-2 items-end">
         <input
           ref={fileInputRef}
           type="file"
@@ -681,7 +714,7 @@ export function PatientChatPanel({ patientId, patient, refreshPatient, onPatient
           className="hidden"
           onChange={(e) => {
             const file = e.target.files?.[0];
-            if (file) handleFileSelected(file);
+            if (file) setPendingFile(file);
             e.target.value = "";
           }}
         />
@@ -707,12 +740,13 @@ export function PatientChatPanel({ patientId, patient, refreshPatient, onPatient
         />
         <Button
           onClick={handleSubmit}
-          disabled={chatBusy || uploading || !input.trim()}
+          disabled={chatBusy || uploading || (!input.trim() && !pendingFile)}
           className="shrink-0"
         >
           <Send className="size-4" />
           Senden
         </Button>
+        </div>
       </div>
 
       {/* Mismatch-Modal */}

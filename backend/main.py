@@ -1279,6 +1279,7 @@ _IMAGE_MIMES = _BINARY_UPLOAD_MIMES - _PDF_MIMES
 async def upload_document(
     file: UploadFile = File(...),
     patient_id: str | None = Form(None),
+    extra_context: str = Form(""),
 ):
     """
     Streaming-Upload-Endpoint (NDJSON, chunked HTTP).
@@ -1324,7 +1325,8 @@ async def upload_document(
 
     async def ndjson_stream():
         async for event in extract_proposals_streaming(
-            llm, patient, file_content, content_type, image_mime_type=mime_type
+            llm, patient, file_content, content_type, image_mime_type=mime_type,
+            extra_context=extra_context,
         ):
             yield json.dumps(event, ensure_ascii=False) + "\n"
 

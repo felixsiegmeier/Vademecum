@@ -164,6 +164,7 @@ async def extract_proposals_streaming(
     content: str | bytes,
     content_type: Literal["pdf", "image", "text"],
     image_mime_type: str = "image/jpeg",
+    extra_context: str = "",
 ) -> AsyncGenerator[dict, None]:
     """2-Pass-Extraktion mit Live-Event-Stream (NDJSON über chunked HTTP).
 
@@ -181,6 +182,9 @@ async def extract_proposals_streaming(
     else:  # image
         assert isinstance(content, bytes)
         user_messages = [{"role": "user", "content": file_to_content_parts(content, image_mime_type)}]
+
+    if extra_context:
+        user_messages.append({"role": "user", "content": f"Zusätzlicher Kontext vom Nutzer:\n{extra_context}"})
 
     block1_system = _build_block1_system(patient)
     block2_system = _build_block2_system(patient)
