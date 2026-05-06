@@ -1,3 +1,4 @@
+import asyncio
 import csv
 import hashlib
 import io
@@ -42,6 +43,10 @@ from storage import (
     update_meilenstein_content,
     BRIEF_FIELDS
 )
+
+import brief_storage
+import agent_brief
+from brief_storage import BRIEF_SECTIONS as _BRIEF_SECTIONS
 
 load_dotenv()
 
@@ -822,6 +827,103 @@ def delete_brief_endpoint(patient_id: str):
         raise HTTPException(404, "Kein Brief vorhanden")
     delete_brief(patient_id)
     return JSONResponse(content={"ok": True})
+
+
+# ── Brief-Agent V1 ────────────────────────────────────────────────────────────
+# Neue Arztbrief-Generierung via 4 parallele + 1 sequenzieller Sub-Agent.
+# Pfad: /api/brief/{patient_id}/* (von /api/patients/{id}/brief/* getrennt).
+# Frontend-Integration folgt in BR-A2.
+
+@app.get("/api/brief/{patient_id}")
+async def get_brief_agent(patient_id: str):
+    """Liefert aktuellen Brief-State (alle 5 Sektionen). Leeres Skelett wenn noch kein Brief."""
+    return brief_storage.load_brief(patient_id)
+
+
+@app.post("/api/brief/{patient_id}/generate")
+async def generate_brief_agent(patient_id: str):
+    """Generiert Diagnosen + Anamnese + Therapie parallel, dann Verlauf sequenziell.
+    Befunde-Sektion bleibt unverändert. Persistiert und gibt vollständigen State zurück."""
+    try:
+        patient = load_patient(patient_id)
+    except FileNotFoundError:
+        raise HTTPException(404, f"Patient {patient_id} nicht gefunden")
+
+    meilenstein_result = load_meilenstein(patient_id)
+    meilenstein_text = meilenstein_result[0] if meilenstein_result else None
+
+    current = brief_storage.load_brief(patient_id)
+    befunde_existing = current.get("befunde", "")
+
+    diag, anam, ther = await asyncio.gather(
+        agent_brief.generate_diagnosen(patient),
+        agent_brief.generate_anamnese(patient),
+        agent_brief.generate_therapie(patient),
+    )
+    verlauf = await agent_brief.generate_verlauf(
+        patient, meilenstein_text, befunde_existing, diag, anam, ther
+    )
+
+    new_brief = {**current, "diagnosen": diag, "anamnese": anam, "therapie": ther, "verlauf": verlauf}
+    brief_storage.save_brief(patient_id, new_brief)
+    return brief_storage.load_brief(patient_id)
+
+
+@app.post("/api/brief/{patient_id}/generate-section/{section}")
+async def regenerate_section_agent(patient_id: str, section: str):
+    """Re-generiert eine einzelne Sektion (nicht befunde). Verlauf bekommt aktuellen Storage-State."""
+    if section not in {"diagnosen", "anamnese", "therapie", "verlauf"}:
+        raise HTTPException(400, f"Section '{section}' nicht re-generierbar.")
+
+    try:
+        patient = load_patient(patient_id)
+    except FileNotFoundError:
+        raise HTTPException(404, f"Patient {patient_id} nicht gefunden")
+
+    current = brief_storage.load_brief(patient_id)
+
+    if section == "diagnosen":
+        result = await agent_brief.generate_diagnosen(patient)
+    elif section == "anamnese":
+        result = await agent_brief.generate_anamnese(patient)
+    elif section == "therapie":
+        result = await agent_brief.generate_therapie(patient)
+    else:  # verlauf
+        meilenstein_result = load_meilenstein(patient_id)
+        meilenstein_text = meilenstein_result[0] if meilenstein_result else None
+        result = await agent_brief.generate_verlauf(
+            patient,
+            meilenstein_text,
+            current.get("befunde", ""),
+            current.get("diagnosen", ""),
+            current.get("anamnese", ""),
+            current.get("therapie", ""),
+        )
+
+    brief_storage.update_section(patient_id, section, result)
+    return {section: result}
+
+
+@app.post("/api/brief/{patient_id}/format-befunde")
+async def format_befunde_agent(patient_id: str, body: dict):
+    """Pre-Pass: formatiert SAP-Roh-Befunde und persistiert in befunde-Sektion.
+    body: {raw_text: str}. Returns: {befunde: <formatiert>}."""
+    raw = body.get("raw_text", "").strip()
+    if not raw:
+        raise HTTPException(400, "raw_text leer.")
+    formatted = await agent_brief.format_sap_befunde(raw)
+    brief_storage.update_section(patient_id, "befunde", formatted)
+    return {"befunde": formatted}
+
+
+@app.put("/api/brief/{patient_id}/section/{section}")
+async def save_section_edit_agent(patient_id: str, section: str, body: dict):
+    """Autosave für User-Edits ohne LLM. body: {content: str}. Returns: {<section>: <content>}."""
+    if section not in _BRIEF_SECTIONS:
+        raise HTTPException(400, f"Unknown section '{section}'.")
+    content = body.get("content", "")
+    brief_storage.update_section(patient_id, section, content)
+    return {section: content}
 
 
 # ── Allgemeiner Chat (kein Patient-Kontext) ───────────────────────────────────

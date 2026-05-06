@@ -1,0 +1,207 @@
+"""Brief-Generator — 4 LLM-Sub-Agents + 1 Pre-Pass-Helper.
+
+Sub-Agents:
+  generate_diagnosen  — JSON-Mode → Markdown (flash-lite)
+  generate_anamnese   — plain Text (flash-lite)
+  generate_therapie   — JSON-Mode → Markdown (flash-lite)
+  generate_verlauf    — plain Text, lang (flash)
+  format_sap_befunde  — Pre-Pass Befunde-Formatierung (flash-lite)
+
+Modell-Wahl hardcoded; für Verlauf wird das flash-Modell via _flash() verwendet.
+"""
+
+import json
+import logging
+from pathlib import Path
+from typing import Optional
+
+import yaml
+
+from llm_client import LLMClient
+from models.patient import Patient
+
+logger = logging.getLogger(__name__)
+
+# Verlauf braucht das vollere flash-Modell; alle anderen nutzen flash-lite.
+_MODEL_FLASH = "gemini-2.0-flash-preview"
+
+# Lazy-initialisierte Clients — erst beim ersten LLM-Call erzeugt, damit
+# der Import vor load_dotenv() in main.py keine ValueError wirft.
+_llm_lite: Optional[LLMClient] = None
+_llm_flash: Optional[LLMClient] = None
+
+_PROMPTS_DIR = Path(__file__).parent / "prompts"
+_PROMPT_CACHE: dict[str, str] = {}
+
+
+def _lite() -> LLMClient:
+    global _llm_lite
+    if _llm_lite is None:
+        _llm_lite = LLMClient()
+    return _llm_lite
+
+
+def _flash() -> LLMClient:
+    global _llm_flash
+    if _llm_flash is None:
+        _llm_flash = LLMClient()
+        _llm_flash.model = _MODEL_FLASH
+    return _llm_flash
+
+
+def _get_prompt(name: str) -> str:
+    if name not in _PROMPT_CACHE:
+        _PROMPT_CACHE[name] = (_PROMPTS_DIR / name).read_text(encoding="utf-8")
+    return _PROMPT_CACHE[name]
+
+
+def _to_yaml(patient: Patient) -> str:
+    return yaml.safe_dump(
+        patient.model_dump(exclude_none=True, mode="json"),
+        allow_unicode=True,
+        sort_keys=False,
+        default_flow_style=False,
+        width=100,
+    )
+
+
+def _render_diagnosen(data: dict) -> str:
+    lines: list[str] = []
+    behandlung = data.get("behandlung") or []
+    if behandlung:
+        lines.append("**Behandlungsdiagnosen:**")
+        for i, item in enumerate(behandlung):
+            lines.append(f"- **{item}**" if i == 0 else f"- {item}")
+        lines.append("")
+    verlauf = data.get("verlauf") or []
+    if verlauf:
+        lines.append("**Verlaufsdiagnosen:**")
+        for item in verlauf:
+            lines.append(f"- {item}")
+        lines.append("")
+    vorbekannt = data.get("vorbekannt") or []
+    if vorbekannt:
+        lines.append("**Vorbekannte Diagnosen:**")
+        for item in vorbekannt:
+            lines.append(f"- {item}")
+    return "\n".join(lines).strip()
+
+
+def _render_therapie(data: dict) -> str:
+    lines: list[str] = []
+    initial_op = data.get("initial_op") or ""
+    if initial_op:
+        lines.append("**Initial-OP:**")
+        lines.append(initial_op)
+        lines.append("")
+    antimikrobiell = data.get("antimikrobiell") or []
+    if antimikrobiell:
+        lines.append("**Antimikrobielle Therapie:**")
+        for item in antimikrobiell:
+            lines.append(f"- {item}")
+        lines.append("")
+    weitere = data.get("weitere") or []
+    if weitere:
+        lines.append("**Weitere Prozeduren:**")
+        for item in weitere:
+            lines.append(f"- {item}")
+    return "\n".join(lines).strip()
+
+
+async def generate_diagnosen(patient: Patient) -> str:
+    filled = _get_prompt("brief_diagnosen.txt").replace("{patient_yaml}", _to_yaml(patient))
+    try:
+        resp = await _lite().chat_completion(
+            [{"role": "user", "content": filled}],
+            response_format={"type": "json_object"},
+            temperature=0,
+            max_tokens=1024,
+        )
+    except Exception:
+        logger.exception("[generate_diagnosen] LLM-Aufruf fehlgeschlagen")
+        return ""
+    raw = (resp.choices[0].message.content or "").strip()
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        logger.warning("[generate_diagnosen] Kein valides JSON: %s", raw[:300])
+        return raw
+    return _render_diagnosen(data)
+
+
+async def generate_anamnese(patient: Patient) -> str:
+    filled = _get_prompt("brief_anamnese.txt").replace("{patient_yaml}", _to_yaml(patient))
+    try:
+        resp = await _lite().chat_completion(
+            [{"role": "user", "content": filled}],
+            temperature=0,
+            max_tokens=1024,
+        )
+    except Exception:
+        logger.exception("[generate_anamnese] LLM-Aufruf fehlgeschlagen")
+        return ""
+    return (resp.choices[0].message.content or "").strip()
+
+
+async def generate_therapie(patient: Patient) -> str:
+    filled = _get_prompt("brief_therapie.txt").replace("{patient_yaml}", _to_yaml(patient))
+    try:
+        resp = await _lite().chat_completion(
+            [{"role": "user", "content": filled}],
+            response_format={"type": "json_object"},
+            temperature=0,
+            max_tokens=1024,
+        )
+    except Exception:
+        logger.exception("[generate_therapie] LLM-Aufruf fehlgeschlagen")
+        return ""
+    raw = (resp.choices[0].message.content or "").strip()
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        logger.warning("[generate_therapie] Kein valides JSON: %s", raw[:300])
+        return raw
+    return _render_therapie(data)
+
+
+async def generate_verlauf(
+    patient: Patient,
+    meilenstein: Optional[str],
+    befunde_formatted: str,
+    diagnosen: str,
+    anamnese: str,
+    therapie: str,
+) -> str:
+    filled = (
+        _get_prompt("brief_verlauf.txt")
+        .replace("{patient_yaml}", _to_yaml(patient))
+        .replace("{meilenstein_or_none}", meilenstein or "—")
+        .replace("{befunde_or_empty}", befunde_formatted or "—")
+        .replace("{diagnosen}", diagnosen or "—")
+        .replace("{anamnese}", anamnese or "—")
+        .replace("{therapie}", therapie or "—")
+    )
+    try:
+        resp = await _flash().chat_completion(
+            [{"role": "user", "content": filled}],
+            temperature=0,
+            max_tokens=4096,
+        )
+    except Exception:
+        logger.exception("[generate_verlauf] LLM-Aufruf fehlgeschlagen")
+        return ""
+    return (resp.choices[0].message.content or "").strip()
+
+
+async def format_sap_befunde(raw_text: str) -> str:
+    filled = _get_prompt("brief_befunde_format.txt").replace("{raw_text}", raw_text)
+    try:
+        resp = await _lite().chat_completion(
+            [{"role": "user", "content": filled}],
+            temperature=0,
+            max_tokens=4096,
+        )
+    except Exception:
+        logger.exception("[format_sap_befunde] LLM-Aufruf fehlgeschlagen")
+        return raw_text
+    return (resp.choices[0].message.content or "").strip()
