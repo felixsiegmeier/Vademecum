@@ -60,6 +60,7 @@ an der Trachealkanüle möglich."
 Output: Plain Markdown, Fließtext mit Absätzen pro Cluster. KEIN JSON, KEINE
 Sektion-Überschriften wie "## Verlauf".
 
+{extra_context}
 Kontext:
 - Patient (YAML): {patient_yaml}
 - Meilenstein-Übersicht: {meilenstein_or_none}

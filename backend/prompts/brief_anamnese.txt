@@ -20,5 +20,6 @@ Stilregeln:
 
 Output: Plain Markdown-Absatz, KEIN JSON, keine Überschrift.
 
+{extra_context}
 Patient (YAML):
 {patient_yaml}

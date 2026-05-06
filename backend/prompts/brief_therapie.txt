@@ -25,5 +25,6 @@ Regeln:
 - Datumsformat: TT.MM.JJJJ oder TT.MM. wenn Jahr aus Kontext klar.
 - Wenn ein Feld leer ist: leerer String / leere Liste.
 
+{extra_context}
 Patient (YAML):
 {patient_yaml}

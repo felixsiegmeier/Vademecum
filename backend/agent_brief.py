@@ -7,6 +7,9 @@ Sub-Agents:
   generate_verlauf    — plain Text, lang (flash)
   format_sap_befunde  — Pre-Pass Befunde-Formatierung (flash-lite)
 
+Alle 4 LLM-Sub-Agents akzeptieren optional extra_context: str — ephemerer
+Nutzer-Kontext der pro Call injiziert wird, nicht persistiert wird.
+
 Modell-Wahl hardcoded; für Verlauf wird das flash-Modell via _flash() verwendet.
 """
 
@@ -65,6 +68,19 @@ def _to_yaml(patient: Patient) -> str:
     )
 
 
+def _inject_extra_context(prompt: str, extra_context: str) -> str:
+    """Ersetzt {extra_context}-Platzhalter. Non-empty → Hinweis-Block; leer → entfernt."""
+    if not extra_context.strip():
+        return prompt.replace("{extra_context}\n", "").replace("{extra_context}", "")
+    block = (
+        "Zusätzliche Anmerkungen vom Bearbeiter, die nicht Teil der strukturierten Akte sind. "
+        "Berücksichtige sie sofern für diese Sektion relevant:\n"
+        + extra_context.strip()
+        + "\n"
+    )
+    return prompt.replace("{extra_context}", block)
+
+
 def _render_diagnosen(data: dict) -> str:
     lines: list[str] = []
     behandlung = data.get("behandlung") or []
@@ -108,8 +124,11 @@ def _render_therapie(data: dict) -> str:
     return "\n".join(lines).strip()
 
 
-async def generate_diagnosen(patient: Patient) -> str:
-    filled = _get_prompt("brief_diagnosen.txt").replace("{patient_yaml}", _to_yaml(patient))
+async def generate_diagnosen(patient: Patient, extra_context: str = "") -> str:
+    filled = _inject_extra_context(
+        _get_prompt("brief_diagnosen.txt").replace("{patient_yaml}", _to_yaml(patient)),
+        extra_context,
+    )
     try:
         resp = await _lite().chat_completion(
             [{"role": "user", "content": filled}],
@@ -129,8 +148,11 @@ async def generate_diagnosen(patient: Patient) -> str:
     return _render_diagnosen(data)
 
 
-async def generate_anamnese(patient: Patient) -> str:
-    filled = _get_prompt("brief_anamnese.txt").replace("{patient_yaml}", _to_yaml(patient))
+async def generate_anamnese(patient: Patient, extra_context: str = "") -> str:
+    filled = _inject_extra_context(
+        _get_prompt("brief_anamnese.txt").replace("{patient_yaml}", _to_yaml(patient)),
+        extra_context,
+    )
     try:
         resp = await _lite().chat_completion(
             [{"role": "user", "content": filled}],
@@ -143,8 +165,11 @@ async def generate_anamnese(patient: Patient) -> str:
     return (resp.choices[0].message.content or "").strip()
 
 
-async def generate_therapie(patient: Patient) -> str:
-    filled = _get_prompt("brief_therapie.txt").replace("{patient_yaml}", _to_yaml(patient))
+async def generate_therapie(patient: Patient, extra_context: str = "") -> str:
+    filled = _inject_extra_context(
+        _get_prompt("brief_therapie.txt").replace("{patient_yaml}", _to_yaml(patient)),
+        extra_context,
+    )
     try:
         resp = await _lite().chat_completion(
             [{"role": "user", "content": filled}],
@@ -171,15 +196,17 @@ async def generate_verlauf(
     diagnosen: str,
     anamnese: str,
     therapie: str,
+    extra_context: str = "",
 ) -> str:
-    filled = (
+    filled = _inject_extra_context(
         _get_prompt("brief_verlauf.txt")
         .replace("{patient_yaml}", _to_yaml(patient))
         .replace("{meilenstein_or_none}", meilenstein or "—")
         .replace("{befunde_or_empty}", befunde_formatted or "—")
         .replace("{diagnosen}", diagnosen or "—")
         .replace("{anamnese}", anamnese or "—")
-        .replace("{therapie}", therapie or "—")
+        .replace("{therapie}", therapie or "—"),
+        extra_context,
     )
     try:
         resp = await _flash().chat_completion(
