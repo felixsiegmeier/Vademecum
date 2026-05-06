@@ -102,6 +102,19 @@ export const THERAPIE_KATEGORIEN: Record<string, { label: string; color: string 
   sonstiges:      { label: "Sonstiges",      color: "bg-gray-100 text-gray-700" },
 };
 
+// ─── Brief-Generator V1 ─────────────────────────────────────────────────────
+
+export type BriefSectionKey = "diagnosen" | "anamnese" | "therapie" | "befunde" | "verlauf";
+
+export interface Brief {
+  diagnosen: string;
+  anamnese: string;
+  therapie: string;
+  befunde: string;
+  verlauf: string;
+  updated_at?: string | null;
+}
+
 // ─── Lernlog / Rule-Review ───────────────────────────────────────────────────
 
 export interface LearnConflict {
