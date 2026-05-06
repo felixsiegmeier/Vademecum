@@ -67,9 +67,9 @@ export default function RuleReviewModal({
   const [candidates, setCandidates] = useState<CandidateItem[]>(() => response.rule_candidates);
   const [cardStates, setCardStates] = useState<CardState[]>(() =>
     response.rule_candidates.map((c) => ({
-      accepted: false,
+      accepted: true,
       ruleText: c.rule_text,
-      conflictResolution: c.conflict ? null : null,
+      conflictResolution: null,
       discarded: false,
     }))
   );

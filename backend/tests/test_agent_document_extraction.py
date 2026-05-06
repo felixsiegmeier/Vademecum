@@ -537,11 +537,11 @@ def test_block2_prompt_includes_datum_short_format():
     assert "TT.MM." in prompt, "Datumsformat TT.MM. fehlt in extraction_block2.txt"
 
 
-def test_block1_prompt_includes_status_pflicht():
+def test_block1_prompt_status_not_derived():
     from pathlib import Path
     prompt = (Path(__file__).parent.parent / "prompts" / "extraction_block1.txt").read_text(encoding="utf-8")
-    assert "update_status(aktiv=true" in prompt
-    assert "MUSS-Aufrufe" in prompt or "Pflicht" in prompt.lower()
+    assert "update_status(aktiv=true" not in prompt
+    assert "NICHT ABLEITEN" in prompt or "NICHT" in prompt
 
 
 def test_block1_aufnahmedatum_clause_present():

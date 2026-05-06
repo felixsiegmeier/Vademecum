@@ -38,8 +38,8 @@ def test_add_tools_have_source_quote_required():
 
 
 def test_tool_count():
-    # 6 add + 6 update + 1 delete = 13 (add_prozedur entfernt)
-    assert len(TOOL_SCHEMAS) == 13
+    # 6 add + 5 update (update_status in TOOL_FUNCTIONS only) + 1 delete = 12 schemas; 13 functions
+    assert len(TOOL_SCHEMAS) == 12
     assert len(TOOL_FUNCTIONS) == 13
 
 
@@ -326,3 +326,23 @@ def test_add_therapie_indikation_optional(isolated_data):
     assert result["ok"] is True
     p = storage.load_patient("P-0001")
     assert p.therapien[-1].indikation is None
+
+
+# ── Status-Tool-Removal ───────────────────────────────────────────────────────
+
+def test_update_status_not_in_tool_schemas():
+    """update_status darf nicht in TOOL_SCHEMAS stehen — Status ist UI-only."""
+    from agent_tools import TOOL_SCHEMAS
+    names = [t["function"]["name"] for t in TOOL_SCHEMAS]
+    assert "update_status" not in names, (
+        "update_status muss aus TOOL_SCHEMAS entfernt sein — Status wird nur über UI-Toggle geändert."
+    )
+
+
+def test_extraction_block1_has_no_update_status_call():
+    """extraction_block1.txt darf keine update_status-Aufrufe enthalten."""
+    from pathlib import Path
+    text = (Path(__file__).parent.parent / "prompts" / "extraction_block1.txt").read_text(encoding="utf-8")
+    assert "update_status(aktiv" not in text, (
+        "extraction_block1.txt enthält noch einen update_status-Aufruf — muss entfernt werden."
+    )

@@ -196,20 +196,21 @@ ADD: Item existiert nachweislich nicht in <aktueller_stand> → add_*-Call.
 
 KONVERGENZ-PRINZIP: Re-Upload derselben Quelle → 0 neue add_*-Calls, wenn alle Items bereits vollständig erfasst sind. Kein Durchlaufen, keine Duplikate. update_stammdaten/update_anamnese/update_therapieziel dürfen dennoch laufen (Singletons konvergieren automatisch).
 
+STATUS — NICHT ABLEITEN
+
+update_status ist KEIN verfügbares Tool. Status ist UI-Sichtbarkeitssteuerung (aktiv = Patient
+in der Sidebar sichtbar) und kein klinischer Zustand. Niemals aus Dokumenten ableiten:
+NICHT auf inaktiv setzen bei „nach Hause entlassen", „verlegt", „verstorben" o.ä.
+Status wird ausschließlich über den UI-Toggle des Benutzers geändert.
+
 ERSTAUFNAHME
 
-Wenn <aktueller_stand> leer oder ohne Anamnese/Therapieziel/Status:
+Wenn <aktueller_stand> leer oder ohne Anamnese/Therapieziel:
 - update_stammdaten für fehlende Felder
 - update_anamnese (Aufnahmegrund + Vorgeschichte; siehe ANAMNESE-VOLLSTÄNDIGKEIT)
 - update_therapieziel (Behandlungsziel)
 
-MUSS-Aufrufe bei Erstaufnahme (auch wenn der Wert dem Default entspricht — explizit dokumentieren ist Pflicht):
-
-  update_status(aktiv=true, source_quote="<Beleg laufende Behandlung>")
-
-  → IMMER setzen, wenn der Patient aktuell behandelt wird.
-  → Niemals weglassen mit der Begründung "ist eh Default".
-  → Auf false setzen NUR bei Verlegung/Entlassung/Versterben in der Quelle.
+MUSS-Aufrufe bei Erstaufnahme:
 
   update_therapieziel(text="<Therapieziel>", source_quote="<Beleg>")
 
@@ -220,4 +221,4 @@ QUELLEN-ZITAT UND ABSCHLUSS
 
 Jeder Tool-Call braucht source_quote (wörtliches Zitat). Keine weiteren Calls → ohne Tool-Call antworten.
 
-Vor Beendigung der Iterationen prüfen: Bei Erstaufnahme (kein Status im aktuellen Stand) wurden update_status UND update_therapieziel gesetzt? Falls nicht: nachholen.
+Vor Beendigung der Iterationen prüfen: Bei Erstaufnahme wurde update_therapieziel gesetzt? Falls nicht: nachholen.
