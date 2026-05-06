@@ -145,19 +145,25 @@ def test_generate_therapie_renders_three_subblocks(isolated_data):
     assert "Kardioversion" in result
 
 
-# ── 8. agent_brief: Verlauf bekommt alle Kontext-Parameter ────────────────────
+# ── 8. agent_brief: Verlauf 3-Pass — Kontext-Durchreichung ───────────────────
 
 def test_generate_verlauf_passes_all_context(isolated_data):
-    """generate_verlauf injiziert meilenstein/befunde/3 Sektionen in den Prompt."""
+    """generate_verlauf: 3 LLM-Calls; Pass 1 enthält alle Kontext-Inputs; Ergebnis = Pass-3-Output."""
     patient = Patient(stammdaten=Stammdaten(id="P-0001", name="Test, Patient", aufnahmedatum="2026-04-01"))
 
-    mock_client = MagicMock()
-    mock_client.chat_completion = AsyncMock(
-        return_value=_llm_resp("Der Verlauf war komplikationslos.")
-    )
+    collected_stub = "CLUSTER A — ÜBERNAHME\n- Aufnahme nach OP\nSCHLUSS_INDIKATOR: KEINE_DOKUMENTATION"
+    audited_stub = collected_stub + "\nAUDIT_RESULT: ALLES_ABGEDECKT"
+    final_stub = "Der Verlauf war komplikationslos."
 
-    with patch("agent_brief._flash", return_value=mock_client):
-        asyncio.run(agent_brief.generate_verlauf(
+    mock_client = MagicMock()
+    mock_client.chat_completion = AsyncMock(side_effect=[
+        _llm_resp(collected_stub),
+        _llm_resp(audited_stub),
+        _llm_resp(final_stub),
+    ])
+
+    with patch("agent_brief._lite", return_value=mock_client):
+        result = asyncio.run(agent_brief.generate_verlauf(
             patient,
             meilenstein="MEILENSTEIN-TEXT",
             befunde_formatted="BEFUNDE-TEXT",
@@ -166,14 +172,24 @@ def test_generate_verlauf_passes_all_context(isolated_data):
             therapie="THERAPIE-TEXT",
         ))
 
-    call_args = mock_client.chat_completion.call_args
-    messages = call_args[0][0]
-    prompt_text = messages[0]["content"]
-    assert "MEILENSTEIN-TEXT" in prompt_text
-    assert "BEFUNDE-TEXT" in prompt_text
-    assert "DIAGNOSEN-TEXT" in prompt_text
-    assert "ANAMNESE-TEXT" in prompt_text
-    assert "THERAPIE-TEXT" in prompt_text
+    assert result == final_stub
+    assert mock_client.chat_completion.call_count == 3
+
+    # Pass 1 (collect): alle Original-Inputs müssen im Prompt stehen
+    pass1_prompt = mock_client.chat_completion.call_args_list[0][0][0][0]["content"]
+    assert "MEILENSTEIN-TEXT" in pass1_prompt
+    assert "BEFUNDE-TEXT" in pass1_prompt
+    assert "DIAGNOSEN-TEXT" in pass1_prompt
+    assert "ANAMNESE-TEXT" in pass1_prompt
+    assert "THERAPIE-TEXT" in pass1_prompt
+
+    # Pass 2 (audit): muss den collect-Output als {collected_substance} erhalten haben
+    pass2_prompt = mock_client.chat_completion.call_args_list[1][0][0][0]["content"]
+    assert "CLUSTER A — ÜBERNAHME" in pass2_prompt
+
+    # Pass 3 (curate): muss den audit-Output als {audited_substance} erhalten haben
+    pass3_prompt = mock_client.chat_completion.call_args_list[2][0][0][0]["content"]
+    assert "AUDIT_RESULT: ALLES_ABGEDECKT" in pass3_prompt
 
 
 # ── 9. agent_brief: format_sap_befunde ────────────────────────────────────────
@@ -392,3 +408,53 @@ def test_endpoint_regenerate_section_passes_extra_context(isolated_data):
 
     assert res.status_code == 200
     assert captured.get("extra_context") == "Hinweis nur für Anamnese"
+
+
+# ── 20. Prompt-Validierung: collect-Prompt enthält keine fertigen Brief-Sätze ──
+
+def test_collect_prompt_contains_no_finished_sentences(isolated_data):
+    """brief_verlauf_collect.txt darf keine Few-Shot-Fließtext-Sätze enthalten."""
+    import agent_brief as ab
+    prompt = ab._get_prompt("brief_verlauf_collect.txt")
+    # Sammler-Prompt soll kein fertiges Schluss-Pattern im Fließtext-Stil haben
+    assert "Wir verlegen" not in prompt
+    assert "verstarb am" not in prompt
+    # Stattdessen: CLUSTER-Struktur und Bullet-Format muss erkennbar sein
+    assert "CLUSTER" in prompt
+    assert "SCHLUSS_INDIKATOR" in prompt
+
+
+# ── 21. Prompt-Validierung: audit-Prompt hat read-only-Klausel ───────────────
+
+def test_audit_prompt_is_read_only_for_existing_items(isolated_data):
+    """brief_verlauf_audit.txt muss die Klausel 'NICHTS löschen oder umformulieren' enthalten."""
+    import agent_brief as ab
+    prompt = ab._get_prompt("brief_verlauf_audit.txt")
+    assert "NICHTS löschen oder umformulieren" in prompt
+    assert "{collected_substance}" in prompt
+    assert "AUDIT_RESULT" in prompt
+
+
+# ── 22. Prompt-Validierung: curate-Prompt verbietet neue Fakten ──────────────
+
+def test_curate_prompt_forbids_new_facts(isolated_data):
+    """brief_verlauf_curate.txt muss die Klausel 'KEINE NEUEN FAKTEN' enthalten."""
+    import agent_brief as ab
+    prompt = ab._get_prompt("brief_verlauf_curate.txt")
+    assert "KEINE NEUEN FAKTEN" in prompt
+    assert "{audited_substance}" in prompt
+    assert "SCHLUSS_INDIKATOR" in prompt
+
+
+# ── 23. Prompt-Validierung: collect-Prompt enthält Aufenthaltsdauer-Logik ─────
+
+def test_collect_prompt_includes_aufenthaltsdauer_logic(isolated_data):
+    """brief_verlauf_collect.txt muss SUBSTANZ_TIEFE und die 4-Stufen-Liste enthalten."""
+    import agent_brief as ab
+    prompt = ab._get_prompt("brief_verlauf_collect.txt")
+    assert "SUBSTANZ_TIEFE" in prompt
+    assert "minimal" in prompt
+    assert "kompakt" in prompt
+    assert "mittel" in prompt
+    assert "ausführlich" in prompt
+    assert "AUFENTHALTSDAUER_TAGE" in prompt

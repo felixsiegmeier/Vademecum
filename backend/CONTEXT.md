@@ -451,24 +451,45 @@ Die folgenden Regeln wurden aus früheren manuellen Korrekturen am Meilenstein a
 
 **FE-Types (B3):** `LearnRuleCandidate`, `LearnTrivialChange`, `LearnFromEditsResponse`, `StoredRule`, `ConflictResolution`, `MEILENSTEIN_SECTIONS`
 
-## Brief-Generator V1 (BR-A1 + BR-A2)
+## Brief-Generator V1 (BR-A1 + BR-A2 + BR-A2.5)
 
 ### Architektur Backend
 
 4 LLM-Sub-Agents + 1 Pre-Pass-Helper, alle in `backend/agent_brief.py`.
 Storage in `backend/brief_storage.py`, YAML unter `data/briefs/<patient_id>.yml`.
 
+Kein eigener `_flash()`-Client mehr — alle Passes nutzen `_lite()` (LLMClient-Default),
+vollständig via `LLM_BACKEND` Env-Variable steuerbar (vorbereitet für Qwen-Migration).
+
 **5 async-Funktionen** (alle generierenden akzeptieren `extra_context: str = ""`):
-| Funktion | Modell | LLM-Mode | Output |
-|---|---|---|---|
-| `generate_diagnosen(patient, extra_context)` | flash-lite | JSON-Mode | Markdown via `_render_diagnosen()` |
-| `generate_anamnese(patient, extra_context)` | flash-lite | Plain Text | Markdown-Absatz |
-| `generate_therapie(patient, extra_context)` | flash-lite | JSON-Mode | Markdown via `_render_therapie()` |
-| `generate_verlauf(patient, meilenstein, befunde, diagnosen, anamnese, therapie, extra_context)` | flash (`gemini-2.0-flash-preview`) | Plain Text | langer Fließtext |
-| `format_sap_befunde(raw_text)` | flash-lite | Plain Text | formatierter Markdown |
+| Funktion | LLM-Calls | Output |
+|---|---|---|
+| `generate_diagnosen(patient, extra_context)` | 1 (JSON-Mode) | Markdown via `_render_diagnosen()` |
+| `generate_anamnese(patient, extra_context)` | 1 (Plain Text) | Markdown-Absatz |
+| `generate_therapie(patient, extra_context)` | 1 (JSON-Mode) | Markdown via `_render_therapie()` |
+| `generate_verlauf(patient, meilenstein, befunde, diagnosen, anamnese, therapie, extra_context)` | **3-Pass** (Plain Text) | Fließtext |
+| `format_sap_befunde(raw_text)` | 1 (Plain Text) | formatierter Markdown |
+
+**Verlauf-Sub-Agent — 3-Pass-Architektur (BR-A2.5):**
+- Pass 1 `brief_verlauf_collect.txt` — Substanz-Sammler: filtert Fakten, sortiert Cluster nach
+  klinischer Wucht, berechnet Aufenthaltsdauer → SUBSTANZ_TIEFE (minimal/kompakt/mittel/ausführlich),
+  markiert SCHLUSS_INDIKATOR (LEBEND_VERLEGUNG/VERSTERBEN/KEINE_DOKUMENTATION)
+- Pass 2 `brief_verlauf_audit.txt` — Coverage-/Konsistenz-Auditor: read-only-Erweiterung;
+  prüft Diagnosen-Coverage, Konsistenz gegen Therapie/Befunde-Sektionen, YAML-Vollständigkeit;
+  markiert Ergänzungen mit (coverage)/(vollständigkeit); darf NICHT löschen oder umformulieren
+- Pass 3 `brief_verlauf_curate.txt` — Stil-Kurator: schreibt Fließtext mit Kohäsions-,
+  Hierarchie-, Tempus-, Hybrid-Struktur- und Schluss-Logik-Klauseln; richtet Textlänge nach
+  SUBSTANZ_TIEFE; darf KEINE NEUEN FAKTEN einführen
+
+Architektur-Begründung: trennt Substanz-Filterung (Pass 1) von Coverage/Konsistenz (Pass 2)
+von stilistischer Veredelung (Pass 3); robuster bei mittelmäßigen Modellen, vorbereitend für
+Qwen-Migration; Coverage-Lücken bei Diagnosen werden systematisch geschlossen.
+
+Gelöschter Prompt: `brief_verlauf.txt` (Single-Pass, ersetzt durch 3-Pass-Architektur).
 
 `extra_context` ist ephemer (kein Persistieren). `_inject_extra_context(prompt, extra)` ersetzt
-`{extra_context}`-Platzhalter in den 4 Prompt-Dateien.
+`{extra_context}`-Platzhalter in den 4 generierenden Prompt-Dateien (alle 3 Verlauf-Passes
++ Diagnosen + Anamnese + Therapie).
 
 **Storage-Schema (`data/briefs/<pid>.yml`, schema_version "0.1"):**
 ```yaml
@@ -520,4 +541,4 @@ Lazy-Init der LLM-Clients in `agent_brief.py` (kein Import-Zeit-Fehler vor `load
   `PendingContextZone` + Header-Regen-Button + 5 Sektionen in Reihenfolge
 
 ## Test-Stand
-173 passed
+177 passed

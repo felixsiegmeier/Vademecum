@@ -4,13 +4,14 @@ Sub-Agents:
   generate_diagnosen  — JSON-Mode → Markdown (flash-lite)
   generate_anamnese   — plain Text (flash-lite)
   generate_therapie   — JSON-Mode → Markdown (flash-lite)
-  generate_verlauf    — plain Text, lang (flash)
+  generate_verlauf    — 3-Pass: Substanz-Sammler → Coverage-Auditor → Stil-Kurator
   format_sap_befunde  — Pre-Pass Befunde-Formatierung (flash-lite)
 
 Alle 4 LLM-Sub-Agents akzeptieren optional extra_context: str — ephemerer
 Nutzer-Kontext der pro Call injiziert wird, nicht persistiert wird.
 
-Modell-Wahl hardcoded; für Verlauf wird das flash-Modell via _flash() verwendet.
+Modell für alle Passes: LLMClient() Default (keine eigene Flash-Konstante;
+vollständig via LLM_BACKEND Env-Variable steuerbar, vorbereitet für Qwen-Migration).
 """
 
 import json
@@ -25,13 +26,9 @@ from models.patient import Patient
 
 logger = logging.getLogger(__name__)
 
-# Verlauf braucht das vollere flash-Modell; alle anderen nutzen flash-lite.
-_MODEL_FLASH = "gemini-2.0-flash-preview"
-
-# Lazy-initialisierte Clients — erst beim ersten LLM-Call erzeugt, damit
+# Lazy-initialisierter Client — erst beim ersten LLM-Call erzeugt, damit
 # der Import vor load_dotenv() in main.py keine ValueError wirft.
 _llm_lite: Optional[LLMClient] = None
-_llm_flash: Optional[LLMClient] = None
 
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
 _PROMPT_CACHE: dict[str, str] = {}
@@ -42,14 +39,6 @@ def _lite() -> LLMClient:
     if _llm_lite is None:
         _llm_lite = LLMClient()
     return _llm_lite
-
-
-def _flash() -> LLMClient:
-    global _llm_flash
-    if _llm_flash is None:
-        _llm_flash = LLMClient()
-        _llm_flash.model = _MODEL_FLASH
-    return _llm_flash
 
 
 def _get_prompt(name: str) -> str:
@@ -198,26 +187,69 @@ async def generate_verlauf(
     therapie: str,
     extra_context: str = "",
 ) -> str:
-    filled = _inject_extra_context(
-        _get_prompt("brief_verlauf.txt")
-        .replace("{patient_yaml}", _to_yaml(patient))
-        .replace("{meilenstein_or_none}", meilenstein or "—")
-        .replace("{befunde_or_empty}", befunde_formatted or "—")
-        .replace("{diagnosen}", diagnosen or "—")
-        .replace("{anamnese}", anamnese or "—")
-        .replace("{therapie}", therapie or "—"),
-        extra_context,
-    )
+    """3-Pass: Substanz-Sammler (collect) → Coverage-Auditor (audit) → Stil-Kurator (curate)."""
+    patient_yaml = _to_yaml(patient)
+    common_replacements = {
+        "{patient_yaml}": patient_yaml,
+        "{meilenstein_or_none}": meilenstein or "—",
+        "{befunde_or_empty}": befunde_formatted or "—",
+        "{diagnosen}": diagnosen or "—",
+        "{anamnese}": anamnese or "—",
+        "{therapie}": therapie or "—",
+    }
+
+    def _fill(template: str, extra: dict | None = None) -> str:
+        for key, val in common_replacements.items():
+            template = template.replace(key, val)
+        if extra:
+            for key, val in extra.items():
+                template = template.replace(key, val)
+        return _inject_extra_context(template, extra_context)
+
+    # Pass 1 — Substanz-Sammler
+    collect_prompt = _fill(_get_prompt("brief_verlauf_collect.txt"))
     try:
-        resp = await _flash().chat_completion(
-            [{"role": "user", "content": filled}],
+        resp1 = await _lite().chat_completion(
+            [{"role": "user", "content": collect_prompt}],
             temperature=0,
             max_tokens=4096,
         )
     except Exception:
-        logger.exception("[generate_verlauf] LLM-Aufruf fehlgeschlagen")
+        logger.exception("[generate_verlauf/collect] LLM-Aufruf fehlgeschlagen")
         return ""
-    return (resp.choices[0].message.content or "").strip()
+    collected = (resp1.choices[0].message.content or "").strip()
+
+    # Pass 2 — Coverage-/Konsistenz-Auditor
+    audit_prompt = _fill(
+        _get_prompt("brief_verlauf_audit.txt"),
+        extra={"{collected_substance}": collected},
+    )
+    try:
+        resp2 = await _lite().chat_completion(
+            [{"role": "user", "content": audit_prompt}],
+            temperature=0,
+            max_tokens=4096,
+        )
+    except Exception:
+        logger.exception("[generate_verlauf/audit] LLM-Aufruf fehlgeschlagen")
+        return collected
+    audited = (resp2.choices[0].message.content or "").strip()
+
+    # Pass 3 — Stil-Kurator
+    curate_prompt = _fill(
+        _get_prompt("brief_verlauf_curate.txt"),
+        extra={"{audited_substance}": audited},
+    )
+    try:
+        resp3 = await _lite().chat_completion(
+            [{"role": "user", "content": curate_prompt}],
+            temperature=0,
+            max_tokens=4096,
+        )
+    except Exception:
+        logger.exception("[generate_verlauf/curate] LLM-Aufruf fehlgeschlagen")
+        return audited
+    return (resp3.choices[0].message.content or "").strip()
 
 
 async def format_sap_befunde(raw_text: str) -> str:
