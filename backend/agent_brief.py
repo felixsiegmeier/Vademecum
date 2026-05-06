@@ -305,67 +305,33 @@ async def polish_section(
     current_text: str,
     extra_context: str = "",
     patient: Optional["Patient"] = None,
-    meilenstein: Optional[str] = None,
-    befunde_formatted: str = "",
-    diagnosen: str = "",
-    anamnese: str = "",
-    therapie: str = "",
 ) -> str:
-    """Stilistische Überarbeitung einer einzelnen Brief-Sektion.
+    """Lektor-Korrektur einer einzelnen Brief-Sektion (alle 4 Sektionen).
 
-    Verlauf: Curate-Pass mit current_text als audited_substance (volle Verlauf-Stilregeln).
-    Andere Sektionen: generischer Polish-Prompt — Fakten bleiben, Stil wird verbessert.
+    Verlauf: brief_verlauf_polish.txt (Lektor-Klauseln, kein Curate-Pass).
+    Andere: brief_section_polish.txt — gleiche Lektor-Klauseln, Struktur-Treue-Hinweis.
     """
     patient_id = patient.stammdaten.id if patient else ""
-
-    if section == "verlauf":
-        verlauf_rules = learning_storage.load_rules(domain="brief", section="verlauf")
-        common = {
-            "{patient_yaml}": _to_yaml(patient) if patient else "",
-            "{meilenstein_or_none}": meilenstein or "—",
-            "{befunde_or_empty}": befunde_formatted or "—",
-            "{diagnosen}": diagnosen or "—",
-            "{anamnese}": anamnese or "—",
-            "{therapie}": therapie or "—",
-        }
-        template = _get_prompt("brief_verlauf_curate.txt")
-        for k, v in common.items():
-            template = template.replace(k, v)
-        template = template.replace("{audited_substance}", current_text)
-        prompt = _inject_rules(
-            _inject_extra_context(template, extra_context),
-            _build_rules_block(verlauf_rules),
+    prompt_file = "brief_verlauf_polish.txt" if section == "verlauf" else "brief_section_polish.txt"
+    rules = learning_storage.load_rules(domain="brief", section=section)
+    prompt = _inject_rules(
+        _inject_extra_context(
+            _get_prompt(prompt_file).replace("{current_text}", current_text),
+            extra_context,
+        ),
+        _build_rules_block(rules),
+    )
+    max_tokens = 4096 if section == "verlauf" else 2048
+    try:
+        resp = await _lite().chat_completion(
+            [{"role": "user", "content": prompt}],
+            temperature=0,
+            max_tokens=max_tokens,
         )
-        try:
-            resp = await _lite().chat_completion(
-                [{"role": "user", "content": prompt}],
-                temperature=0,
-                max_tokens=4096,
-            )
-        except Exception:
-            logger.exception("[polish_section/verlauf] LLM-Aufruf fehlgeschlagen")
-            return current_text
-        result = (resp.choices[0].message.content or "").strip()
-    else:
-        rules = learning_storage.load_rules(domain="brief", section=section)
-        prompt = _inject_rules(
-            _inject_extra_context(
-                _get_prompt("brief_section_polish.txt").replace("{current_text}", current_text),
-                extra_context,
-            ),
-            _build_rules_block(rules),
-        )
-        try:
-            resp = await _lite().chat_completion(
-                [{"role": "user", "content": prompt}],
-                temperature=0,
-                max_tokens=2048,
-            )
-        except Exception:
-            logger.exception("[polish_section/%s] LLM-Aufruf fehlgeschlagen", section)
-            return current_text
-        result = (resp.choices[0].message.content or "").strip()
-
+    except Exception:
+        logger.exception("[polish_section/%s] LLM-Aufruf fehlgeschlagen", section)
+        return current_text
+    result = (resp.choices[0].message.content or "").strip()
     if patient_id:
         learning_storage.save_last_output(patient_id, result, domain="brief", section=section)
     return result

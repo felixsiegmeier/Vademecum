@@ -167,7 +167,7 @@ export default function BriefSection({
             variant="ghost"
             size="icon-xs"
             onClick={() => setShowRefreshDialog(true)}
-            title="Glätten / Neu generieren"
+            title="Korrekturlesen / Neu generieren"
             disabled={disabled || generating}
           >
             {generating ? (
@@ -235,8 +235,8 @@ export default function BriefSection({
                     : "border-border bg-background text-muted-foreground hover:text-foreground"
                 )}
               >
-                <div className="font-medium mb-0.5">Glätten</div>
-                <div className="text-xs text-muted-foreground">Stilistische Überarbeitung, klinische Fakten bleiben</div>
+                <div className="font-medium mb-0.5">Korrekturlesen</div>
+                <div className="text-xs text-muted-foreground">Rechtschreibung, Grammatik und Tippfehler. Formulierungen und Inhalt bleiben.</div>
               </button>
               <button
                 onClick={() => setRefreshMode("regenerate")}

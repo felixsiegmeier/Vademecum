@@ -550,3 +550,74 @@ def test_polish_section_endpoint_invalid_section(isolated_data):
     _make_patient(pid)
     res = client.post("/api/brief/P-0001/polish-section/befunde", json={})
     assert res.status_code == 400
+
+
+# ── 26. polish_section — Lektor-Verhalten ─────────────────────────────────────
+
+def test_polish_section_verlauf_uses_verlauf_polish_prompt(isolated_data):
+    """polish_section(verlauf) muss brief_verlauf_polish.txt laden, nicht brief_verlauf_curate.txt."""
+    import agent_brief as ab
+
+    captured_prompts = []
+
+    async def capture_and_return(messages, **kwargs):
+        captured_prompts.append(messages[0]["content"])
+        return _llm_resp(messages[0]["content"])  # Echo input
+
+    with patch.object(ab._lite(), "chat_completion", new=capture_and_return):
+        import asyncio
+        asyncio.run(ab.polish_section(
+            section="verlauf",
+            current_text="Patient wurde verlegt.",
+        ))
+
+    assert len(captured_prompts) == 1
+    prompt = captured_prompts[0]
+    assert "AUFGABE: Korrekturlesen" in prompt, "Verlauf-Polish muss Lektor-Klausel enthalten"
+    assert "SUBSTANZ_TIEFE" not in prompt, "Curate-Prompt darf nicht geladen werden"
+    assert "HYBRID-STRUKTUR" not in prompt, "Curate-Prompt-Klauseln dürfen nicht erscheinen"
+
+
+def test_polish_section_output_unchanged_when_no_errors(isolated_data):
+    """Wenn LLM den Input zurückgibt, ist der Output identisch (kein Aufblähen)."""
+    import agent_brief as ab
+
+    original = "Die Patientin wurde am 01.04.2026 aufgenommen."
+
+    with patch.object(ab._lite(), "chat_completion", new=AsyncMock(return_value=_llm_resp(original))):
+        import asyncio
+        result = asyncio.run(ab.polish_section(section="anamnese", current_text=original))
+
+    assert result == original
+
+
+def test_polish_section_corrects_typo(isolated_data):
+    """Wenn LLM einen Tippfehler korrigiert, gibt polish_section die korrigierte Version zurück."""
+    import agent_brief as ab
+
+    original = "Die Patientinn wurde aufgenommen."
+    corrected = "Die Patientin wurde aufgenommen."
+
+    with patch.object(ab._lite(), "chat_completion", new=AsyncMock(return_value=_llm_resp(corrected))):
+        import asyncio
+        result = asyncio.run(ab.polish_section(section="anamnese", current_text=original))
+
+    assert result == corrected
+
+
+def test_polish_section_all_sections_use_lektor_prompt(isolated_data):
+    """Alle 4 Sektionen landen im Lektor-Prompt (AUFGABE: Korrekturlesen)."""
+    import agent_brief as ab
+
+    for section in ("diagnosen", "anamnese", "therapie", "verlauf"):
+        captured = []
+
+        async def cap(messages, **kwargs):
+            captured.append(messages[0]["content"])
+            return _llm_resp("ok")
+
+        with patch.object(ab._lite(), "chat_completion", new=cap):
+            import asyncio
+            asyncio.run(ab.polish_section(section=section, current_text="x"))
+
+        assert "AUFGABE: Korrekturlesen" in captured[0], f"Sektion '{section}' hat kein Lektor-Prompt"

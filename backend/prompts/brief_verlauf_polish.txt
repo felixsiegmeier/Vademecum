@@ -16,8 +16,9 @@ UMFORMULIEREN (extrem hohe Schwelle):
 
 VERBOTEN (hart):
 - Inhaltliche Ergänzungen jeder Art.
-- "Fehlende" Einträge, Diagnosen, Therapien oder Sätze vervollständigen.
+- "Fehlende" Cluster, Diagnosen, Therapien, Verlegungssätze, Schlussformeln vervollständigen.
 - Aufblähen, Ausschmücken, Stil-"Verschönerungen".
+- Wiederholungen aus einem ursprünglichen Volltext rekonstruieren, der nicht im Input steht.
 - Längen-Vorgaben anwenden (es gibt keine).
 
 REGEL DES ZWEIFELS:
@@ -27,12 +28,12 @@ REGEL DES ZWEIFELS:
 EINGABE-TREUE:
 - Der Eingabetext ist die maßgebliche Vorlage.
 - Übernimm Umfang, Struktur, Reihenfolge und Aussagen 1:1.
-- Die Eingabe-Struktur (Liste, Fließtext, Aufzählung, Markdown-Formatierung) wird exakt beibehalten — keine eigene Struktur-Vorgabe.
 - Wenn der Eingabetext kurz ist, bleibt der Output kurz.
+- Wenn ein Cluster im Eingabetext fehlt, erwähne ihn nicht.
 
 {gelernte_regeln}
 Hinweis: Wenn eine gelernte Regel oder ein Zusatzkontext mit der Eingabe-Treue oder dem Aufblähverbot kollidiert, gewinnen die Lektor-Regeln oben.
 {extra_context}
 
-Abschnitt zur Korrektur:
+Verlaufs-Fließtext zur Korrektur:
 {current_text}
