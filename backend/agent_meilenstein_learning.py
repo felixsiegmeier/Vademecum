@@ -55,7 +55,9 @@ class RuleCandidate(BaseModel):
 
 
 class TrivialChange(BaseModel):
-    description: str
+    section: str = ""
+    rule_text: str = ""
+    reasoning: str = ""
     anchor: str = ""
 
 

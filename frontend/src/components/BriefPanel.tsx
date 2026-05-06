@@ -20,6 +20,7 @@ import {
   saveSectionEdit,
   learnFromEdits,
   deleteBrief,
+  getLastSnapshot,
 } from "../api/brief";
 import BriefOnboarding from "./BriefOnboarding";
 import BriefSection from "./BriefSection";
@@ -69,13 +70,17 @@ export default function BriefPanel({ patientId }: Props) {
   const load = useCallback(() => {
     setLoading(true);
     setLoadError(null);
-    getBrief(patientId)
-      .then((b) => {
-        setBrief(b);
+    Promise.all([
+      getBrief(patientId),
+      ...LEARNABLE.map((k) => getLastSnapshot("brief", k, patientId)),
+    ])
+      .then(([b, ...snapshots]) => {
+        setBrief(b as Brief);
         const initial: Partial<Record<BriefSectionKey, string>> = {};
-        for (const k of GENERATABLE) {
-          if (b[k]) initial[k] = b[k];
-        }
+        LEARNABLE.forEach((k, i) => {
+          const snap = snapshots[i] as string | null;
+          if (snap) initial[k] = snap;
+        });
         setLastGenerated(initial);
       })
       .catch((e: Error) => setLoadError(e.message))

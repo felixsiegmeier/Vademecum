@@ -106,7 +106,7 @@ def test_learn_from_edits_returns_candidates_with_conflict_field(isolated_data):
                 anchor="TTE: LVEF 30%",
             )
         ],
-        trivial_changes=[TrivialChange(description="Tippfehler korrigiert", anchor="LVEF 30%")],
+        trivial_changes=[TrivialChange(section="Befunde", rule_text="LVEF immer ausschreiben", reasoning="Lesbarkeit", anchor="LVEF 30%")],
     )
     conflict = ConflictResult(has_conflict=False, explanation="", conflicting_rule_id="")
 
@@ -135,7 +135,8 @@ def test_learn_from_edits_returns_candidates_with_conflict_field(isolated_data):
 
     assert len(body["trivial_changes"]) == 1
     tc = body["trivial_changes"][0]
-    assert tc["description"] == "Tippfehler korrigiert"
+    assert tc["rule_text"] == "LVEF immer ausschreiben"
+    assert tc["section"] == "Befunde"
 
 
 # ── Endpoint: save-rules ─────────────────────────────────────────────────────

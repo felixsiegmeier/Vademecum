@@ -25,12 +25,13 @@ Gut (generalisierbar): "KHK-Diagnose immer mit relevanter Interventionshistorie 
 
 == Anleitung ==
 
-- Ignoriere Tippfehler-Korrekturen und reine Wortwahl-Änderungen ohne inhaltliche Regel → diese gehören in trivial_changes.
+- Extrahiere aus JEDER erkennbaren Änderung eine Regel — entweder in candidates (wichtig, generalisierbar) oder in trivial_changes (stilistisch, weniger wichtig).
 - Ignoriere Korrekturen, die nur für diesen speziellen Patienten gelten.
-- Extrahiere nur Regeln, die das System beim nächsten Patienten besser machen würden → diese gehören in candidates.
-- Maximal 10 Kandidaten. Leere Liste wenn keine generalisierbaren Regeln erkennbar.
+- Beide Listen haben das gleiche Format: section, rule_text, reasoning, anchor.
+- candidates: Änderungen, die das System beim nächsten Patienten klar besser machen. Maximal 10.
+- trivial_changes: Stilistische oder weniger wichtige Änderungen — trotzdem als vollständige Regel formuliert.
 - reasoning: Kurze Begründung (1 Satz) warum diese Differenz eine allgemeine Regel ergibt.
-- anchor: Direktes Zitat (max. 80 Zeichen) aus dem bearbeiteten Meilenstein, das die Regel belegt. Kein Patientenbezug.
+- anchor: Direktes Zitat (max. 80 Zeichen) aus dem bearbeiteten Text, das die Regel belegt. Kein Patientenbezug.
 
 == Ausgabeformat ==
 
@@ -42,12 +43,14 @@ Antworte ausschließlich mit validem JSON (kein Markdown, kein Kommentar):
       "section": "Sektion-Name",
       "rule_text": "Allgemeine Regel in einem Satz",
       "reasoning": "Begründung warum das eine allgemeine Regel ist",
-      "anchor": "Kurzes Zitat aus dem bearbeiteten Meilenstein"
+      "anchor": "Kurzes Zitat aus dem bearbeiteten Text"
     }
   ],
   "trivial_changes": [
     {
-      "description": "Kurze Beschreibung der trivialen Änderung",
+      "section": "Sektion-Name",
+      "rule_text": "Allgemeine Regel in einem Satz",
+      "reasoning": "Begründung (kurz, da stilistisch)",
       "anchor": "Kurzes Zitat"
     }
   ]

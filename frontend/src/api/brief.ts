@@ -184,6 +184,20 @@ export async function rebuildLearnRule(
   return res.json();
 }
 
+export async function getLastSnapshot(
+  domain: string,
+  section: string | undefined,
+  patientId: string,
+): Promise<string | null> {
+  const url = section
+    ? `/api/learn/${domain}/${section}/last/${patientId}`
+    : `/api/learn/${domain}/last/${patientId}`;
+  const res = await fetch(url);
+  if (!res.ok) return null;
+  const data: { text: string | null } = await res.json();
+  return data.text;
+}
+
 export async function getSystemPrompt(domain: string, section?: string): Promise<string> {
   const res = await fetch(`${learnBase(domain, section)}/system-prompt`);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);

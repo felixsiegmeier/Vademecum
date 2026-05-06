@@ -567,7 +567,7 @@ async def learn_meilenstein_from_edits(req: LearnFromEditsRequest):
         })
 
     trivial_changes = [
-        {"description": tc.description, "anchor": tc.anchor}
+        {"section": tc.section, "rule_text": tc.rule_text, "reasoning": tc.reasoning, "anchor": tc.anchor}
         for tc in extraction.trivial_changes
     ]
 
@@ -697,7 +697,7 @@ async def learn_brief_from_edits(section: str, req: LearnFromEditsRequest):
         })
 
     trivial_changes = [
-        {"description": tc.description, "anchor": tc.anchor}
+        {"section": tc.section, "rule_text": tc.rule_text, "reasoning": tc.reasoning, "anchor": tc.anchor}
         for tc in extraction.trivial_changes
     ]
 
@@ -777,6 +777,21 @@ def learn_brief_delete_rule(section: str, rule_id: str):
     if len(filtered) == len(existing):
         raise HTTPException(404, f"Regel {rule_id} nicht gefunden.")
     learning_storage.save_rules(filtered, domain="brief", section=section)
+
+
+@app.get("/api/learn/brief/{section}/last/{patient_id}")
+def learn_brief_last_snapshot(section: str, patient_id: str):
+    """Liefert den zuletzt gespeicherten Snapshot für eine Brief-Sektion. text=null wenn keiner."""
+    _assert_valid_brief_section(section)
+    text = learning_storage.load_last_output(patient_id, domain="brief", section=section)
+    return JSONResponse(content={"text": text})
+
+
+@app.get("/api/learn/meilenstein/last/{patient_id}")
+def learn_meilenstein_last_snapshot(patient_id: str):
+    """Liefert den zuletzt gespeicherten Meilenstein-Snapshot. text=null wenn keiner."""
+    text = learning_storage.load_last_output(patient_id, domain="meilenstein")
+    return JSONResponse(content={"text": text})
 
 
 # ── Brief ─────────────────────────────────────────────────────────────────────

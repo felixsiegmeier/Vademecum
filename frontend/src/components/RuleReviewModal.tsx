@@ -10,33 +10,14 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import RuleCandidateCard from "./RuleCandidateCard";
 import { rebuildLearnRule, saveLearnRules } from "../api/brief";
 import type {
   ConflictResolution,
   LearnFromEditsResponse,
   LearnRuleCandidate,
+  LearnTrivialChange,
 } from "../types";
-
-interface ConvertedCandidate {
-  section: string;
-  rule_text: string;
-  reasoning: string;
-  anchor: string;
-  conflict: null;
-  fromTrivial: true;
-}
-
-type CandidateItem = LearnRuleCandidate | ConvertedCandidate;
 
 interface CardState {
   accepted: boolean;
@@ -55,16 +36,24 @@ interface Props {
   onRulesSaved: () => void;
 }
 
+function trivialToCandidate(tc: LearnTrivialChange): LearnRuleCandidate {
+  return {
+    section: tc.section,
+    rule_text: tc.rule_text,
+    reasoning: tc.reasoning,
+    anchor: tc.anchor,
+    conflict: null,
+  };
+}
+
 export default function RuleReviewModal({
   open,
   onOpenChange,
   response,
   domain,
   section,
-  sections,
   onRulesSaved,
 }: Props) {
-  const [candidates, setCandidates] = useState<CandidateItem[]>(() => response.rule_candidates);
   const [cardStates, setCardStates] = useState<CardState[]>(() =>
     response.rule_candidates.map((c) => ({
       accepted: true,
@@ -73,49 +62,39 @@ export default function RuleReviewModal({
       discarded: false,
     }))
   );
+  const [trivialCardStates, setTrivialCardStates] = useState<CardState[]>(() =>
+    response.trivial_changes.map((tc) => ({
+      accepted: false,
+      ruleText: tc.rule_text,
+      conflictResolution: null,
+      discarded: false,
+    }))
+  );
   const [trivialExpanded, setTrivialExpanded] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const [trivialSections, setTrivialSections] = useState<string[]>(
-    response.trivial_changes.map(() => "")
-  );
-  const [trivialRuleTexts, setTrivialRuleTexts] = useState<string[]>(
-    response.trivial_changes.map(() => "")
-  );
-
   function updateCardState(idx: number, patch: Partial<CardState>) {
     setCardStates((prev) => prev.map((s, i) => (i === idx ? { ...s, ...patch } : s)));
+  }
+
+  function updateTrivialCardState(idx: number, patch: Partial<CardState>) {
+    setTrivialCardStates((prev) => prev.map((s, i) => (i === idx ? { ...s, ...patch } : s)));
   }
 
   function handleDiscard(idx: number) {
     updateCardState(idx, { discarded: true, accepted: false });
   }
 
-  function handleConvertTrivial(trivialIdx: number) {
-    const sectionVal = trivialSections[trivialIdx];
-    const ruleText = trivialRuleTexts[trivialIdx];
-    if (!sectionVal || !ruleText.trim()) {
-      toast.error("Bitte Sektion und Regeltext ausfüllen.");
-      return;
-    }
-    const trivialChange = response.trivial_changes[trivialIdx];
-    const newCandidate: ConvertedCandidate = {
-      section: sectionVal,
-      rule_text: ruleText.trim(),
-      reasoning: "",
-      anchor: trivialChange.anchor,
-      conflict: null,
-      fromTrivial: true,
-    };
-    setCandidates((prev) => [...prev, newCandidate]);
-    setCardStates((prev) => [
-      ...prev,
-      { accepted: false, ruleText: ruleText.trim(), conflictResolution: null, discarded: false },
-    ]);
+  function handleTrivialDiscard(idx: number) {
+    updateTrivialCardStates(idx, { discarded: true, accepted: false });
+  }
+
+  function updateTrivialCardStates(idx: number, patch: Partial<CardState>) {
+    setTrivialCardStates((prev) => prev.map((s, i) => (i === idx ? { ...s, ...patch } : s)));
   }
 
   async function handleRebuild(idx: number, clarification: string) {
-    const candidate = candidates[idx];
+    const candidate = response.rule_candidates[idx];
     const state = cardStates[idx];
     try {
       const data = await rebuildLearnRule(domain, section, {
@@ -126,11 +105,6 @@ export default function RuleReviewModal({
         clarification,
       });
       updateCardState(idx, { ruleText: data.rule_text });
-      setCandidates((prev) =>
-        prev.map((c, i) =>
-          i === idx ? { ...c, reasoning: data.reasoning, rule_text: data.rule_text } : c
-        )
-      );
     } catch {
       toast.error("Re-Build fehlgeschlagen.");
     }
@@ -144,7 +118,7 @@ export default function RuleReviewModal({
 
       cardStates.forEach((state, idx) => {
         if (!state.accepted || state.discarded) return;
-        const candidate = candidates[idx];
+        const candidate = response.rule_candidates[idx];
         if (state.conflictResolution === "discard_new") return;
 
         rulesToAdd.push({ section: candidate.section, rule_text: state.ruleText });
@@ -156,6 +130,12 @@ export default function RuleReviewModal({
         ) {
           ruleIdsToDelete.push(candidate.conflict.conflicting_rule_id);
         }
+      });
+
+      trivialCardStates.forEach((state, idx) => {
+        if (!state.accepted || state.discarded) return;
+        const tc = response.trivial_changes[idx];
+        rulesToAdd.push({ section: tc.section, rule_text: state.ruleText });
       });
 
       if (rulesToAdd.length === 0) {
@@ -174,10 +154,18 @@ export default function RuleReviewModal({
     }
   }
 
-  const visibleCards = candidates.map((c, i) => ({ c, state: cardStates[i], idx: i }))
+  const visibleCards = response.rule_candidates
+    .map((c, i) => ({ c, state: cardStates[i], idx: i }))
     .filter(({ state }) => !state.discarded);
 
-  const acceptedCount = cardStates.filter((s) => s.accepted && !s.discarded).length;
+  const visibleTrivials = response.trivial_changes
+    .map((tc, i) => ({ tc, state: trivialCardStates[i], idx: i }))
+    .filter(({ state }) => !state.discarded);
+
+  const acceptedCount =
+    cardStates.filter((s) => s.accepted && !s.discarded).length +
+    trivialCardStates.filter((s) => s.accepted && !s.discarded).length;
+
   const ruleCount = response.rule_candidates.length;
   const trivialCount = response.trivial_changes.length;
 
@@ -197,7 +185,7 @@ export default function RuleReviewModal({
 
         <ScrollArea className="flex-1 overflow-y-auto pr-1">
           <div className="space-y-3 pb-2">
-            {visibleCards.length === 0 && (
+            {visibleCards.length === 0 && trivialCount === 0 && (
               <p className="text-sm text-muted-foreground text-center py-6">
                 Alle Regelvorschläge verworfen.
               </p>
@@ -229,63 +217,18 @@ export default function RuleReviewModal({
                   }
                 </button>
                 {trivialExpanded && (
-                  <div className="border-t px-3 pb-3 space-y-3">
-                    {response.trivial_changes.map((tc, tidx) => (
-                      <div key={tidx} className="pt-3 space-y-2">
-                        <p className="text-xs text-foreground">{tc.description}</p>
-                        {tc.anchor && (
-                          <p className="text-xs text-muted-foreground border-l-2 border-muted pl-2 font-mono">
-                            „{tc.anchor}"
-                          </p>
-                        )}
-                        <div className="flex gap-2 items-end">
-                          <div className="flex-1 space-y-1">
-                            {sections ? (
-                              <Select
-                                value={trivialSections[tidx]}
-                                onValueChange={(v) =>
-                                  setTrivialSections((prev) => prev.map((s, i) => i === tidx ? v : s))
-                                }
-                              >
-                                <SelectTrigger className="h-7 text-xs">
-                                  <SelectValue placeholder="Sektion wählen…" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {sections.map((s) => (
-                                    <SelectItem key={s} value={s} className="text-xs">{s}</SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            ) : (
-                              <Input
-                                value={trivialSections[tidx]}
-                                onChange={(e) =>
-                                  setTrivialSections((prev) => prev.map((s, i) => i === tidx ? e.target.value : s))
-                                }
-                                className="h-7 text-xs"
-                                placeholder="Sektion…"
-                              />
-                            )}
-                            <Textarea
-                              value={trivialRuleTexts[tidx]}
-                              onChange={(e) =>
-                                setTrivialRuleTexts((prev) => prev.map((t, i) => i === tidx ? e.target.value : t))
-                              }
-                              rows={1}
-                              className="resize-none text-xs"
-                              placeholder="Regeltext formulieren…"
-                            />
-                          </div>
-                          <Button
-                            size="xs"
-                            variant="outline"
-                            className="text-xs shrink-0"
-                            onClick={() => handleConvertTrivial(tidx)}
-                          >
-                            Zur Regel
-                          </Button>
-                        </div>
-                      </div>
+                  <div className="border-t px-3 pb-3 pt-3 space-y-3">
+                    {visibleTrivials.map(({ tc, state, idx }) => (
+                      <RuleCandidateCard
+                        key={idx}
+                        candidate={trivialToCandidate(tc)}
+                        accepted={state.accepted}
+                        onToggleAccept={(v) => updateTrivialCardState(idx, { accepted: v })}
+                        onRuleTextChange={(t) => updateTrivialCardState(idx, { ruleText: t })}
+                        onDiscard={() => handleTrivialDiscard(idx)}
+                        conflictResolution={null}
+                        onConflictResolve={() => {}}
+                      />
                     ))}
                   </div>
                 )}

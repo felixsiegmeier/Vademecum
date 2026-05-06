@@ -131,7 +131,9 @@ export interface LearnRuleCandidate {
 }
 
 export interface LearnTrivialChange {
-  description: string;
+  section: string;
+  rule_text: string;
+  reasoning: string;
   anchor: string;
 }
 

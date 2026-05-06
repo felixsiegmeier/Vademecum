@@ -15,7 +15,7 @@ interface Props {
   onDiscard: () => void;
   conflictResolution: ConflictResolution | null;
   onConflictResolve: (res: ConflictResolution) => void;
-  onRebuild: (clarification: string) => Promise<void>;
+  onRebuild?: (clarification: string) => Promise<void>;
 }
 
 const SECTION_COLORS: Record<string, string> = {
@@ -56,7 +56,7 @@ export default function RuleCandidateCard({
     if (!clarification.trim()) return;
     setRebuilding(true);
     try {
-      await onRebuild(clarification.trim());
+      await onRebuild!(clarification.trim());
       setClarification("");
       setShowClarification(false);
     } finally {
@@ -162,41 +162,43 @@ export default function RuleCandidateCard({
       )}
 
       {/* Klarstellung toggle + rebuild */}
-      <div className="px-3 pb-2.5 border-t pt-2">
-        <Button
-          variant="ghost"
-          size="xs"
-          className="text-xs text-muted-foreground"
-          onClick={() => setShowClarification((v) => !v)}
-        >
-          {showClarification
-            ? <><ChevronDown className="size-3" /> Klarstellung ausblenden</>
-            : <><ChevronRight className="size-3" /> Klarstellung hinzufügen</>
-          }
-        </Button>
-        {showClarification && (
-          <div className="mt-2 space-y-2">
-            <Textarea
-              value={clarification}
-              onChange={(e) => setClarification(e.target.value)}
-              rows={2}
-              className="resize-none text-xs"
-              placeholder="Was soll die Regel genauer erfassen?"
-            />
-            <Button
-              size="xs"
-              variant="outline"
-              onClick={handleRebuild}
-              disabled={rebuilding || !clarification.trim()}
-            >
-              {rebuilding
-                ? <><Loader2 className="size-3 animate-spin" /> Verfeinere…</>
-                : <><WrapText className="size-3" /> Re-Build mit Klarstellung</>
-              }
-            </Button>
-          </div>
-        )}
-      </div>
+      {onRebuild && (
+        <div className="px-3 pb-2.5 border-t pt-2">
+          <Button
+            variant="ghost"
+            size="xs"
+            className="text-xs text-muted-foreground"
+            onClick={() => setShowClarification((v) => !v)}
+          >
+            {showClarification
+              ? <><ChevronDown className="size-3" /> Klarstellung ausblenden</>
+              : <><ChevronRight className="size-3" /> Klarstellung hinzufügen</>
+            }
+          </Button>
+          {showClarification && (
+            <div className="mt-2 space-y-2">
+              <Textarea
+                value={clarification}
+                onChange={(e) => setClarification(e.target.value)}
+                rows={2}
+                className="resize-none text-xs"
+                placeholder="Was soll die Regel genauer erfassen?"
+              />
+              <Button
+                size="xs"
+                variant="outline"
+                onClick={handleRebuild}
+                disabled={rebuilding || !clarification.trim()}
+              >
+                {rebuilding
+                  ? <><Loader2 className="size-3 animate-spin" /> Verfeinere…</>
+                  : <><WrapText className="size-3" /> Re-Build mit Klarstellung</>
+                }
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
