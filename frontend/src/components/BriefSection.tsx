@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Check, Copy, Loader2, Pencil, RefreshCw, X } from "lucide-react";
+import { Check, Copy, GraduationCap, Loader2, MessageSquarePlus, Pencil, RefreshCw, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -9,7 +9,9 @@ interface Props {
   title: string;
   content: string;
   generating?: boolean;
-  onRegenerate?: () => void;
+  onRegenerate?: (extraContext?: string) => void;
+  onLearn?: () => void;
+  canLearn?: boolean;
   onSave?: (value: string) => void;
   disabled?: boolean;
 }
@@ -19,6 +21,8 @@ export default function BriefSection({
   content,
   generating = false,
   onRegenerate,
+  onLearn,
+  canLearn = false,
   onSave,
   disabled = false,
 }: Props) {
@@ -27,6 +31,9 @@ export default function BriefSection({
   const [copied, setCopied] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [showContext, setShowContext] = useState(false);
+  const [contextText, setContextText] = useState("");
 
   function startEdit() {
     setDraft(content);
@@ -56,6 +63,12 @@ export default function BriefSection({
     });
   }
 
+  function handleRegenerate() {
+    onRegenerate?.(contextText.trim() || undefined);
+    setContextText("");
+    setShowContext(false);
+  }
+
   return (
     <div className="border rounded-md overflow-hidden">
       <div className="flex items-center gap-1.5 px-3 py-2 bg-muted/40 border-b">
@@ -76,6 +89,18 @@ export default function BriefSection({
             >
               <Pencil className="size-3.5" />
             </Button>
+
+            {onLearn && (
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                onClick={onLearn}
+                title={canLearn ? "Aus Änderungen lernen" : "Keine Änderungen seit letzter Generierung"}
+                disabled={disabled || !canLearn}
+              >
+                <GraduationCap className="size-3.5" />
+              </Button>
+            )}
           </>
         )}
 
@@ -86,21 +111,54 @@ export default function BriefSection({
         )}
 
         {onRegenerate && !editing && (
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            onClick={onRegenerate}
-            title="Neu generieren"
-            disabled={disabled || generating}
-          >
-            {generating ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              <RefreshCw className="size-3.5" />
-            )}
-          </Button>
+          <>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              onClick={() => setShowContext((v) => !v)}
+              title="Zusatzkontext eingeben"
+              disabled={disabled || generating}
+              className={cn(showContext && "text-amber-600 bg-amber-50")}
+            >
+              <MessageSquarePlus className="size-3.5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              onClick={handleRegenerate}
+              title="Neu generieren"
+              disabled={disabled || generating}
+            >
+              {generating ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <RefreshCw className="size-3.5" />
+              )}
+            </Button>
+          </>
         )}
       </div>
+
+      {showContext && !editing && (
+        <div className="border-b bg-amber-50/50 px-3 py-2 flex gap-2 items-start">
+          <Textarea
+            value={contextText}
+            onChange={(e) => setContextText(e.target.value)}
+            placeholder="Zusatzkontext für Neu-Generierung…"
+            rows={2}
+            className="flex-1 text-xs resize-none bg-white"
+            autoFocus
+          />
+          <Button
+            size="xs"
+            variant="ghost"
+            onClick={() => { setShowContext(false); setContextText(""); }}
+            className="mt-0.5 shrink-0"
+          >
+            <X className="size-3" />
+          </Button>
+        </div>
+      )}
 
       <div className="relative">
         {generating && (

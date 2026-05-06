@@ -1,24 +1,29 @@
 import { useCallback, useEffect, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import type { Brief, BriefSectionKey } from "../types";
+import type { Brief, BriefSectionKey, LearnFromEditsResponse } from "../types";
 import {
   generateBrief,
   getBrief,
   formatSapBefunde,
   regenerateSection,
   saveSectionEdit,
+  learnFromEdits,
 } from "../api/brief";
 import PendingContextZone from "./PendingContextZone";
 import BriefSection from "./BriefSection";
 import BefundeSection from "./BefundeSection";
+import BriefVisibilityPanel from "./BriefVisibilityPanel";
+import RuleReviewModal from "./RuleReviewModal";
 
 interface Props {
   patientId: string;
 }
 
 const GENERATABLE: BriefSectionKey[] = ["diagnosen", "anamnese", "therapie", "verlauf"];
+const LEARNABLE: BriefSectionKey[] = ["diagnosen", "anamnese", "therapie", "verlauf"];
+
 const SECTION_LABELS: Record<BriefSectionKey, string> = {
   diagnosen: "Diagnosen",
   anamnese: "Anamnese",
@@ -38,11 +43,31 @@ export default function BriefPanel({ patientId }: Props) {
 
   const [pendingContext, setPendingContext] = useState("");
 
+  // Track content at last generate per section to detect edits
+  const [lastGenerated, setLastGenerated] = useState<Partial<Record<BriefSectionKey, string>>>({});
+
+  // Learn flow
+  const [learning, setLearning] = useState<Partial<Record<BriefSectionKey, boolean>>>({});
+  const [learnResponse, setLearnResponse] = useState<LearnFromEditsResponse | null>(null);
+  const [learnSection, setLearnSection] = useState<BriefSectionKey | null>(null);
+  const [showLearnModal, setShowLearnModal] = useState(false);
+
+  // Visibility panel
+  const [showVisibility, setShowVisibility] = useState(false);
+
   const load = useCallback(() => {
     setLoading(true);
     setLoadError(null);
     getBrief(patientId)
-      .then(setBrief)
+      .then((b) => {
+        setBrief(b);
+        // Treat initially loaded content as generation baseline
+        const initial: Partial<Record<BriefSectionKey, string>> = {};
+        for (const k of GENERATABLE) {
+          if (b[k]) initial[k] = b[k];
+        }
+        setLastGenerated(initial);
+      })
       .catch((e: Error) => setLoadError(e.message))
       .finally(() => setLoading(false));
   }, [patientId]);
@@ -51,11 +76,22 @@ export default function BriefPanel({ patientId }: Props) {
 
   const isEmpty = !brief || GENERATABLE.every((k) => !brief[k]);
 
+  function markGenerated(updated: Partial<Brief>) {
+    setLastGenerated((prev) => {
+      const next = { ...prev };
+      for (const k of GENERATABLE) {
+        if (updated[k] !== undefined) next[k] = updated[k] as string;
+      }
+      return next;
+    });
+  }
+
   async function handleGenerate() {
     setGlobalGenerating(true);
     try {
       const updated = await generateBrief(patientId, pendingContext);
       setBrief(updated);
+      markGenerated(updated);
       setPendingContext("");
     } catch (e) {
       toast.error((e as Error).message);
@@ -64,11 +100,12 @@ export default function BriefPanel({ patientId }: Props) {
     }
   }
 
-  async function handleRegenerate(section: BriefSectionKey) {
+  async function handleRegenerate(section: BriefSectionKey, extraContext?: string) {
     setGenerating((prev) => ({ ...prev, [section]: true }));
     try {
-      const result = await regenerateSection(patientId, section, pendingContext);
+      const result = await regenerateSection(patientId, section, extraContext ?? pendingContext);
       setBrief((prev) => prev ? { ...prev, ...result } as Brief : null);
+      markGenerated(result);
       setPendingContext("");
     } catch (e) {
       toast.error(`${SECTION_LABELS[section]}: ${(e as Error).message}`);
@@ -77,10 +114,10 @@ export default function BriefPanel({ patientId }: Props) {
     }
   }
 
-  async function handleFormat(rawText: string) {
+  async function handleFormat(rawText: string, extraContext?: string) {
     setFormatting(true);
     try {
-      const formatted = await formatSapBefunde(patientId, rawText);
+      const formatted = await formatSapBefunde(patientId, rawText, extraContext);
       setBrief((prev) => prev ? { ...prev, befunde: formatted } : prev);
     } catch (e) {
       toast.error(`Befunde: ${(e as Error).message}`);
@@ -96,6 +133,41 @@ export default function BriefPanel({ patientId }: Props) {
         toast.error("Speichern fehlgeschlagen");
       });
     };
+  }
+
+  async function handleLearn(section: BriefSectionKey) {
+    setLearning((prev) => ({ ...prev, [section]: true }));
+    try {
+      const editedContent = brief?.[section] ?? "";
+      let data: LearnFromEditsResponse;
+      try {
+        data = await learnFromEdits("brief", section, patientId, editedContent);
+      } catch (e) {
+        if ((e as Error).message.startsWith("HTTP 404")) {
+          toast.info("Bitte zuerst generieren.");
+          return;
+        }
+        throw e;
+      }
+      const hasContent = data.rule_candidates.length > 0 || data.trivial_changes.length > 0;
+      if (!hasContent) {
+        toast.info("Keine relevanten Änderungen erkannt.");
+        return;
+      }
+      setLearnResponse(data);
+      setLearnSection(section);
+      setShowLearnModal(true);
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setLearning((prev) => ({ ...prev, [section]: false }));
+    }
+  }
+
+  function canLearn(section: BriefSectionKey): boolean {
+    const last = lastGenerated[section];
+    const current = brief?.[section];
+    return last !== undefined && current !== undefined && current.trim() !== last.trim();
   }
 
   const busy = globalGenerating || Object.values(generating).some(Boolean) || formatting;
@@ -167,6 +239,21 @@ export default function BriefPanel({ patientId }: Props) {
             )}
           </Button>
         </div>
+
+        {/* Visibility Sub-Panel toggle */}
+        <div className="border-b">
+          <button
+            onClick={() => setShowVisibility((v) => !v)}
+            className="w-full flex items-center gap-1.5 px-4 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
+          >
+            {showVisibility
+              ? <ChevronDown className="size-3" />
+              : <ChevronRight className="size-3" />
+            }
+            Prompt & Regeln
+          </button>
+          {showVisibility && <BriefVisibilityPanel />}
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
@@ -176,9 +263,11 @@ export default function BriefPanel({ patientId }: Props) {
             title={SECTION_LABELS[section]}
             content={brief?.[section] ?? ""}
             generating={generating[section]}
-            onRegenerate={() => handleRegenerate(section)}
+            onRegenerate={(extraContext) => handleRegenerate(section, extraContext)}
+            onLearn={LEARNABLE.includes(section) ? () => handleLearn(section) : undefined}
+            canLearn={canLearn(section)}
             onSave={handleSave(section)}
-            disabled={busy}
+            disabled={busy || !!learning[section]}
           />
         ))}
 
@@ -194,11 +283,31 @@ export default function BriefPanel({ patientId }: Props) {
           title={SECTION_LABELS["verlauf"]}
           content={brief?.verlauf ?? ""}
           generating={generating["verlauf"]}
-          onRegenerate={() => handleRegenerate("verlauf")}
+          onRegenerate={(extraContext) => handleRegenerate("verlauf", extraContext)}
+          onLearn={() => handleLearn("verlauf")}
+          canLearn={canLearn("verlauf")}
           onSave={handleSave("verlauf")}
-          disabled={busy}
+          disabled={busy || !!learning["verlauf"]}
         />
       </div>
+
+      {learnResponse && learnSection && (
+        <RuleReviewModal
+          open={showLearnModal}
+          onOpenChange={(o) => {
+            setShowLearnModal(o);
+            if (!o) { setLearnResponse(null); setLearnSection(null); }
+          }}
+          response={learnResponse}
+          domain="brief"
+          section={learnSection}
+          onRulesSaved={() => {
+            if (learnSection) {
+              setLastGenerated((prev) => ({ ...prev, [learnSection]: brief?.[learnSection] ?? "" }));
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

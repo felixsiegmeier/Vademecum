@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import RuleReviewModal from "./RuleReviewModal";
 import MeilensteinVisibilityPanel from "./MeilensteinVisibilityPanel";
+import { learnFromEdits } from "../api/brief";
 import type { LearnFromEditsResponse } from "../types";
 
 interface MeilensteinData {
@@ -142,23 +143,16 @@ export default function MeilensteinPanel({ patientId }: Props) {
   async function handleLearnFromEdits() {
     setLearning(true);
     try {
-      const res = await fetch("/api/meilenstein/learn-from-edits", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          patient_id: patientId,
-          edited_meilenstein: data?.content ?? "",
-        }),
-      });
-      if (res.status === 404) {
-        toast.info("Bitte zuerst Aktualisieren klicken.");
-        return;
+      let learnData: LearnFromEditsResponse;
+      try {
+        learnData = await learnFromEdits("meilenstein", undefined, patientId, data?.content ?? "");
+      } catch (e) {
+        if ((e as Error).message.startsWith("HTTP 404")) {
+          toast.info("Bitte zuerst Aktualisieren klicken.");
+          return;
+        }
+        throw e;
       }
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body?.detail ?? `HTTP ${res.status}`);
-      }
-      const learnData: LearnFromEditsResponse = await res.json();
       const hasContent =
         learnData.rule_candidates.length > 0 || learnData.trivial_changes.length > 0;
       if (!hasContent) {
@@ -271,18 +265,8 @@ export default function MeilensteinPanel({ patientId }: Props) {
         </div>
       </div>
 
-      {/* Editor */}
-      <div className="flex-1 overflow-hidden p-4">
-        <Textarea
-          value={data?.content ?? ""}
-          onChange={(e) => handleContentChange(e.target.value)}
-          className="w-full h-full resize-none font-mono"
-          spellCheck={false}
-        />
-      </div>
-
       {/* Visibility Sub-Panel toggle */}
-      <div className="border-t">
+      <div className="border-b">
         <button
           onClick={() => setShowVisibility((v) => !v)}
           className="w-full flex items-center gap-1.5 px-4 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
@@ -294,6 +278,16 @@ export default function MeilensteinPanel({ patientId }: Props) {
           Prompt & Regeln
         </button>
         {showVisibility && <MeilensteinVisibilityPanel />}
+      </div>
+
+      {/* Editor */}
+      <div className="flex-1 overflow-hidden p-4">
+        <Textarea
+          value={data?.content ?? ""}
+          onChange={(e) => handleContentChange(e.target.value)}
+          className="w-full h-full resize-none font-mono"
+          spellCheck={false}
+        />
       </div>
 
       {/* Confirm-Dialog */}
@@ -328,6 +322,8 @@ export default function MeilensteinPanel({ patientId }: Props) {
             if (!o) setLearnResponse(null);
           }}
           response={learnResponse}
+          domain="meilenstein"
+          sections={["Operationen & Prozeduren", "Behandlungsdiagnosen", "Relevante Nebendiagnosen", "Kardiale Funktion", "Antikoagulation", "Antimikrobielle Therapie", "Befunde", "Therapieziel / Patientenwille"]}
           onRulesSaved={() => {
             setLastGeneratedContent(data?.content ?? null);
           }}

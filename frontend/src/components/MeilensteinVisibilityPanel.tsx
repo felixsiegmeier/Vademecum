@@ -5,6 +5,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { getLearnRules, deleteLearnRule, getSystemPrompt } from "../api/brief";
 import type { StoredRule } from "../types";
 import { MEILENSTEIN_SECTIONS } from "../types";
 
@@ -23,9 +24,8 @@ export default function MeilensteinVisibilityPanel() {
   useEffect(() => {
     if (activeTab === "prompt" && promptContent === null && !promptLoading) {
       setPromptLoading(true);
-      fetch("/api/meilenstein/system-prompt")
-        .then((r) => r.json())
-        .then((d) => setPromptContent(d.content ?? ""))
+      getSystemPrompt("meilenstein")
+        .then((content) => setPromptContent(content))
         .catch(() => setPromptContent("Fehler beim Laden."))
         .finally(() => setPromptLoading(false));
     }
@@ -36,9 +36,8 @@ export default function MeilensteinVisibilityPanel() {
 
   function loadRules() {
     setRulesLoading(true);
-    fetch("/api/meilenstein/rules")
-      .then((r) => r.json())
-      .then((d) => setRules(d.rules ?? []))
+    getLearnRules("meilenstein")
+      .then((rules) => setRules(rules))
       .catch(() => setRules([]))
       .finally(() => setRulesLoading(false));
   }
@@ -46,8 +45,7 @@ export default function MeilensteinVisibilityPanel() {
   async function deleteRule(id: string) {
     setDeletingIds((prev) => new Set(prev).add(id));
     try {
-      const res = await fetch(`/api/meilenstein/rules/${id}`, { method: "DELETE" });
-      if (!res.ok && res.status !== 204) throw new Error(`HTTP ${res.status}`);
+      await deleteLearnRule("meilenstein", undefined, id);
       setRules((prev) => prev?.filter((r) => r.id !== id) ?? null);
     } catch (e) {
       toast.error((e as Error).message);

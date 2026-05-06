@@ -17,14 +17,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import RuleCandidateCard from "./RuleCandidateCard";
+import { rebuildLearnRule, saveLearnRules } from "../api/brief";
 import type {
   ConflictResolution,
   LearnFromEditsResponse,
   LearnRuleCandidate,
 } from "../types";
-import { MEILENSTEIN_SECTIONS as SECTIONS } from "../types";
 
 interface ConvertedCandidate {
   section: string;
@@ -48,6 +49,9 @@ interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   response: LearnFromEditsResponse;
+  domain: string;
+  section?: string;
+  sections?: readonly string[];
   onRulesSaved: () => void;
 }
 
@@ -55,6 +59,9 @@ export default function RuleReviewModal({
   open,
   onOpenChange,
   response,
+  domain,
+  section,
+  sections,
   onRulesSaved,
 }: Props) {
   const [candidates, setCandidates] = useState<CandidateItem[]>(() => response.rule_candidates);
@@ -69,7 +76,6 @@ export default function RuleReviewModal({
   const [trivialExpanded, setTrivialExpanded] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  // Trivial → convert state
   const [trivialSections, setTrivialSections] = useState<string[]>(
     response.trivial_changes.map(() => "")
   );
@@ -86,15 +92,15 @@ export default function RuleReviewModal({
   }
 
   function handleConvertTrivial(trivialIdx: number) {
-    const section = trivialSections[trivialIdx];
+    const sectionVal = trivialSections[trivialIdx];
     const ruleText = trivialRuleTexts[trivialIdx];
-    if (!section || !ruleText.trim()) {
+    if (!sectionVal || !ruleText.trim()) {
       toast.error("Bitte Sektion und Regeltext ausfüllen.");
       return;
     }
     const trivialChange = response.trivial_changes[trivialIdx];
     const newCandidate: ConvertedCandidate = {
-      section,
+      section: sectionVal,
       rule_text: ruleText.trim(),
       reasoning: "",
       anchor: trivialChange.anchor,
@@ -111,28 +117,23 @@ export default function RuleReviewModal({
   async function handleRebuild(idx: number, clarification: string) {
     const candidate = candidates[idx];
     const state = cardStates[idx];
-    const res = await fetch("/api/meilenstein/rebuild-rule", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    try {
+      const data = await rebuildLearnRule(domain, section, {
         section: candidate.section,
         original_rule_text: state.ruleText,
         original_reasoning: candidate.reasoning,
         anchor: candidate.anchor,
         clarification,
-      }),
-    });
-    if (!res.ok) {
+      });
+      updateCardState(idx, { ruleText: data.rule_text });
+      setCandidates((prev) =>
+        prev.map((c, i) =>
+          i === idx ? { ...c, reasoning: data.reasoning, rule_text: data.rule_text } : c
+        )
+      );
+    } catch {
       toast.error("Re-Build fehlgeschlagen.");
-      return;
     }
-    const data = await res.json();
-    updateCardState(idx, { ruleText: data.rule_text });
-    setCandidates((prev) =>
-      prev.map((c, i) =>
-        i === idx ? { ...c, reasoning: data.reasoning, rule_text: data.rule_text } : c
-      )
-    );
   }
 
   async function handleSave() {
@@ -162,16 +163,7 @@ export default function RuleReviewModal({
         return;
       }
 
-      const res = await fetch("/api/meilenstein/save-rules", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rules_to_add: rulesToAdd, rule_ids_to_delete: ruleIdsToDelete }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body?.detail ?? `HTTP ${res.status}`);
-      }
-      const data = await res.json();
+      const data = await saveLearnRules(domain, section, rulesToAdd, ruleIdsToDelete);
       toast.success(`${data.saved_count} Regel${data.saved_count !== 1 ? "n" : ""} gespeichert.`);
       onRulesSaved();
       onOpenChange(false);
@@ -224,7 +216,6 @@ export default function RuleReviewModal({
               />
             ))}
 
-            {/* Triviale Änderungen */}
             {trivialCount > 0 && (
               <div className="border rounded-md">
                 <button
@@ -249,21 +240,32 @@ export default function RuleReviewModal({
                         )}
                         <div className="flex gap-2 items-end">
                           <div className="flex-1 space-y-1">
-                            <Select
-                              value={trivialSections[tidx]}
-                              onValueChange={(v) =>
-                                setTrivialSections((prev) => prev.map((s, i) => i === tidx ? v : s))
-                              }
-                            >
-                              <SelectTrigger className="h-7 text-xs">
-                                <SelectValue placeholder="Sektion wählen…" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {SECTIONS.map((s) => (
-                                  <SelectItem key={s} value={s} className="text-xs">{s}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
+                            {sections ? (
+                              <Select
+                                value={trivialSections[tidx]}
+                                onValueChange={(v) =>
+                                  setTrivialSections((prev) => prev.map((s, i) => i === tidx ? v : s))
+                                }
+                              >
+                                <SelectTrigger className="h-7 text-xs">
+                                  <SelectValue placeholder="Sektion wählen…" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {sections.map((s) => (
+                                    <SelectItem key={s} value={s} className="text-xs">{s}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              <Input
+                                value={trivialSections[tidx]}
+                                onChange={(e) =>
+                                  setTrivialSections((prev) => prev.map((s, i) => i === tidx ? e.target.value : s))
+                                }
+                                className="h-7 text-xs"
+                                placeholder="Sektion…"
+                              />
+                            )}
                             <Textarea
                               value={trivialRuleTexts[tidx]}
                               onChange={(e) =>

@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 interface Props {
   content: string;
   formatting?: boolean;
-  onFormat: (rawText: string) => Promise<void>;
+  onFormat: (rawText: string, extraContext?: string) => Promise<void>;
   onSave: (value: string) => void;
   disabled?: boolean;
 }
@@ -29,9 +29,11 @@ export default function BefundeSection({
 }: Props) {
   const [mode, setMode] = useState<"view" | "paste" | "edit">(content ? "view" : "paste");
   const [rawText, setRawText] = useState("");
+  const [pasteContext, setPasteContext] = useState("");
   const [draft, setDraft] = useState("");
   const [reforDialog, setReforDialog] = useState(false);
   const [reforRaw, setReforRaw] = useState("");
+  const [reforContext, setReforContext] = useState("");
   const [copied, setCopied] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -42,13 +44,15 @@ export default function BefundeSection({
   }, [content]);
 
   async function handleFormat() {
-    await onFormat(rawText);
+    await onFormat(rawText, pasteContext.trim() || undefined);
     setRawText("");
+    setPasteContext("");
   }
 
   async function handleReformat() {
-    await onFormat(reforRaw);
+    await onFormat(reforRaw, reforContext.trim() || undefined);
     setReforRaw("");
+    setReforContext("");
     setReforDialog(false);
   }
 
@@ -97,7 +101,7 @@ export default function BefundeSection({
               <Button
                 variant="ghost"
                 size="icon-xs"
-                onClick={() => { setReforRaw(""); setReforDialog(true); }}
+                onClick={() => { setReforRaw(""); setReforContext(""); setReforDialog(true); }}
                 title="Neu formatieren"
                 disabled={disabled || formatting}
               >
@@ -133,6 +137,14 @@ export default function BefundeSection({
                 className="text-sm resize-none font-mono"
                 disabled={disabled || formatting}
                 spellCheck={false}
+              />
+              <Textarea
+                value={pasteContext}
+                onChange={(e) => setPasteContext(e.target.value)}
+                placeholder="Zusatzkontext (optional)…"
+                rows={2}
+                className="text-xs resize-none"
+                disabled={disabled || formatting}
               />
               <div className="flex justify-end gap-2">
                 <Button
@@ -194,6 +206,13 @@ export default function BefundeSection({
             rows={8}
             className="text-sm font-mono resize-none"
             spellCheck={false}
+          />
+          <Textarea
+            value={reforContext}
+            onChange={(e) => setReforContext(e.target.value)}
+            placeholder="Zusatzkontext (optional)…"
+            rows={2}
+            className="text-xs resize-none"
           />
           <DialogFooter>
             <Button variant="ghost" onClick={() => setReforDialog(false)}>Abbrechen</Button>
