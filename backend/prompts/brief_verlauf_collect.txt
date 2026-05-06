@@ -51,16 +51,42 @@ L. Therapieziel/Konsens — IMMER am Ende der Cluster, vor Schluss-Indikator
 
 Zwischen A (Übernahme) und L (Therapieziel) ordnest du die Cluster B-K nach Wucht. Beispiel: war Hämodynamik das prägende Problem, dann kommt C direkt nach A; war pulmonale Situation prägend, dann B direkt nach A.
 
-== AUFENTHALTSDAUER UND FILTER-STRENGE ==
+== AUFENTHALTSDAUER ALS HARTES SUBSTANZ_TIEFE-LIMIT ==
 
-Berechne aus dem Patient-YAML die Anzahl der dokumentierten ITS-Tage (vom Aufnahmedatum bis zum letzten Verlaufseintrag oder dem Schluss-Datum). Stelle die Substanz-Tiefe entsprechend ein:
+Berechne aus dem Patient-YAML die Aufenthaltsdauer (Aufnahmedatum bis letzter Verlaufseintrag oder Schluss-Datum). Die SUBSTANZ_TIEFE ist ein hartes Limit, keine Empfehlung:
 
-- 1-2 Tage: minimal — nur Initialeingriff, eine ggf. relevante intra-/postoperative Komplikation, aktueller Zustand. Cluster B-K nur einbeziehen, wenn es ein dokumentiertes klinisch entscheidendes Ereignis gab. Routine-Postop-Verlauf NICHT pro Cluster auflisten.
-- 3-7 Tage: kompakt — Initialeingriff plus 2-3 prägende Cluster mit jeweils 1-2 Hauptaussagen.
-- 8-21 Tage: mittel — bis zu 5-6 Cluster mit 2-3 Hauptaussagen, jeweils mit Trend/Komplikation falls dokumentiert.
-- über 21 Tage: ausführlich — alle relevanten Cluster, jeweils mit Verlaufs-Bogen (Eskalations-/Deeskalations-Punkte, Wendepunkte). Dies ist die einzige Stufe, in der breitere Cluster-Abdeckung sinnvoll ist.
+- unter 48h (Bed-and-Breakfast): SUBSTANZ_TIEFE = minimal     -- maximal 4-5 Sätze, ein Absatz
+- 2-5 Tage:                      SUBSTANZ_TIEFE = kompakt     -- 5-10 Sätze
+- 5-14 Tage:                     SUBSTANZ_TIEFE = mittel      -- 150-300 Wörter, 2-4 Absätze
+- über 14 Tage:                  SUBSTANZ_TIEFE = ausführlich -- 300-600 Wörter, 3-6 Absätze
 
-Die Aufenthaltsdauer setzt eine OBERGRENZE für die Substanz-Tiefe, nicht eine Untergrenze. Auch ein 30-Tage-Aufenthalt mit komplikationsarmem Verlauf bleibt kompakt, wenn die Doku wenig hergibt. Umgekehrt: ein 5-Tage-Aufenthalt mit Reanimation, Re-OP und Multiorganversagen darf die mittlere Stufe erreichen.
+INHALTLICHE KOMPLEXITÄT rechtfertigt KEINE Hochstufung:
+- Viele dokumentierte Diagnosen, Therapien oder Befunde sind KEIN Grund, von minimal auf kompakt oder höher zu gehen.
+- Diagnosen gehören in die Diagnosen-Sektion, nicht in den Verlauf.
+- Therapien gehören in die Therapie-Sektion, nicht in den Verlauf.
+- Bei einem 36h-Aufenthalt nach unkompliziertem CABG genügen 3-4 Sätze, auch wenn die OP komplex war und der Patient mehrere Vorerkrankungen hat.
+
+KOMPLIKATIONS-OVERRIDE (whitelist) — nur diese rechtfertigen Hochstufung um genau eine Stufe:
+- Reanimation während des Aufenthalts
+- ECMO-/Impella-/IABP-Eskalation oder Device-Wechsel
+- Major-Blutung mit Transfusionspflicht oder Re-OP
+- Sepsis-Entwicklung oder septischer Schock
+- Prolongiertes Weaning, Tracheotomie
+- Versterben auf der Station
+- Schwere neurologische Komplikation (Schlaganfall, Krampfanfall, Delir mit Eskalation)
+
+NICHT als Override-Kriterium gelten:
+- Routinemäßige Noradrenalin-Boli oder kurzfristige Katecholamin-Titration
+- Kurzfristige Sauerstoff-Erhöhung ohne respiratorische Eskalation
+- Einmalige Furosemid-Gabe oder andere bedarfsadaptierte Medikation
+- Postoperative Schmerztherapie
+- Standard-DAPT-Bridge oder Antikoag-Wiederaufnahme nach SOP
+
+NEGATIV-BEISPIEL (so NICHT):
+Patient mit CABG am Tag 1, Verlegung Tag 2 (ca. 36h, unkomplizierter Verlauf).
+FALSCH: 3 Absätze mit Cluster-Brücken zu Vorerkrankungen, DAPT-Bridge-Erläuterung als eigenem Cluster, Antikoag-Wiederaufnahme-Absatz, rhetorischer Verlegungs-Klammersatz.
+RICHTIG (minimal): 3-4 Sätze, ein Absatz, keine Cluster-Brücken. Skelett:
+"Aufnahme postoperativ nach CABG am [Datum]. Unkomplizierter Verlauf bei rascher Katecholamin-Entwöhnung und zeitgerechter Extubation. Wiederaufnahme der DAPT am [Datum]. Verlegung in stabilem Zustand am [Datum]."
 
 Gib am Ende deiner Output-Struktur, direkt vor SCHLUSS_INDIKATOR, eine Zeile aus:
 AUFENTHALTSDAUER_TAGE: <Anzahl>
@@ -82,23 +108,23 @@ LETZTER_DOKUMENTIERTER_ZUSTAND: <kurze, faktenbasierte Beschreibung des Patiente
 
 == OUTPUT-FORMAT ==
 
-Strukturierter Block-Text, KEIN JSON, KEIN Fließtext, KEINE Markdown-Überschriften. Pro Cluster ein Header in Großbuchstaben mit Cluster-Buchstabe und Bezeichnung (z.B. "CLUSTER C — HÄMODYNAMIK/MCS"), dann Bullet-Liste mit kurzen, faktendichten Items. Die Reihenfolge der Cluster im Output spiegelt die klinische Wucht wider (siehe HYBRID-STRUKTUR oben).
+Strukturierter Block-Text, KEIN JSON, KEIN Fließtext, KEINE Markdown-Überschriften. Pro Cluster ein Header in Großbuchstaben mit Cluster-Buchstabe und Bezeichnung (z.B. "CLUSTER C -- HÄMODYNAMIK/MCS"), dann Bullet-Liste mit kurzen, faktendichten Items. Die Reihenfolge der Cluster im Output spiegelt die klinische Wucht wider (siehe HYBRID-STRUKTUR oben).
 
 Beispiel-Schema:
 
-CLUSTER A — ÜBERNAHME
+CLUSTER A -- ÜBERNAHME
 - Datum: Initialdiagnose, Verlegungsgrund
 - Initial-Eingriff mit Datum
 - Ggf. Zustand bei Übernahme (Katecholamine, Beatmung, MCS)
 
-CLUSTER C — HÄMODYNAMIK/MCS
+CLUSTER C -- HÄMODYNAMIK/MCS
 - Hauptaussage 1 (mit Datum nur falls entscheidend)
 - Hauptaussage 2
 - Komplikation/Trend
 
 [weitere Cluster nach Wucht-Reihenfolge]
 
-CLUSTER L — THERAPIEZIEL/KONSENS
+CLUSTER L -- THERAPIEZIEL/KONSENS
 - DNR-Festlegung mit Datum
 - Patientenwille / Angehörigeneinbindung
 

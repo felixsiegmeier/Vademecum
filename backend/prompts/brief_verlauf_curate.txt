@@ -35,6 +35,15 @@ c) Die chronologische Klammer kommt aus den ersten und letzten Absätzen (Übern
 
 d) Vermeide protokollarische Wendungen wie "Pulmonal: ..." oder "Kardiologisch: ..." — die Cluster werden erzählerisch eingeleitet, nicht als Systembezeichnung gelabelt. Beispiel: nicht "Renal: Anurisches AKI mit CRRT seit 04.04." sondern "Aufgrund eines anurischen akuten Nierenversagens wurde ab dem 04.04. eine kontinuierliche Nierenersatztherapie etabliert."
 
+== SUBSTANZ_TIEFE-DISZIPLIN ==
+
+Die SUBSTANZ_TIEFE-Markierung aus Pass 1 ist verbindlich. Nicht weichspülen, nicht hochstufen.
+
+- Bei minimal/kompakt: KEINE narrativen Cluster-Brücken, KEINE Verkittungen, KEINE rhetorischen Klammern. Die kurze Form ist die Zielform.
+- Wenn der Eingabetext aus Pass 2 (audited) bereits kurz ist, bleibt der curate-Output kurz.
+- Aufblähen durch Floskeln, Konnektoren oder Hintergrund-Erläuterungen ist VERBOTEN.
+- Fehlende Cluster, die im Input nicht auftauchen, werden NICHT ergänzt.
+
 == TEXTLÄNGE (Zielbereich nach SUBSTANZ_TIEFE) ==
 
 Die Substanz-Übersicht enthält eine Markierung SUBSTANZ_TIEFE (vom Sammler gesetzt nach Aufenthaltsdauer und Wucht). Richte die Textlänge des Verlaufs daran aus:

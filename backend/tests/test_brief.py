@@ -621,3 +621,51 @@ def test_polish_section_all_sections_use_lektor_prompt(isolated_data):
             asyncio.run(ab.polish_section(section=section, current_text="x"))
 
         assert "AUFGABE: Korrekturlesen" in captured[0], f"Sektion '{section}' hat kein Lektor-Prompt"
+
+
+# ── 30. AUFENTHALTSDAUER hartes Limit — Prompt-Klausel-Assertions ────────────
+
+def test_collect_prompt_has_hard_limit_clause(isolated_data):
+    """collect-Prompt enthält hartes AUFENTHALTSDAUER-Limit und NEGATIV-BEISPIEL."""
+    import agent_brief as ab
+    prompt = ab._get_prompt("brief_verlauf_collect.txt")
+    assert "HARTES SUBSTANZ_TIEFE-LIMIT" in prompt, "Hartes-Limit-Klausel fehlt"
+    assert "unter 48h" in prompt, "Bed-and-Breakfast-Grenze fehlt"
+    assert "INHALTLICHE KOMPLEXITÄT" in prompt, "Komplexitäts-Override-Verbot fehlt"
+    assert "KOMPLIKATIONS-OVERRIDE" in prompt, "Override-Whitelist fehlt"
+    assert "NEGATIV-BEISPIEL" in prompt, "Negativ-Beispiel fehlt"
+    assert "CABG" in prompt, "Negativ-Beispiel-Skelett fehlt"
+
+
+def test_curate_prompt_has_substanz_tiefe_disziplin(isolated_data):
+    """curate-Prompt enthält SUBSTANZ_TIEFE-DISZIPLIN-Klausel."""
+    import agent_brief as ab
+    prompt = ab._get_prompt("brief_verlauf_curate.txt")
+    assert "SUBSTANZ_TIEFE-DISZIPLIN" in prompt, "Disziplin-Klausel fehlt"
+    assert "verbindlich" in prompt, "Verbindlichkeits-Formulierung fehlt"
+    assert "Aufblähen" in prompt, "Aufblähverbot fehlt"
+
+
+def test_collect_prompt_bed_and_breakfast_boundary(isolated_data):
+    """collect-Prompt nennt 48h-Grenze und maximal-Satz-Zahl für minimal."""
+    import agent_brief as ab
+    prompt = ab._get_prompt("brief_verlauf_collect.txt")
+    assert "48h" in prompt
+    assert "4-5 Sätze" in prompt or "maximal 4-5" in prompt
+
+
+def test_collect_prompt_komplikations_override_whitelist(isolated_data):
+    """collect-Prompt enthält mindestens Reanimation und Tracheotomie in der Override-Whitelist."""
+    import agent_brief as ab
+    prompt = ab._get_prompt("brief_verlauf_collect.txt")
+    assert "Reanimation" in prompt, "Reanimation als Override fehlt"
+    assert "Tracheotomie" in prompt, "Tracheotomie als Override fehlt"
+    assert "Versterben" in prompt, "Versterben als Override fehlt"
+
+
+def test_collect_prompt_no_override_noradrenalin(isolated_data):
+    """collect-Prompt benennt Noradrenalin-Boli explizit als KEIN Override-Kriterium."""
+    import agent_brief as ab
+    prompt = ab._get_prompt("brief_verlauf_collect.txt")
+    assert "Noradrenalin" in prompt, "Nicht-Override-Beispiel Noradrenalin fehlt"
+    assert "NICHT als Override" in prompt, "Nicht-Override-Klausel fehlt"
