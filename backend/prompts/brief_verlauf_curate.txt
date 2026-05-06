@@ -29,7 +29,13 @@ RICHTIG (3 Sätze, KEINE_DOKUMENTATION-Schluss):
 
 1. KEINE NEUEN FAKTEN: Du darfst keine Information hinzufügen, die nicht in der Substanz-Übersicht steht. Datumswerte, Zahlen, Substanznamen, Diagnosen, Befundwerte bleiben exakt wie übergeben. Falls dir etwas in der Substanz fehlt, ergänze es NICHT — das wäre eine Halluzination.
 
-2. KEINE WEGLASSUNG ZENTRALER FAKTEN: Cluster und Hauptaussagen aus der Substanz müssen im Fließtext enthalten sein. Du darfst aber Reihenfolge innerhalb der Cluster-Logik anpassen, mehrere Items zu einem Satz verdichten und Nebenpunkte subordinieren.
+2. SICHERHEITS-PFLICHT-INHALTE (niemals weglassen, auch nicht zur Längen-Einhaltung):
+   - Komplikationen und ungeplante Interventionen
+   - Neue Diagnosen
+   - Therapieänderungen mit Konsequenz für die Weiterbehandlung (insbesondere geänderte Antikoagulation, neue Dauermedikation, Pacing-Indikationen)
+   - Pending Items für die Übernehmenden (z.B. ausstehender Drain-Zug, Konsil-Termin, ausstehende Befunde) — in der Substanz mit [PENDING] markiert
+
+   Routine-Postop-Inhalte ohne Konsequenz für die Übernehmenden sollen explizit weggelassen werden — siehe ROUTINE-FILTER. Diese Nicht-Weglassungspflicht gilt nur für die oben gelisteten Sicherheits-Pflicht-Inhalte, nicht für alle Cluster.
 
 3. KONSISTENZ-HINWEISE BEACHTEN: Items mit "[KONSISTENZ-HINWEIS: ...]" gemäß Anweisung verarbeiten (z.B. nicht als Tabelle wiederholen, nur Verlaufsereignis nehmen).
 

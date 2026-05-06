@@ -655,6 +655,18 @@ def test_curate_prompt_has_substanz_tiefe_disziplin(isolated_data):
     assert "Aufblähen" in prompt, "Aufblähverbot fehlt"
 
 
+def test_curate_prompt_has_sicherheitspflicht_regel(isolated_data):
+    """Alte 'alle-Cluster'-Pflicht durch SICHERHEITS-PFLICHT-INHALTE ersetzt."""
+    import agent_brief as ab
+    prompt = ab._get_prompt("brief_verlauf_curate.txt")
+    assert "SICHERHEITS-PFLICHT-INHALTE" in prompt
+    assert "Pending Items" in prompt, "Pending-Items in Sicherheits-Pflicht fehlen"
+    assert "explizit weggelassen" in prompt, "Routine-Streich-Erlaubnis fehlt"
+    assert "Cluster und Hauptaussagen aus der Substanz müssen" not in prompt, (
+        "Alte 'alle-Cluster'-Pflicht noch vorhanden — muss durch SICHERHEITS-PFLICHT ersetzt sein"
+    )
+
+
 def test_collect_prompt_bed_and_breakfast_boundary(isolated_data):
     """collect-Prompt nennt 48h-Grenze und maximal-Satz-Zahl für minimal."""
     import agent_brief as ab
