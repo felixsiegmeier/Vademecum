@@ -82,6 +82,14 @@ export async function extractFileText(files: File[]): Promise<string> {
   return data.combined_text;
 }
 
+export async function deleteBrief(patientId: string): Promise<void> {
+  const res = await fetch(base(patientId), { method: "DELETE" });
+  if (!res.ok && res.status !== 204) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error((body as { detail?: string }).detail ?? `HTTP ${res.status}`);
+  }
+}
+
 // ─── Lernlog API ─────────────────────────────────────────────────────────────
 
 export async function learnFromEdits(

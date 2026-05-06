@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
-import { ChevronDown, ChevronRight, Loader2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import type { Brief, BriefSectionKey, LearnFromEditsResponse } from "../types";
 import {
   generateBrief,
@@ -10,8 +18,9 @@ import {
   regenerateSection,
   saveSectionEdit,
   learnFromEdits,
+  deleteBrief,
 } from "../api/brief";
-import PendingContextZone from "./PendingContextZone";
+import BriefOnboarding from "./BriefOnboarding";
 import BriefSection from "./BriefSection";
 import BefundeSection from "./BefundeSection";
 import BriefVisibilityPanel from "./BriefVisibilityPanel";
@@ -37,11 +46,8 @@ export default function BriefPanel({ patientId }: Props) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const [globalGenerating, setGlobalGenerating] = useState(false);
   const [generating, setGenerating] = useState<Partial<Record<BriefSectionKey, boolean>>>({});
   const [formatting, setFormatting] = useState(false);
-
-  const [pendingContext, setPendingContext] = useState("");
 
   // Track content at last generate per section to detect edits
   const [lastGenerated, setLastGenerated] = useState<Partial<Record<BriefSectionKey, string>>>({});
@@ -55,13 +61,16 @@ export default function BriefPanel({ patientId }: Props) {
   // Visibility panel
   const [showVisibility, setShowVisibility] = useState(false);
 
+  // Reset dialog
+  const [showResetDialog, setShowResetDialog] = useState(false);
+  const [resetting, setResetting] = useState(false);
+
   const load = useCallback(() => {
     setLoading(true);
     setLoadError(null);
     getBrief(patientId)
       .then((b) => {
         setBrief(b);
-        // Treat initially loaded content as generation baseline
         const initial: Partial<Record<BriefSectionKey, string>> = {};
         for (const k of GENERATABLE) {
           if (b[k]) initial[k] = b[k];
@@ -86,27 +95,33 @@ export default function BriefPanel({ patientId }: Props) {
     });
   }
 
-  async function handleGenerate() {
-    setGlobalGenerating(true);
-    try {
-      const updated = await generateBrief(patientId, pendingContext);
-      setBrief(updated);
-      markGenerated(updated);
-      setPendingContext("");
-    } catch (e) {
-      toast.error((e as Error).message);
-    } finally {
-      setGlobalGenerating(false);
-    }
+  async function handleEmptyStateGenerate(extraContext: string, befundeRaw: string) {
+    const [briefResult, befundeFormatted] = await Promise.all([
+      generateBrief(patientId, extraContext).catch((e: Error) => {
+        toast.error(e.message);
+        return null;
+      }),
+      befundeRaw
+        ? formatSapBefunde(patientId, befundeRaw).catch(() => null)
+        : Promise.resolve(null),
+    ]);
+
+    if (!briefResult) return;
+
+    const merged: Brief = befundeFormatted
+      ? { ...briefResult, befunde: befundeFormatted }
+      : briefResult;
+
+    setBrief(merged);
+    markGenerated(merged);
   }
 
   async function handleRegenerate(section: BriefSectionKey, extraContext?: string) {
     setGenerating((prev) => ({ ...prev, [section]: true }));
     try {
-      const result = await regenerateSection(patientId, section, extraContext ?? pendingContext);
+      const result = await regenerateSection(patientId, section, extraContext);
       setBrief((prev) => prev ? { ...prev, ...result } as Brief : null);
       markGenerated(result);
-      setPendingContext("");
     } catch (e) {
       toast.error(`${SECTION_LABELS[section]}: ${(e as Error).message}`);
     } finally {
@@ -170,7 +185,22 @@ export default function BriefPanel({ patientId }: Props) {
     return last !== undefined && current !== undefined && current.trim() !== last.trim();
   }
 
-  const busy = globalGenerating || Object.values(generating).some(Boolean) || formatting;
+  async function handleReset() {
+    setResetting(true);
+    try {
+      await deleteBrief(patientId);
+      setBrief(null);
+      setLastGenerated({});
+      setShowResetDialog(false);
+      toast.success("Brief verworfen.");
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setResetting(false);
+    }
+  }
+
+  const anySectionBusy = Object.values(generating).some(Boolean) || formatting;
 
   if (loading) {
     return (
@@ -191,52 +221,28 @@ export default function BriefPanel({ patientId }: Props) {
 
   if (isEmpty) {
     return (
-      <div className="flex flex-col h-full overflow-hidden">
-        <PendingContextZone
-          onSubmit={setPendingContext}
-          disabled={busy}
-        />
-        <div className="flex flex-col items-center justify-center flex-1 gap-4">
-          {pendingContext && (
-            <p className="text-xs text-muted-foreground max-w-sm text-center bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
-              Zusatz-Kontext gesetzt — wird bei Generierung verwendet.
-            </p>
-          )}
-          <Button onClick={handleGenerate} disabled={globalGenerating}>
-            {globalGenerating ? (
-              <><Loader2 className="size-4 animate-spin" /> Generiere…</>
-            ) : (
-              "Brief generieren"
-            )}
-          </Button>
-        </div>
-      </div>
+      <BriefOnboarding
+        disabled={anySectionBusy}
+        onGenerate={handleEmptyStateGenerate}
+      />
     );
   }
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
       <div className="shrink-0">
-        <PendingContextZone onSubmit={setPendingContext} disabled={busy} />
-        {pendingContext && (
-          <div className="px-4 py-1.5 text-xs text-amber-900 bg-amber-50 border-b border-amber-200 flex items-center gap-2">
-            <span className="flex-1">Zusatz-Kontext gesetzt — wird bei nächster Generierung verwendet.</span>
-            <button
-              className="underline text-amber-700 hover:text-amber-900"
-              onClick={() => setPendingContext("")}
-            >
-              Verwerfen
-            </button>
-          </div>
-        )}
-        <div className="flex items-center justify-between px-4 py-2 border-b">
-          <span className="text-xs text-muted-foreground">Alle 4 Sektionen neu generieren</span>
-          <Button size="sm" onClick={handleGenerate} disabled={busy}>
-            {globalGenerating ? (
-              <><Loader2 className="size-3.5 animate-spin" /> Generiere…</>
-            ) : (
-              "Neu generieren"
-            )}
+        {/* Thin status bar with reset action */}
+        <div className="border-b px-4 py-1.5 flex items-center justify-between text-xs bg-muted/20">
+          <span className="text-muted-foreground">Brief vorhanden — Sektionen einzeln neu generieren oder bearbeiten.</span>
+          <Button
+            variant="ghost"
+            size="xs"
+            className="text-destructive/60 hover:text-destructive shrink-0"
+            onClick={() => setShowResetDialog(true)}
+            disabled={anySectionBusy || resetting}
+          >
+            <Trash2 className="size-3 mr-1" />
+            Brief verwerfen
           </Button>
         </div>
 
@@ -267,7 +273,7 @@ export default function BriefPanel({ patientId }: Props) {
             onLearn={LEARNABLE.includes(section) ? () => handleLearn(section) : undefined}
             canLearn={canLearn(section)}
             onSave={handleSave(section)}
-            disabled={busy || !!learning[section]}
+            disabled={anySectionBusy || !!learning[section]}
           />
         ))}
 
@@ -276,7 +282,7 @@ export default function BriefPanel({ patientId }: Props) {
           formatting={formatting}
           onFormat={handleFormat}
           onSave={handleSave("befunde")}
-          disabled={busy}
+          disabled={anySectionBusy}
         />
 
         <BriefSection
@@ -287,9 +293,34 @@ export default function BriefPanel({ patientId }: Props) {
           onLearn={() => handleLearn("verlauf")}
           canLearn={canLearn("verlauf")}
           onSave={handleSave("verlauf")}
-          disabled={busy || !!learning["verlauf"]}
+          disabled={anySectionBusy || !!learning["verlauf"]}
         />
       </div>
+
+      {/* Reset confirm dialog */}
+      <Dialog open={showResetDialog} onOpenChange={(o) => !resetting && setShowResetDialog(o)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Brief verwerfen?</DialogTitle>
+            <DialogDescription>
+              Den gesamten Brief verwerfen? Diese Aktion kann nicht rückgängig gemacht werden.
+              Gelernte Regeln bleiben erhalten.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowResetDialog(false)} disabled={resetting}>
+              Abbrechen
+            </Button>
+            <Button variant="destructive" onClick={handleReset} disabled={resetting}>
+              {resetting ? (
+                <><Loader2 className="size-4 animate-spin" /> Verwerfe…</>
+              ) : (
+                "Brief verwerfen"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {learnResponse && learnSection && (
         <RuleReviewModal
