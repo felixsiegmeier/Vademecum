@@ -16,6 +16,7 @@ vollständig via LLM_BACKEND Env-Variable steuerbar, vorbereitet für Qwen-Migra
 
 import json
 import logging
+import sys
 from pathlib import Path
 from typing import Optional
 
@@ -279,6 +280,7 @@ async def generate_verlauf(
         logger.exception("[generate_verlauf/collect] LLM-Aufruf fehlgeschlagen")
         return ""
     collected = (resp1.choices[0].message.content or "").strip()
+    print(f"[BR-C1.7-DIAG] verlauf_collect ({len(collected)} chars):\n{collected}\n", file=sys.stderr)
 
     # Pass 2 — Coverage-/Konsistenz-Auditor
     audit_prompt = _fill(
@@ -319,6 +321,7 @@ async def generate_verlauf(
         logger.exception("[generate_verlauf/curate] LLM-Aufruf fehlgeschlagen")
         return audited
     result = (resp3.choices[0].message.content or "").strip()
+    print(f"[BR-C1.7-DIAG] verlauf_curate ({len(result)} chars):\n{result}\n", file=sys.stderr)
     learning_storage.save_last_output(patient.stammdaten.id, result, domain="brief", section="verlauf")
     return result
 

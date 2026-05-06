@@ -764,3 +764,85 @@ def test_generate_verlauf_accepts_adressat_argument(isolated_data):
             adressat="normalstation_intern",
         ))
     assert result == "Komplikationsloser Verlauf."
+
+
+# ── 33. Routine-Filter + Negativ-Beispiel + Diagnose-Logging ─────────────────
+
+def test_curate_prompt_has_routine_filter(isolated_data):
+    """brief_verlauf_curate.txt enthält ROUTINE-FILTER-Klausel."""
+    import agent_brief as ab
+    prompt = ab._get_prompt("brief_verlauf_curate.txt")
+    assert "ROUTINE-FILTER" in prompt, "ROUTINE-FILTER-Klausel fehlt"
+    assert "abgeschlossenen Phase" in prompt, "Kernaussage fehlt"
+    assert "Auffüllen ist verboten" in prompt, "Auffüll-Verbot fehlt"
+
+
+def test_curate_prompt_has_negativ_beispiel(isolated_data):
+    """brief_verlauf_curate.txt enthält NEGATIV-BEISPIEL-Abschnitt."""
+    import agent_brief as ab
+    prompt = ab._get_prompt("brief_verlauf_curate.txt")
+    assert "NEGATIV-BEISPIEL" in prompt, "NEGATIV-BEISPIEL-Marker fehlt"
+    assert "SO NICHT" in prompt, "Negativ-Marker fehlt"
+    assert "RICHTIG" in prompt, "Positiv-Gegenbeispiel fehlt"
+
+
+def test_generate_verlauf_short_cabg_output_under_100_words(isolated_data):
+    """generate_verlauf: unkomplizierter ~36h-CABG-Verlauf → Curate-Output < 100 Wörter."""
+    patient = Patient(stammdaten=Stammdaten(id="P-0001", name="Schönberg, Karl", aufnahmedatum="2026-04-01"))
+
+    collected = (
+        "CLUSTER A -- UEBERNAHME\n"
+        "- 01.04.2026: Postoperativ nach CABG (2-Gefäß-Bypass)\n"
+        "AUFENTHALTSDAUER_TAGE: 2\n"
+        "SUBSTANZ_TIEFE: kompakt\n"
+        "SCHLUSS_INDIKATOR: KEINE_DOKUMENTATION\n"
+    )
+    audited = collected + "\nAUDIT_RESULT: ALLES_ABGEDECKT"
+    final = (
+        "Herr Schönberg wurde am 01.04.2026 postoperativ nach koronarer Bypassoperation übernommen. "
+        "Der hämodynamische und respiratorische Verlauf gestaltete sich komplikationslos "
+        "bei zeitgerechter Entwöhnung von Katecholaminen und regelrechter Extubation. "
+        "Zum Zeitpunkt der Briefverfassung befand sich Herr Schönberg weiterhin auf der "
+        "Intensivstation in Vorbereitung der Verlegung auf die Normalstation."
+    )
+
+    mock_client = MagicMock()
+    mock_client.chat_completion = AsyncMock(side_effect=[
+        _llm_resp(collected),
+        _llm_resp(audited),
+        _llm_resp(final),
+    ])
+
+    with patch("agent_brief._lite", return_value=mock_client):
+        result = asyncio.run(agent_brief.generate_verlauf(
+            patient, meilenstein=None, befunde_formatted="", diagnosen="", anamnese="", therapie=""
+        ))
+
+    word_count = len(result.split())
+    assert word_count < 100, f"Erwartet < 100 Wörter für CABG-Kurzbrief, got {word_count}: {result!r}"
+
+
+def test_generate_verlauf_diagnostic_logging(isolated_data, capsys):
+    """generate_verlauf schreibt [BR-C1.7-DIAG]-Marker auf stderr."""
+    patient = Patient(stammdaten=Stammdaten(id="P-0001", name="Test, Patient", aufnahmedatum="2026-04-01"))
+
+    collected = "CLUSTER A\nSCHLUSS_INDIKATOR: KEINE_DOKUMENTATION"
+    audited = collected + "\nAUDIT_RESULT: ALLES_ABGEDECKT"
+    final = "Komplikationsloser Verlauf."
+
+    mock_client = MagicMock()
+    mock_client.chat_completion = AsyncMock(side_effect=[
+        _llm_resp(collected),
+        _llm_resp(audited),
+        _llm_resp(final),
+    ])
+
+    with patch("agent_brief._lite", return_value=mock_client):
+        asyncio.run(agent_brief.generate_verlauf(
+            patient, meilenstein=None, befunde_formatted="", diagnosen="", anamnese="", therapie=""
+        ))
+
+    captured = capsys.readouterr()
+    assert "[BR-C1.7-DIAG]" in captured.err, "Diagnose-Log-Marker fehlt auf stderr"
+    assert "verlauf_collect" in captured.err, "Pass-1-Marker fehlt"
+    assert "verlauf_curate" in captured.err, "Pass-3-Marker fehlt"
