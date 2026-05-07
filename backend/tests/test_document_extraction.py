@@ -21,7 +21,7 @@ from workflows.document_extraction.tool_loop import (
     run_pass,
     run_pass_streaming,
 )
-from agent_document_extraction import (
+from workflows.document_extraction.orchestrator import (
     _PASS2_TOOLS,
     _build_block1_system,
     _build_block2_system,
@@ -441,7 +441,7 @@ def test_thinking_budget_passed_to_client_block2():
 def test_block1_prompt_loaded_contains_classification_examples():
     """Pflicht-Sektionen sind im Block-1-Prompt enthalten (Guard gegen versehentliches Löschen)."""
     from pathlib import Path
-    prompt = (Path(__file__).parent.parent / "prompts" / "extraction_block1.md").read_text(encoding="utf-8")
+    prompt = (Path(__file__).parent.parent / "workflows" / "document_extraction" / "prompts" / "extraction_block1.md").read_text(encoding="utf-8")
 
     required_terms = [
         "Behandlungsdiagnose",
@@ -459,7 +459,7 @@ def test_block1_prompt_loaded_contains_classification_examples():
 def test_block1_prompt_iter5_includes_anti_confound():
     """Block-1-Iter-5: Anti-Confound-Klausel und 7-Antibiotika-Linien-Beispiel müssen drin sein."""
     from pathlib import Path
-    prompt = (Path(__file__).parent.parent / "prompts" / "extraction_block1.md").read_text(encoding="utf-8")
+    prompt = (Path(__file__).parent.parent / "workflows" / "document_extraction" / "prompts" / "extraction_block1.md").read_text(encoding="utf-8")
 
     required = [
         "ANTI-CONFOUND",                # prominenter Section-Header
@@ -474,7 +474,7 @@ def test_block1_prompt_iter5_includes_anti_confound():
 def test_block1_prompt_iter5_has_9_categories_with_bedside():
     """Block-1-Iter-5 nennt 9 Kategorien inklusive `bedside`."""
     from pathlib import Path
-    prompt = (Path(__file__).parent.parent / "prompts" / "extraction_block1.md").read_text(encoding="utf-8")
+    prompt = (Path(__file__).parent.parent / "workflows" / "document_extraction" / "prompts" / "extraction_block1.md").read_text(encoding="utf-8")
 
     assert "9 gültige Werte" in prompt
     assert "bedside" in prompt.lower()
@@ -487,7 +487,7 @@ def test_block1_prompt_iter5_has_9_categories_with_bedside():
 def test_block1_prompt_iter5_bedside_tracheotomie_redefined():
     """Tracheotomie ist NICHT mehr automatisch `respiratorisch` — Bedside-Tracheo unter `bedside`."""
     from pathlib import Path
-    prompt = (Path(__file__).parent.parent / "prompts" / "extraction_block1.md").read_text(encoding="utf-8")
+    prompt = (Path(__file__).parent.parent / "workflows" / "document_extraction" / "prompts" / "extraction_block1.md").read_text(encoding="utf-8")
 
     # `respiratorisch` ist neu als Atemunterstützungs-MODI definiert
     assert "Atemunterstützungs-MODI" in prompt
@@ -498,7 +498,7 @@ def test_block1_prompt_iter5_bedside_tracheotomie_redefined():
 def test_block1_prompt_iter5_diagnose_classification_examples():
     """Block-1-Iter-5 enthält Diagnose-Klassifikations-Beispiele inklusive verlaufs-relevanter."""
     from pathlib import Path
-    prompt = (Path(__file__).parent.parent / "prompts" / "extraction_block1.md").read_text(encoding="utf-8")
+    prompt = (Path(__file__).parent.parent / "workflows" / "document_extraction" / "prompts" / "extraction_block1.md").read_text(encoding="utf-8")
 
     required = [
         "Hämatothorax",                 # Verlaufsdiagnose-Beispiel
@@ -515,7 +515,7 @@ def test_block1_prompt_iter5_diagnose_classification_examples():
 def test_block1_prompt_iter5_befund_recall_specifics():
     """Block-1-Iter-5 hebt Befund-Recall hervor: TEE, HIT, PAK-Messungen."""
     from pathlib import Path
-    prompt = (Path(__file__).parent.parent / "prompts" / "extraction_block1.md").read_text(encoding="utf-8")
+    prompt = (Path(__file__).parent.parent / "workflows" / "document_extraction" / "prompts" / "extraction_block1.md").read_text(encoding="utf-8")
 
     required = [
         "BEFUND-RECALL",
@@ -531,7 +531,7 @@ def test_block1_prompt_iter5_befund_recall_specifics():
 def test_block1_prompt_iter5_anamnese_completeness():
     """Block-1-Iter-5 enthält Anamnese-Vollständigkeitsklausel mit Verlegungs-Trigger."""
     from pathlib import Path
-    prompt = (Path(__file__).parent.parent / "prompts" / "extraction_block1.md").read_text(encoding="utf-8")
+    prompt = (Path(__file__).parent.parent / "workflows" / "document_extraction" / "prompts" / "extraction_block1.md").read_text(encoding="utf-8")
 
     assert "ANAMNESE-VOLLSTÄNDIGKEIT" in prompt
     assert "Erstvorstellung" in prompt
@@ -541,13 +541,13 @@ def test_block1_prompt_iter5_anamnese_completeness():
 def test_block2_prompt_includes_datum_short_format():
     """Block-2-Prompt enthält Anweisung zum TT.MM.-Format im Text."""
     from pathlib import Path
-    prompt = (Path(__file__).parent.parent / "prompts" / "extraction_block2.md").read_text(encoding="utf-8")
+    prompt = (Path(__file__).parent.parent / "workflows" / "document_extraction" / "prompts" / "extraction_block2.md").read_text(encoding="utf-8")
     assert "TT.MM." in prompt, "Datumsformat TT.MM. fehlt in extraction_block2.md"
 
 
 def test_block1_prompt_status_not_derived():
     from pathlib import Path
-    prompt = (Path(__file__).parent.parent / "prompts" / "extraction_block1.md").read_text(encoding="utf-8")
+    prompt = (Path(__file__).parent.parent / "workflows" / "document_extraction" / "prompts" / "extraction_block1.md").read_text(encoding="utf-8")
     assert "update_status(aktiv=true" not in prompt
     assert "NICHT ABLEITEN" in prompt or "NICHT" in prompt
 
@@ -555,7 +555,7 @@ def test_block1_prompt_status_not_derived():
 def test_block1_aufnahmedatum_clause_present():
     """Patch C: Aufnahmedatum-Differenzierung (stationär vs. ambulant) ist im Block-1-Prompt."""
     from pathlib import Path
-    prompt = (Path(__file__).parent.parent / "prompts" / "extraction_block1.md").read_text(encoding="utf-8")
+    prompt = (Path(__file__).parent.parent / "workflows" / "document_extraction" / "prompts" / "extraction_block1.md").read_text(encoding="utf-8")
 
     required = [
         "stationär",        # stationäre Aufnahme vs. ambulanter Vorbesuch
@@ -569,7 +569,7 @@ def test_block1_aufnahmedatum_clause_present():
 def test_block1_vorerkrankungen_granularity_clause_present():
     """Patch D: Granularitäts-Klausel + Negativ-Beispiel für Vorerkrankungen im Block-1-Prompt."""
     from pathlib import Path
-    prompt = (Path(__file__).parent.parent / "prompts" / "extraction_block1.md").read_text(encoding="utf-8")
+    prompt = (Path(__file__).parent.parent / "workflows" / "document_extraction" / "prompts" / "extraction_block1.md").read_text(encoding="utf-8")
 
     required = [
         "Granularität bei Vorerkrankungen",   # Klausel-Header
@@ -585,7 +585,7 @@ def test_block1_vorerkrankungen_granularity_clause_present():
 def test_block1_therapie_ende_clause_present():
     """Patch E: `ende`-Datum nur bei expliziter Beendigung — Klausel im Block-1-Prompt."""
     from pathlib import Path
-    prompt = (Path(__file__).parent.parent / "prompts" / "extraction_block1.md").read_text(encoding="utf-8")
+    prompt = (Path(__file__).parent.parent / "workflows" / "document_extraction" / "prompts" / "extraction_block1.md").read_text(encoding="utf-8")
 
     required = [
         "explizit",                   # Kernbegriff der Klausel
@@ -603,7 +603,7 @@ def test_block1_therapie_ende_clause_present():
 def test_block2_prompt_iter_v2_contains_muss_dimensionen():
     """Block-2-Prompt (Iter v2) enthält MUSS-Dimensionen und AV-Block-III°-Beispiel."""
     from pathlib import Path
-    prompt = (Path(__file__).parent.parent / "prompts" / "extraction_block2.md").read_text(encoding="utf-8")
+    prompt = (Path(__file__).parent.parent / "workflows" / "document_extraction" / "prompts" / "extraction_block2.md").read_text(encoding="utf-8")
 
     required = [
         "MUSS",                       # MUSS-Sektion vorhanden
@@ -622,7 +622,7 @@ def test_block2_prompt_iter_v2_contains_muss_dimensionen():
 def test_block2_prompt_iter_v2_separates_was_pruefen_from_wie_schreiben():
     """Block-2-Iter-v2 trennt Prüfliste (8 Dimensionen) von Schreibanweisungen klar."""
     from pathlib import Path
-    prompt = (Path(__file__).parent.parent / "prompts" / "extraction_block2.md").read_text(encoding="utf-8")
+    prompt = (Path(__file__).parent.parent / "workflows" / "document_extraction" / "prompts" / "extraction_block2.md").read_text(encoding="utf-8")
 
     assert "WAS PRÜFEN" in prompt
     assert "WIE SCHREIBEN" in prompt
@@ -636,7 +636,7 @@ def test_block2_prompt_iter_v2_separates_was_pruefen_from_wie_schreiben():
 def test_block2_prompt_iter_v2_includes_mikrobio_merge_example():
     """Block-2-Iter-v2 enthält Mikrobio-Trigger-Merge-Beispiel mit Erreger und AB-Konsequenz."""
     from pathlib import Path
-    prompt = (Path(__file__).parent.parent / "prompts" / "extraction_block2.md").read_text(encoding="utf-8")
+    prompt = (Path(__file__).parent.parent / "workflows" / "document_extraction" / "prompts" / "extraction_block2.md").read_text(encoding="utf-8")
 
     # Mikrobio-Beispiel: Mibi-Probe (alt) + Erregerwachstum + Antibiose-Switch (neu)
     assert "Trachealsekret" in prompt
@@ -649,7 +649,7 @@ def test_block2_prompt_iter_v2_includes_mikrobio_merge_example():
 def test_block2_prompt_iter_v2_has_three_clinical_examples():
     """Block-2-Iter-v2 enthält mindestens 3 klinische Beispiele."""
     from pathlib import Path
-    prompt = (Path(__file__).parent.parent / "prompts" / "extraction_block2.md").read_text(encoding="utf-8")
+    prompt = (Path(__file__).parent.parent / "workflows" / "document_extraction" / "prompts" / "extraction_block2.md").read_text(encoding="utf-8")
 
     # 3 Beispiele: Plan→Status-Merge (Tracheo), Mikrobio-Trigger-Merge, Akutes Event (AV-Block)
     assert "Beispiel 1" in prompt
@@ -967,7 +967,7 @@ def test_streaming_heartbeat_appears_during_slow_llm():
 def test_block1_prompt_includes_konvergenz_prinzip():
     """Patch F: Block-1-Prompt enthält Konvergenz-Prinzip, explizites add_*-Verbot und SKIP-Beispiele."""
     from pathlib import Path
-    prompt = (Path(__file__).parent.parent / "prompts" / "extraction_block1.md").read_text(encoding="utf-8")
+    prompt = (Path(__file__).parent.parent / "workflows" / "document_extraction" / "prompts" / "extraction_block1.md").read_text(encoding="utf-8")
 
     required = [
         "KEIN add_*",       # explizites Duplikat-Verbot

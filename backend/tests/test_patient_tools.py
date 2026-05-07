@@ -360,7 +360,7 @@ def test_update_status_not_in_tool_schemas():
 def test_extraction_block1_has_no_update_status_call():
     """extraction_block1.md darf keine update_status-Aufrufe enthalten."""
     from pathlib import Path
-    text = (Path(__file__).parent.parent / "prompts" / "extraction_block1.md").read_text(encoding="utf-8")
+    text = (Path(__file__).parent.parent / "workflows" / "document_extraction" / "prompts" / "extraction_block1.md").read_text(encoding="utf-8")
     assert "update_status(aktiv" not in text, (
         "extraction_block1.md enthält noch einen update_status-Aufruf — muss entfernt werden."
     )
