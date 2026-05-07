@@ -912,3 +912,51 @@ def test_curate_prompt_no_pauschales_konnektoren_verbot(isolated_data):
     assert "Floskeln, Konnektoren" not in prompt, (
         "Pauschales Konnektoren-Verbot gefunden — muss durch KONNEKTOREN-DISZIPLIN-Block ersetzt sein"
     )
+
+
+def test_curate_prompt_has_pending_replacement_rule(isolated_data):
+    """Curate-Prompt enthält [PENDING]-Marker-Replacement-Anweisung."""
+    prompt = agent_brief._get_prompt("brief_verlauf_curate.txt")
+    assert "[PENDING]-Marker-Regel" in prompt, "Marker-Replacement-Klausel fehlt"
+    assert "NIEMALS literal" in prompt, "Literal-Verbot fehlt"
+
+
+def test_curate_prompt_has_sofern_vorhanden(isolated_data):
+    """SICHERHEITS-PFLICHT-INHALTE enthält 'sofern im Patientenfall vorhanden'."""
+    prompt = agent_brief._get_prompt("brief_verlauf_curate.txt")
+    assert "sofern im Patientenfall vorhanden" in prompt
+
+
+def test_curate_pending_marker_not_in_final_output(isolated_data):
+    """[PENDING] aus Sammler-Output darf nicht literal im Curate-Ergebnis erscheinen."""
+    patient = Patient(stammdaten=Stammdaten(id="P-0001", name="Test, Patient", aufnahmedatum="2026-04-01"))
+
+    collected = (
+        "CLUSTER A -- ÜBERNAHME\n"
+        "- 01.04.2026: Postoperativ nach CABG\n"
+        "CLUSTER J -- WUNDEN\n"
+        "- Drainagen-Ex vorgesehen [PENDING]\n"
+        "AUFENTHALTSDAUER_TAGE: 1\nSUBSTANZ_TIEFE: minimal\n"
+        "SCHLUSS_INDIKATOR: LEBEND_VERLEGUNG\nSCHLUSS_DATUM: 02.04.2026\nSCHLUSS_ZIEL: Normalstation\n"
+        "LETZTER_DOKUMENTIERTER_ZUSTAND: Stabil.\n"
+    )
+    audited = collected + "\nAUDIT: OK"
+    final = (
+        "Herr Test wurde am 01.04.2026 postoperativ nach CABG übernommen. "
+        "Der Verlauf gestaltete sich komplikationslos; der Drain-Zug ist auf Station vorgesehen. "
+        "Wir verlegen Herrn Test in stabilem Zustand auf die Normalstation und danken für die unkomplizierte Übernahme. "
+        "Für Rückfragen stehen wir jederzeit zur Verfügung."
+    )
+
+    mock_client = MagicMock()
+    mock_client.chat_completion = AsyncMock(side_effect=[
+        _llm_resp(collected), _llm_resp(audited), _llm_resp(final),
+    ])
+
+    with patch("agent_brief._lite", return_value=mock_client):
+        result = asyncio.run(agent_brief.generate_verlauf(
+            patient, meilenstein=None, befunde_formatted="", diagnosen="", anamnese="", therapie=""
+        ))
+
+    assert "[PENDING]" not in result, f"[PENDING] literal im Output: {result!r}"
+    assert "vorgesehen" in result or "steht noch aus" in result or "auf Station" in result
