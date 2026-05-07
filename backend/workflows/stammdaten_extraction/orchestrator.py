@@ -7,11 +7,11 @@ from openai import APIStatusError
 
 from llm_client import LLMClient, convert_pdf_to_image_parts, file_to_content_parts
 from utils.prompts import get_prompt
-from workflows.stammdaten_extraction.schema import StammdatenExtractResult  # noqa: F401
+from .schema import StammdatenExtractResult  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
-_PROMPTS_DIR = Path(__file__).parent / "prompts"
+_PROMPTS_DIR = Path(__file__).parent
 
 
 async def extract_stammdaten(
@@ -24,7 +24,7 @@ async def extract_stammdaten(
     Single-LLM-Call mit JSON-Mode. Unbekannte Felder sind None.
     Bei nicht-parsebarer Antwort wird ein leeres Ergebnis zurückgegeben.
     """
-    system_prompt = get_prompt("extract_stammdaten.txt", _PROMPTS_DIR)
+    system_prompt = get_prompt("prompt.md", _PROMPTS_DIR)
     parts = file_to_content_parts(file_bytes, mime_type)
     messages = [
         {"role": "system", "content": system_prompt},
