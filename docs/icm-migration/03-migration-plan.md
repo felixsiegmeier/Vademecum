@@ -8,6 +8,8 @@ oder additive Ergänzungen, sofern nicht anders angegeben.
 
 ---
 
+> **Stand 2026-05-07** — Phasen 1–4.2 abgeschlossen. Phase 5: 5.1 (Alt-Brief-System entfernt), 5.2 (leere `prompts/`-Dirs, mit 5.1 mitgenommen), 5.3 (F16: `tool_loop` → `utils/tool_loop.py`), 5.4 (`print` → `logger.debug`), 5.5 = dieser Patch. 254 Tests grün. Verbleibend: Phase 6 (vulture/pyflakes, Test-Mortality, R-9 Frontend-Audit, Verlauf-Audit-Output-Schema).
+
 > **Hinweis: Schritt 4.1 (R-2-Bug-Fix) bereits erledigt**
 > Der R-2-Bug-Fix (`brief_verlauf_curate.txt`-Referenz in `main.py`) wurde auf einem separaten Branch off `main` gefixt und gemerged, bevor der ICM-Branch begann. Wenn du diesen Plan abarbeitest, ist Schritt 4.1 bereits erledigt — überspringen.
 

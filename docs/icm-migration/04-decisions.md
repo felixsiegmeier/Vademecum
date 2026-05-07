@@ -49,5 +49,33 @@ Regex-Parsing von LLM-Output ist verboten; alle Fundstellen (s. `01-analysis.md 
 **F15 [SEMI-REVERSIBEL] — Multi-User-Vorbereitung**
 `user_id` wird als expliziter Parameter durch alle Skills, Storage-Aufrufe und Orchestratoren durchgereicht; `.env`-Flag `MULTI_USER=true|false` schaltet nur die Middleware (`utils/auth_context.py`) um; bei `false` (Default) wird immer `user_id="default"` injiziert.
 
-**F16 [BEKANNTE SCHULD] — `tool_loop` Cross-Workflow-Import**
-`workflows/patient_chat/orchestrator.py` importiert `Proposal` und `group_proposals` aus `workflows/document_extraction/tool_loop.py` (Cross-Workflow-Import). Akzeptiert für Phase 3; `tool_loop` hat zwei Konsumenten: `document_extraction` (eigen) und `patient_chat` (Importer). Promotion nach `tools/extraction_loop.py` oder `utils/tool_loop.py` in Phase 5/6 evaluieren.
+**F16 — `tool_loop` Cross-Workflow-Import** ✅ gelöst in Schritt 5.3
+Promoviert nach `utils/tool_loop.py` (Runtime-Mechanik, nicht Domain-Tool). Begründung: `tools/` ist reserviert für LLM-callable Domain-Funktionen mit Pydantic-Args (`patient_tools.py`); `tool_loop` ist Infrastruktur (LLM-Call-Wrapper, Streaming, Heartbeat) und gehört zur `utils/`-Familie neben `prompts.py`/`auth_context.py`. Fünf Konsumenten auf einheitlichen Importpfad `utils.tool_loop` umgestellt; Cross-Workflow-Abhängigkeit von `patient_chat` → `document_extraction` aufgelöst.
+
+---
+
+**D-mittel-Tier — Verlauf-Curate-Tiers bleiben bei drei**
+`minimal`, `kompakt` (2–14 Tage), `ausfuehrlich` (>14 Tage). `mittel` wurde in Schritt 2.3e entfernt — eine vierte Stufe wäre semantisch unscharf zwischen kompakt und ausfuehrlich ohne klinische Trennlinie. Erweiterung jederzeit möglich ohne Code-Change: `03_curate/prompts/<name>.md` anlegen genügt; der Filesystem-Scan-Validator in `workflows/brief/verlauf/__init__.py` erkennt neue Varianten automatisch.
+
+---
+
+## R-Status-Übersicht (Stand 2026-05-07)
+
+| R | Bezeichnung | Status |
+|---|---|---|
+| R-1 | Duales Brief-System | ✅ gelöst in 5.1 — Alt-Brief-System vollständig entfernt (`/api/patients/{id}/brief/*`, `storage.py`-Brief-Teil, `brief_system.md`) |
+| R-2 | Prompt-Drift-Bug (`brief_verlauf_curate.txt`) | ✅ gefixt vor ICM-Branch (separater Branch, bereits gemerged) |
+| R-3 | Hardcodierter Chat-Prompt | ✅ gelöst in 3.2a/3.2b — System-Prompt als `workflows/patient_chat/system_prompt.md` extrahiert, SHA-256-Test pinnt Byte-Identität |
+| R-4 | ULID-Duplikation | ✅ gelöst — `utils/ulid.py` existiert, `learning_storage.py` und `tools/patient_tools.py` importieren daraus; dokumentiert in `backend/AGENTS.md` |
+| R-5 | `user_id` hardcodiert | ⏸ bewusst offen — F15-Architektur vorbereitet (`user_id="default"` als expliziter Parameter), Multi-User-Aktivierung via `MULTI_USER`-Flag deferred nach Phase 6 |
+| R-6 | Streaming-Transport-Inkonsistenz | ⏸ by design — akzeptiert als F11; dokumentiert in `backend/AGENTS.md` |
+| R-7 | `_HEARTBEAT_INTERVAL` Symbol-Export | ⏸ by design — bleibt privat-aber-test-pinned; nach Promotion nach `utils/tool_loop.py` (5.3) ist Import-Pfad jetzt `utils.tool_loop._HEARTBEAT_INTERVAL` |
+| R-8 | Adressat-Parameter nicht durchgereicht | ✅ gelöst in 4.2 — `curate_variant_override` + `adressat` durchgereicht; Validator-Reuse via freie Funktion in `verlauf/__init__.py` |
+| R-9 | Unklare Chat-Persistenz | 🔲 offen → Phase 6 / post-migration backlog (Frontend-Audit: greift `/api/chat/{id}` aktiv?) |
+
+## Phase-6-Backlog (nicht in Phase 1–5 adressiert)
+
+- **TrivialChange-Smell**: Nie formal in Migrationsdocs erfasst — prüfen in Phase 6 ob es um `learning_storage.TrivialChange`-ähnliche Guard-Patterns geht; falls nicht relevant, explizit schließen.
+- **Verlauf-Audit-Output-Schema**: Pass 2 (`02_audit`) gibt heute Plain-Text zurück — kein strukturiertes Pydantic-Modell analog zu `CollectOutput`. Bewusst nicht in Phase 5 angefasst; Kandidat für Phase 6 (F14-Konsequenz: auch Audit-Pass auf `model_validate_json` umstellen?).
+- **Re-Export-Brücken (1.3)**: Audit in Schritt 5.0 bestätigt — alle Re-Exports verschwanden organisch mit der Löschung der `agent_*.py`-Module in Phase 3. Kein expliziter Cleanup nötig.
+- **`data/lernlog/`-Migration**: Audit in Schritt 5.0 bestätigt DIR NOT FOUND — bereits durch (3.3-Bestätigung + `LERNLOG_BASE`-Pfad schreibt schon in `workflows/`).
