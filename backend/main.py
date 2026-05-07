@@ -21,7 +21,8 @@ from agent_tools import TOOL_FUNCTIONS
 from agent_document_extraction import extract_proposals, extract_proposals_streaming
 from agent_extraction_core import Proposal
 from agent_patient_chat import CHAT_2PASS_CUTOFF, run_single_pass_chat
-from agent_stammdaten_extraction import StammdatenExtractResult, extract_stammdaten
+from agent_stammdaten_extraction import extract_stammdaten
+from workflows.stammdaten_extraction.schema import StammdatenExtractResult
 from llm_client import LLMClient
 from models.patient import Patient, PatientSummary, Stammdaten
 from storage import (

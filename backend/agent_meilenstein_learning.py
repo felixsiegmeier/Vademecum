@@ -8,10 +8,15 @@ import json
 import logging
 from pathlib import Path
 
-from pydantic import BaseModel
-
 from learning_storage import Rule
 from llm_client import LLMClient
+from skills.learning.schemas import (  # noqa: F401
+    ConflictResult,
+    ExtractionResult,
+    RebuildResult,
+    RuleCandidate,
+    TrivialChange,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -46,35 +51,6 @@ def _get_rebuild_prompt() -> str:
         _REBUILD_PROMPT_CACHE = path.read_text(encoding="utf-8")
     return _REBUILD_PROMPT_CACHE
 
-
-class RuleCandidate(BaseModel):
-    section: str
-    rule_text: str
-    reasoning: str = ""
-    anchor: str = ""
-
-
-class TrivialChange(BaseModel):
-    section: str = ""
-    rule_text: str = ""
-    reasoning: str = ""
-    anchor: str = ""
-
-
-class ExtractionResult(BaseModel):
-    candidates: list[RuleCandidate]
-    trivial_changes: list[TrivialChange] = []
-
-
-class ConflictResult(BaseModel):
-    has_conflict: bool
-    explanation: str
-    conflicting_rule_id: str = ""
-
-
-class RebuildResult(BaseModel):
-    rule_text: str
-    reasoning: str
 
 
 async def extract_rule_candidates(

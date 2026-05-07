@@ -2,12 +2,11 @@
 import json
 import logging
 from pathlib import Path
-from typing import Literal, Optional
 
 from openai import APIStatusError
-from pydantic import BaseModel
 
 from llm_client import LLMClient, convert_pdf_to_image_parts, file_to_content_parts
+from workflows.stammdaten_extraction.schema import StammdatenExtractResult  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
@@ -20,15 +19,6 @@ def _get_system_prompt() -> str:
         path = Path(__file__).parent / "prompts" / "extract_stammdaten.txt"
         _SYSTEM_PROMPT_CACHE = path.read_text(encoding="utf-8")
     return _SYSTEM_PROMPT_CACHE
-
-
-class StammdatenExtractResult(BaseModel):
-    name: Optional[str] = None
-    geburtsdatum: Optional[str] = None          # YYYY-MM-DD
-    geschlecht: Optional[Literal["m", "w", "d"]] = None
-    bettplatz: Optional[str] = None
-    aufnahmedatum: Optional[str] = None         # YYYY-MM-DD
-    aufnahme_quelle: Optional[Literal["elektiv", "notfall", "extern"]] = None
 
 
 async def extract_stammdaten(
