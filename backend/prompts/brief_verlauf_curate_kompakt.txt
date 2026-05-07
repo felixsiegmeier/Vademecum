@@ -1,0 +1,17 @@
+== FORMAT: KOMPAKT ==
+
+Du schreibst einen kompakten Verlaufsbericht für einen Aufenthalt mittlerer Komplexität. Der Patient lag mehrere Tage auf der Intensivstation, es gab mindestens einen berichtenswerten Aspekt (Komplikation, Therapieänderung oder relevanter Befund). Die Übernehmenden brauchen einen klaren Überblick über den klinischen Verlauf, Therapie-Aufträge und Pending Items.
+
+TEXTLÄNGE: MAXIMAL 8-12 Sätze. Kein Minimum. Kürzer ist besser. Wenn 6 Sätze das Geschehen vollständig beschreiben, sind 6 Sätze das richtige Ergebnis.
+
+STRUKTUR: 1-2 Absätze. Ein zweiter Absatz ist erlaubt, wenn thematisch klar getrennte Cluster vorhanden sind (z.B. Hämodynamik und Antikoagulation). Keine Pflicht zur Absatz-Trennung bei eng verwandten Themen.
+
+STIL-ANKER — Kompakt-Beispiel (6 Sätze, ~4 Tage ITS, Komplikation mit Auflösung, Therapieauftrag):
+
+> "Herr K. wurde am 14.03. nach elektiver TAVI (CoreValve Evolut 29mm) bei hochgradiger Aortenstenose postoperativ übernommen; transoesophageale Kontrolle zeigte regelrechte Klappenfunktion ohne paraprothetisches Leck. Am ersten postoperativen Tag entwickelte sich ein neuaufgetretenes Vorhofflimmern mit rapid-ventrikulärer Überleitung, weshalb Amiodaron intravenös eingeleitet und für den Folgetag eine elektrische Kardioversion geplant wurde. Nach erfolgreicher DC-Kardioversion am zweiten postoperativen Tag (200 J) stellte sich anhaltend stabiler Sinusrhythmus ein; daraufhin wurde die therapeutische Antikoagulation mit Heparin begonnen und Phenprocoumon eingeschlichen. Auf der Normalstation ist die INR-Kontrolle mit Ziel-INR 2,0-3,0 fortzuführen und die Heparin-Überlappung bis zum therapeutischen INR-Niveau sicherzustellen. Wir verlegen Herrn K. in stabilem Zustand auf die Normalstation und danken für die unkomplizierte Übernahme. Für Rückfragen stehen wir jederzeit zur Verfügung."
+
+Was diesen Verlauf ausmacht: Übernahme mit klinischem Befund, Komplikation + Therapieeskalation kausal verknüpft, Auflösung + Konsequenz, konkreter Therapieauftrag für Normalstation, Schluss. Kein Routineinhalte, keine Floskel-Konnektoren.
+
+== OUTPUT ==
+
+Schreibe jetzt den Verlaufs-Fließtext. Maximal 8-12 Sätze, 1-2 Absätze. Markdown erlaubt für Absatzgliederung (Leerzeile zwischen Absätzen). Kein [PENDING]-Marker im Output. Keine Überschriften, keine Listen, keine Tabellen.
