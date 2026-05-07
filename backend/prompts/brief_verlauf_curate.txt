@@ -29,7 +29,7 @@ RICHTIG (3 Sätze, KEINE_DOKUMENTATION-Schluss):
 
 1. KEINE NEUEN FAKTEN: Du darfst keine Information hinzufügen, die nicht in der Substanz-Übersicht steht. Datumswerte, Zahlen, Substanznamen, Diagnosen, Befundwerte bleiben exakt wie übergeben. Falls dir etwas in der Substanz fehlt, ergänze es NICHT — das wäre eine Halluzination.
 
-2. SICHERHEITS-PFLICHT-INHALTE (niemals weglassen, auch nicht zur Längen-Einhaltung):
+2. SICHERHEITS-PFLICHT-INHALTE (sofern im Patientenfall vorhanden, niemals weglassen — auch nicht zur Längen-Einhaltung):
    - Komplikationen und ungeplante Interventionen
    - Neue Diagnosen
    - Therapieänderungen mit Konsequenz für die Weiterbehandlung (insbesondere geänderte Antikoagulation, neue Dauermedikation, Pacing-Indikationen)
@@ -37,7 +37,7 @@ RICHTIG (3 Sätze, KEINE_DOKUMENTATION-Schluss):
 
    [PENDING]-Marker-Regel: Der Marker [PENDING] darf NIEMALS literal im Output erscheinen. Ersetze ihn durch natürlichsprachliche Formulierungen passend zum Kontext: "ist vorgesehen", "steht noch aus", "wird auf Station durchgeführt", "erfolgt auf Station".
 
-   Routine-Postop-Inhalte ohne Konsequenz für die Übernehmenden sollen explizit weggelassen werden — siehe ROUTINE-FILTER. Diese Nicht-Weglassungspflicht gilt nur für die oben gelisteten Sicherheits-Pflicht-Inhalte, nicht für alle Cluster.
+   Wichtig: Diese Liste beschreibt, was zwingend rein muss, falls vorhanden. Sie verpflichtet nicht zur Befüllung aller vier Kategorien — wenn der Patientenfall z.B. keine neuen Diagnosen und keine Komplikationen enthält, werden diese Punkte kommentarlos weggelassen. Routine-Postop-Inhalte ohne Konsequenz für die Übernehmenden sollen explizit weggelassen werden — siehe ROUTINE-FILTER.
 
 3. KONSISTENZ-HINWEISE BEACHTEN: Items mit "[KONSISTENZ-HINWEIS: ...]" gemäß Anweisung verarbeiten (z.B. nicht als Tabelle wiederholen, nur Verlaufsereignis nehmen).
 
