@@ -14,10 +14,7 @@ Modell für alle Passes: LLMClient() Default (keine eigene Flash-Konstante;
 vollständig via LLM_BACKEND Env-Variable steuerbar, vorbereitet für Qwen-Migration).
 """
 
-import json
 import logging
-import re
-import sys
 from pathlib import Path
 from typing import Optional
 
@@ -27,7 +24,11 @@ import learning_storage
 from llm_client import LLMClient
 from models.patient import Patient
 from utils.prompts import _PROMPT_CACHE, get_prompt  # _PROMPT_CACHE re-exported for tests
+from workflows.brief.anamnese import skill as _anamnese_skill
 from workflows.brief.diagnosen import skill as _diagnosen_skill
+from workflows.brief.therapie import skill as _therapie_skill
+from workflows.brief.verlauf import skill as _verlauf_skill
+from workflows.brief.verlauf.skill import _extract_substanz_tiefe, _load_curate_prompt  # re-exported for tests
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,7 @@ _llm_lite: Optional[LLMClient] = None
 
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
 _ADRESSATEN_DIR = _PROMPTS_DIR / "adressaten"
+_BRIEF_VERLAUF_DIR = Path(__file__).parent / "workflows" / "brief" / "verlauf"
 
 
 def _lite() -> LLMClient:
@@ -47,7 +49,10 @@ def _lite() -> LLMClient:
 
 
 def _get_prompt(name: str) -> str:
-    return get_prompt(name, _PROMPTS_DIR)
+    stem = name.rsplit(".", 1)[0] if "." in name else name
+    if (_PROMPTS_DIR / f"{stem}.md").exists() or (_PROMPTS_DIR / name).exists():
+        return get_prompt(name, _PROMPTS_DIR)
+    return get_prompt(name, _BRIEF_VERLAUF_DIR)
 
 
 def _load_adressatenprofil(name: str = "normalstation_intern") -> str:
@@ -69,30 +74,6 @@ def _to_yaml(patient: Patient) -> str:
         default_flow_style=False,
         width=100,
     )
-
-
-def _extract_substanz_tiefe(collected: str) -> str:
-    m = re.search(r"^SUBSTANZ_TIEFE:\s*(\S+)", collected, re.MULTILINE)
-    if not m:
-        logger.warning("[generate_verlauf] SUBSTANZ_TIEFE nicht in Sammler-Output — fallback kompakt")
-        return "kompakt"
-    return m.group(1).strip()
-
-
-def _load_curate_prompt(substanz_tiefe: str) -> str:
-    tiefe = substanz_tiefe.lower().strip()
-    if tiefe == "minimal":
-        tiefe_normalized = "minimal"
-    elif tiefe in {"kompakt", "mittel"}:
-        tiefe_normalized = "kompakt"
-    elif tiefe in {"ausführlich", "ausfuehrlich"}:
-        tiefe_normalized = "ausfuehrlich"
-    else:
-        logger.warning("[generate_verlauf] unbekannte SUBSTANZ_TIEFE '%s', fallback kompakt", tiefe)
-        tiefe_normalized = "kompakt"
-    shared = _get_prompt("brief_verlauf_curate_shared.txt")
-    specific = _get_prompt(f"brief_verlauf_curate_{tiefe_normalized}.txt")
-    return shared + "\n\n" + specific
 
 
 def _inject_extra_context(prompt: str, extra_context: str) -> str:
@@ -132,26 +113,6 @@ def _inject_rules(prompt: str, rules_block: str) -> str:
 
 
 
-def _render_therapie(data: dict) -> str:
-    lines: list[str] = []
-    initial_op = data.get("initial_op") or ""
-    if initial_op:
-        lines.append("**Initial-OP:**")
-        lines.append(initial_op)
-        lines.append("")
-    antimikrobiell = data.get("antimikrobiell") or []
-    if antimikrobiell:
-        lines.append("**Antimikrobielle Therapie:**")
-        for item in antimikrobiell:
-            lines.append(f"- {item}")
-        lines.append("")
-    weitere = data.get("weitere") or []
-    if weitere:
-        lines.append("**Weitere Prozeduren:**")
-        for item in weitere:
-            lines.append(f"- {item}")
-    return "\n".join(lines).strip()
-
 
 async def generate_diagnosen(patient: Patient, extra_context: str = "") -> str:
     rules = learning_storage.load_rules(domain="brief", section="diagnosen")
@@ -167,53 +128,24 @@ async def generate_diagnosen(patient: Patient, extra_context: str = "") -> str:
 
 async def generate_anamnese(patient: Patient, extra_context: str = "") -> str:
     rules = learning_storage.load_rules(domain="brief", section="anamnese")
-    filled = _inject_rules(
-        _inject_extra_context(
-            _get_prompt("brief_anamnese.txt").replace("{patient_yaml}", _to_yaml(patient)),
-            extra_context,
-        ),
-        _build_rules_block(rules),
-    )
+    rules_block = _build_rules_block(rules)
     try:
-        resp = await _lite().chat_completion(
-            [{"role": "user", "content": filled}],
-            temperature=0,
-            max_tokens=1024,
-        )
+        result = await _anamnese_skill.run(_lite(), patient, rules_block, extra_context)
     except Exception:
-        logger.exception("[generate_anamnese] LLM-Aufruf fehlgeschlagen")
+        logger.exception("[generate_anamnese] Skill fehlgeschlagen")
         return ""
-    result = (resp.choices[0].message.content or "").strip()
     learning_storage.save_last_output(patient.stammdaten.id, result, domain="brief", section="anamnese")
     return result
 
 
 async def generate_therapie(patient: Patient, extra_context: str = "") -> str:
     rules = learning_storage.load_rules(domain="brief", section="therapie")
-    filled = _inject_rules(
-        _inject_extra_context(
-            _get_prompt("brief_therapie.txt").replace("{patient_yaml}", _to_yaml(patient)),
-            extra_context,
-        ),
-        _build_rules_block(rules),
-    )
+    rules_block = _build_rules_block(rules)
     try:
-        resp = await _lite().chat_completion(
-            [{"role": "user", "content": filled}],
-            response_format={"type": "json_object"},
-            temperature=0,
-            max_tokens=1024,
-        )
+        result = await _therapie_skill.run(_lite(), patient, rules_block, extra_context)
     except Exception:
-        logger.exception("[generate_therapie] LLM-Aufruf fehlgeschlagen")
+        logger.exception("[generate_therapie] Skill fehlgeschlagen")
         return ""
-    raw = (resp.choices[0].message.content or "").strip()
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError:
-        logger.warning("[generate_therapie] Kein valides JSON: %s", raw[:300])
-        return raw
-    result = _render_therapie(data)
     learning_storage.save_last_output(patient.stammdaten.id, result, domain="brief", section="therapie")
     return result
 
@@ -229,79 +161,22 @@ async def generate_verlauf(
     adressat: str = "normalstation_intern",
 ) -> str:
     """3-Pass: Substanz-Sammler (collect) → Coverage-Auditor (audit) → Stil-Kurator (curate)."""
-    patient_yaml = _to_yaml(patient)
-    common_replacements = {
-        "{patient_yaml}": patient_yaml,
-        "{meilenstein_or_none}": meilenstein or "—",
-        "{befunde_or_empty}": befunde_formatted or "—",
-        "{diagnosen}": diagnosen or "—",
-        "{anamnese}": anamnese or "—",
-        "{therapie}": therapie or "—",
-    }
-
-    def _fill(template: str, extra: dict | None = None) -> str:
-        for key, val in common_replacements.items():
-            template = template.replace(key, val)
-        if extra:
-            for key, val in extra.items():
-                template = template.replace(key, val)
-        return _inject_extra_context(template, extra_context)
-
-    # Pass 1 — Substanz-Sammler
-    collect_prompt = _fill(_get_prompt("brief_verlauf_collect.txt"))
-    try:
-        resp1 = await _lite().chat_completion(
-            [{"role": "user", "content": collect_prompt}],
-            temperature=0,
-            max_tokens=4096,
-        )
-    except Exception:
-        logger.exception("[generate_verlauf/collect] LLM-Aufruf fehlgeschlagen")
-        return ""
-    collected = (resp1.choices[0].message.content or "").strip()
-    print(f"[BR-C1.7-DIAG] verlauf_collect ({len(collected)} chars):\n{collected}\n", file=sys.stderr)
-
-    # Pass 2 — Coverage-/Konsistenz-Auditor
-    audit_prompt = _fill(
-        _get_prompt("brief_verlauf_audit.txt"),
-        extra={"{collected_substance}": collected},
-    )
-    try:
-        resp2 = await _lite().chat_completion(
-            [{"role": "user", "content": audit_prompt}],
-            temperature=0,
-            max_tokens=4096,
-        )
-    except Exception:
-        logger.exception("[generate_verlauf/audit] LLM-Aufruf fehlgeschlagen")
-        return collected
-    audited = (resp2.choices[0].message.content or "").strip()
-
-    # Pass 3 — Stil-Kurator (mit Regel-Injection und Adressaten-Profil)
-    substanz_tiefe = _extract_substanz_tiefe(collected)
-    verlauf_rules = learning_storage.load_rules(domain="brief", section="verlauf")
+    rules = learning_storage.load_rules(domain="brief", section="verlauf")
+    rules_block = _build_rules_block(rules)
     adressatenprofil = _load_adressatenprofil(adressat)
-    curate_prompt = _inject_rules(
-        _fill(
-            _load_curate_prompt(substanz_tiefe),
-            extra={
-                "{audited_substance}": audited,
-                "{ADRESSATENPROFIL}": adressatenprofil,
-            },
-        ),
-        _build_rules_block(verlauf_rules),
-    )
     try:
-        resp3 = await _lite().chat_completion(
-            [{"role": "user", "content": curate_prompt}],
-            temperature=0,
-            max_tokens=4096,
+        result = await _verlauf_skill.run(
+            _lite(), patient, rules_block, extra_context,
+            meilenstein=meilenstein,
+            befunde_formatted=befunde_formatted,
+            diagnosen=diagnosen,
+            anamnese=anamnese,
+            therapie=therapie,
+            adressatenprofil=adressatenprofil,
         )
     except Exception:
-        logger.exception("[generate_verlauf/curate] LLM-Aufruf fehlgeschlagen")
-        return audited
-    result = (resp3.choices[0].message.content or "").strip()
-    print(f"[BR-C1.7-DIAG] verlauf_curate ({len(result)} chars):\n{result}\n", file=sys.stderr)
+        logger.exception("[generate_verlauf] Skill fehlgeschlagen")
+        return ""
     learning_storage.save_last_output(patient.stammdaten.id, result, domain="brief", section="verlauf")
     return result
 

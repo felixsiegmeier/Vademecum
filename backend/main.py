@@ -624,12 +624,15 @@ def learn_meilenstein_delete_rule(rule_id: str):
 
 _BRIEF_SECTION_PROMPT_FILES: dict[str, str] = {
     "diagnosen": "prompt.md",
-    "anamnese": "brief_anamnese.md",
-    "therapie": "brief_therapie.md",
+    "anamnese": "prompt.md",
+    "therapie": "prompt.md",
 }
 
 _BRIEF_SECTION_PROMPT_DIRS: dict[str, Path] = {
     "diagnosen": Path(__file__).parent / "workflows" / "brief" / "diagnosen",
+    "anamnese": Path(__file__).parent / "workflows" / "brief" / "anamnese",
+    "therapie": Path(__file__).parent / "workflows" / "brief" / "therapie",
+    "verlauf": Path(__file__).parent / "workflows" / "brief" / "verlauf",
 }
 
 
@@ -642,8 +645,9 @@ def _get_brief_section_system_prompt(section: str) -> str:
     if section == "verlauf":
         # Verlauf nutzt seit c1.8 drei format-spezifische Curate-Prompts.
         # Für Display/Learning-Kontext: shared + kompakt als repräsentativer Default.
-        shared = _get_prompt("brief_verlauf_curate_shared.txt", _PROMPTS_DIR)
-        specific = _get_prompt("brief_verlauf_curate_kompakt.txt", _PROMPTS_DIR)
+        verlauf_dir = _BRIEF_SECTION_PROMPT_DIRS["verlauf"]
+        shared = _get_prompt("brief_verlauf_curate_shared.txt", verlauf_dir)
+        specific = _get_prompt("brief_verlauf_curate_kompakt.txt", verlauf_dir)
         return shared + "\n\n" + specific
     filename = _BRIEF_SECTION_PROMPT_FILES[section]
     prompt_dir = _BRIEF_SECTION_PROMPT_DIRS.get(section, _PROMPTS_DIR)

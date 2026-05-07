@@ -1,5 +1,8 @@
 # workflows/brief/anamnese
 
-Skill-Ordner für die Anamnese-Sektion des Arztbriefs.
+Skill: generiert den Anamnese-Block eines Arztbriefs aus einem Patient-YAML (Plain-Text-Output).
 
-Lernfähig — Regeln in `lernlog/default.yml` (gitignored, entsteht beim ersten Lerntrigger).
+Eingang: `Patient`-Objekt, vorgerenderter `rules_block: str`, `extra_context: str`.
+Ausgang: Plain-Text-String (kein JSON, kein Markdown-Wrapping).
+
+Lernfähig — Regeln in `lernlog/default.yml` (gitignored). Architekturkontext: `backend/AGENTS.md`.

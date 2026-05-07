@@ -1,5 +1,8 @@
 # workflows/brief/therapie
 
-Skill-Ordner für die Therapie-Sektion des Arztbriefs.
+Skill: generiert den Therapie-Block eines Arztbriefs aus einem Patient-YAML (JSON → Markdown).
 
-Lernfähig — Regeln in `lernlog/default.yml` (gitignored, entsteht beim ersten Lerntrigger).
+Eingang: `Patient`-Objekt, vorgerenderter `rules_block: str`, `extra_context: str`.
+Ausgang: Markdown-String (Initial-OP, antimikrobielle Therapie, weitere Prozeduren).
+
+Lernfähig — Regeln in `lernlog/default.yml` (gitignored). Architekturkontext: `backend/AGENTS.md`.

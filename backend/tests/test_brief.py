@@ -1009,9 +1009,8 @@ def test_load_curate_prompt_ausfuehrlich_contains_format_header(isolated_data):
 def test_load_curate_prompt_mittel_maps_to_kompakt(isolated_data):
     """_load_curate_prompt('mittel') → selber Prompt wie 'kompakt', kein Warning."""
     import agent_brief as ab
-    import logging
     ab._PROMPT_CACHE.clear()
-    with patch("agent_brief.logger") as mock_logger:
+    with patch("workflows.brief.verlauf.skill.logger") as mock_logger:
         prompt = ab._load_curate_prompt("mittel")
         mock_logger.warning.assert_not_called()
     assert "FORMAT: KOMPAKT" in prompt
@@ -1021,7 +1020,7 @@ def test_load_curate_prompt_unknown_falls_back_to_kompakt(isolated_data):
     """_load_curate_prompt mit unbekanntem Wert → Fallback kompakt + logger.warning."""
     import agent_brief as ab
     ab._PROMPT_CACHE.clear()
-    with patch("agent_brief.logger") as mock_logger:
+    with patch("workflows.brief.verlauf.skill.logger") as mock_logger:
         prompt = ab._load_curate_prompt("unbekannt")
         mock_logger.warning.assert_called_once()
     assert "FORMAT: KOMPAKT" in prompt
