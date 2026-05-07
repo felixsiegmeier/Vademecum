@@ -23,6 +23,7 @@ from workflows.document_extraction.tool_loop import Proposal
 from agent_patient_chat import CHAT_2PASS_CUTOFF, run_single_pass_chat
 from workflows.stammdaten_extraction.orchestrator import extract_stammdaten
 from workflows.stammdaten_extraction.schema import StammdatenExtractResult
+from workflows.meilenstein import orchestrator as meilenstein_orchestrator
 from llm_client import LLMClient
 from models.patient import Patient, PatientSummary, Stammdaten
 from storage import (
@@ -166,63 +167,6 @@ app.add_middleware(
 # ── Lazy-Loader für System-Prompts ────────────────────────────────────────────
 # Prompts liegen als .txt-Dateien auf Disk — erst beim ersten Aufruf gelesen,
 # danach im Modul-Cache gehalten, damit kein Disk-I/O pro Request entsteht.
-
-_MEILENSTEIN_SYSTEM_PROMPT: str | None = None
-
-
-def _get_meilenstein_system_prompt() -> str:
-    global _MEILENSTEIN_SYSTEM_PROMPT
-    if _MEILENSTEIN_SYSTEM_PROMPT is None:
-        _MEILENSTEIN_SYSTEM_PROMPT = _get_prompt("meilenstein_system.txt", _PROMPTS_DIR)
-    return _MEILENSTEIN_SYSTEM_PROMPT
-
-
-# Sektionen in Ausgabe-Reihenfolge — für Regel-Injection in gelernte_regeln-Block
-_MEILENSTEIN_SECTION_ORDER = [
-    "Operationen & Prozeduren",
-    "Behandlungsdiagnosen",
-    "Relevante Nebendiagnosen",
-    "Kardiale Funktion",
-    "Antikoagulation",
-    "Antimikrobielle Therapie",
-    "Befunde",
-    "Therapieziel / Patientenwille",
-]
-
-
-def _build_meilenstein_system_prompt(rules: list) -> str:
-    """Gibt den Meilenstein-System-Prompt zurück, optional mit Regel-Injection.
-
-    Bei leerer Regelliste: Base-Prompt unverändert (byte-identisch).
-    Bei nicht-leerer Regelliste: Base-Prompt + <gelernte_regeln>-Block am Ende.
-    """
-    base = _get_meilenstein_system_prompt()
-    if not rules:
-        return base
-
-    sections: dict[str, list[str]] = {}
-    for rule in rules:
-        sections.setdefault(rule.section, []).append(rule.rule_text)
-
-    lines: list[str] = [
-        "<gelernte_regeln>",
-        "",
-        "Die folgenden Regeln wurden aus früheren manuellen Korrekturen am Meilenstein "
-        "abgeleitet. Beachte sie beim Generieren der entsprechenden Sektion. "
-        "Eine Regel überschreibt im Konfliktfall die allgemeine Klausel-Logik.",
-    ]
-    for section in _MEILENSTEIN_SECTION_ORDER:
-        if section not in sections:
-            continue
-        lines.append("")
-        lines.append(f"## {section}")
-        lines.append("")
-        for rule_text in sections[section]:
-            lines.append(f"- {rule_text}")
-    lines.append("")
-    lines.append("</gelernte_regeln>")
-
-    return base + "\n\n" + "\n".join(lines)
 
 
 _BRIEF_SYSTEM_PROMPT: str | None = None
@@ -460,36 +404,13 @@ async def generate_meilenstein(
     except FileNotFoundError:
         raise HTTPException(404, f"Patient {patient_id} nicht gefunden")
 
-    patient_yaml = yaml.safe_dump(
-        patient.model_dump(exclude_none=True, mode="json"),
-        allow_unicode=True,
-        sort_keys=False,
-        default_flow_style=False,
-        width=100,
-    )
-    today_iso = date.today().isoformat()
-    rules = learning_storage.load_rules(domain="meilenstein")
-    system_prompt = _build_meilenstein_system_prompt(rules)
-
     current_meilenstein = (req.current_meilenstein if req else None) or ""
-    user_blocks = [
-        f"<patient_yaml>\n{patient_yaml}\n</patient_yaml>",
-        f"<generierungsdatum>{today_iso}</generierungsdatum>",
-    ]
-    if current_meilenstein.strip():
-        user_blocks.append(
-            f"<aktueller_meilenstein>\n{current_meilenstein}\n</aktueller_meilenstein>"
-        )
-    user_msg = "\n\n".join(user_blocks)
 
     try:
-        response = await llm.chat_completion(
-            [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_msg},
-            ],
-            temperature=0,
-            max_tokens=4096,
+        md_content = await meilenstein_orchestrator.generate(
+            patient,
+            llm,
+            current_meilenstein=current_meilenstein,
         )
     except RateLimitError:
         raise HTTPException(429, "LLM Rate-Limit erreicht. Bitte kurz warten.")
@@ -498,16 +419,10 @@ async def generate_meilenstein(
     except APIStatusError as e:
         raise HTTPException(502, f"LLM API Fehler {e.status_code}: {e.message}")
 
-    raw = (response.choices[0].message.content or "").strip()
-    # Extract content from ```plain text ... ``` code block (defensive: fall back to raw)
-    m = re.search(r"```[^\n]*\n(.*?)\n```", raw, re.DOTALL)
-    md_content = m.group(1).strip() if m else raw
-
     yaml_hash = patient_yaml_hash(patient_id)
     generated_at = datetime.now(timezone.utc).isoformat()
     meta = {"yaml_hash": yaml_hash, "generated_at": generated_at}
     save_meilenstein(patient_id, md_content, meta)
-    learning_storage.save_last_output(patient_id, md_content, domain="meilenstein")
 
     return JSONResponse(content={
         "content": md_content,
@@ -601,7 +516,7 @@ async def learn_meilenstein_rebuild_rule(req: RebuildRuleRequest):
 
 @app.get("/api/learn/meilenstein/system-prompt")
 def learn_meilenstein_system_prompt():
-    prompt = _get_meilenstein_system_prompt()
+    prompt = meilenstein_orchestrator._load_prompt()
     return JSONResponse(content={"content": prompt})
 
 

@@ -593,10 +593,11 @@ import learning_storage as _ls  # noqa: E402
 
 def test_meilenstein_prompt_unchanged_when_no_rules(isolated_data):
     """Snapshot: leere Regelliste → System-Prompt byte-identisch zum Base-Prompt."""
-    base = _main._get_meilenstein_system_prompt()
-    built = _main._build_meilenstein_system_prompt([])
+    import workflows.meilenstein.orchestrator as _mo
+    base = _mo._load_prompt()
+    built = _mo._build_system_prompt([])
     assert built == base, (
-        "Mit leerer Regelliste darf _build_meilenstein_system_prompt den "
+        "Mit leerer Regelliste darf _build_system_prompt den "
         "Basis-Prompt nicht verändern."
     )
 
@@ -608,7 +609,8 @@ def test_meilenstein_prompt_includes_rules_block_when_rules_present(isolated_dat
         _ls.new_rule("Behandlungsdiagnosen", "STEMI mit Culprit-Lesion in einer Zeile"),
         _ls.new_rule("Antikoagulation", "Bei bMKE biologisch alle Layer nennen"),
     ]
-    built = _main._build_meilenstein_system_prompt(rules)
+    import workflows.meilenstein.orchestrator as _mo
+    built = _mo._build_system_prompt(rules)
 
     assert "<gelernte_regeln>" in built
     assert "</gelernte_regeln>" in built
@@ -844,7 +846,7 @@ def test_meilenstein_konsolidierung_mode(isolated_data):
 
 from pathlib import Path as _Path  # noqa: E402
 
-_PROMPT_PATH = _Path(__file__).parent.parent / "prompts" / "meilenstein_system.md"
+_PROMPT_PATH = _Path(__file__).parent.parent / "workflows" / "meilenstein" / "prompt.md"
 
 
 def _prompt_text() -> str:
