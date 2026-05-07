@@ -17,39 +17,14 @@ from skills.learning.schemas import (  # noqa: F401
     RuleCandidate,
     TrivialChange,
 )
+from utils.prompts import get_prompt
 
 logger = logging.getLogger(__name__)
 
-_EXTRACTION_PROMPT_CACHE: str | None = None
-_CONFLICT_PROMPT_CACHE: str | None = None
-_REBUILD_PROMPT_CACHE: str | None = None
+_PROMPTS_DIR = Path(__file__).parent / "prompts"
 
 _MAX_CANDIDATES = 10
 _MAX_EXISTING_RULES = 20
-
-
-def _get_extraction_prompt() -> str:
-    global _EXTRACTION_PROMPT_CACHE
-    if _EXTRACTION_PROMPT_CACHE is None:
-        path = Path(__file__).parent / "prompts" / "learning_rule_extraction.txt"
-        _EXTRACTION_PROMPT_CACHE = path.read_text(encoding="utf-8")
-    return _EXTRACTION_PROMPT_CACHE
-
-
-def _get_conflict_prompt() -> str:
-    global _CONFLICT_PROMPT_CACHE
-    if _CONFLICT_PROMPT_CACHE is None:
-        path = Path(__file__).parent / "prompts" / "learning_conflict_detection.txt"
-        _CONFLICT_PROMPT_CACHE = path.read_text(encoding="utf-8")
-    return _CONFLICT_PROMPT_CACHE
-
-
-def _get_rebuild_prompt() -> str:
-    global _REBUILD_PROMPT_CACHE
-    if _REBUILD_PROMPT_CACHE is None:
-        path = Path(__file__).parent / "prompts" / "learning_rule_rebuild.txt"
-        _REBUILD_PROMPT_CACHE = path.read_text(encoding="utf-8")
-    return _REBUILD_PROMPT_CACHE
 
 
 
@@ -59,7 +34,7 @@ async def extract_rule_candidates(
     edited: str,
 ) -> ExtractionResult:
     """Vergleicht Original- und Bearbeitungsfassung, extrahiert verallgemeinerbare Regelkandidaten."""
-    system_prompt = _get_extraction_prompt()
+    system_prompt = get_prompt("learning_rule_extraction.txt", _PROMPTS_DIR)
     user_msg = (
         f"<original>\n{last_generated}\n</original>\n\n"
         f"<bearbeitet>\n{edited}\n</bearbeitet>"
@@ -120,7 +95,7 @@ async def detect_conflict(
     try:
         response = await client.chat_completion(
             [
-                {"role": "system", "content": _get_conflict_prompt()},
+                {"role": "system", "content": get_prompt("learning_conflict_detection.txt", _PROMPTS_DIR)},
                 {"role": "user", "content": user_msg},
             ],
             response_format={"type": "json_object"},
@@ -154,7 +129,7 @@ async def rebuild_rule_candidate(
     clarification: str,
 ) -> RebuildResult:
     """Verfeinert einen Regelkandidaten anhand einer Klarstellung des Arztes."""
-    system_prompt = _get_rebuild_prompt()
+    system_prompt = get_prompt("learning_rule_rebuild.txt", _PROMPTS_DIR)
     user_msg = (
         f"section: {section}\n"
         f"original_rule_text: {original_rule_text}\n"

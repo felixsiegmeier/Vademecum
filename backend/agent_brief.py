@@ -26,6 +26,7 @@ import yaml
 import learning_storage
 from llm_client import LLMClient
 from models.patient import Patient
+from utils.prompts import _PROMPT_CACHE, get_prompt  # _PROMPT_CACHE re-exported for tests
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +36,6 @@ _llm_lite: Optional[LLMClient] = None
 
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
 _ADRESSATEN_DIR = _PROMPTS_DIR / "adressaten"
-_PROMPT_CACHE: dict[str, str] = {}
 
 
 def _lite() -> LLMClient:
@@ -46,15 +46,7 @@ def _lite() -> LLMClient:
 
 
 def _get_prompt(name: str) -> str:
-    """Lädt Prompt-Text aus _PROMPTS_DIR. Bevorzugt <stem>.md, fällt auf <stem>.txt zurück."""
-    if name not in _PROMPT_CACHE:
-        stem = name.rsplit(".", 1)[0] if "." in name else name
-        md_path = _PROMPTS_DIR / f"{stem}.md"
-        if md_path.exists():
-            _PROMPT_CACHE[name] = md_path.read_text(encoding="utf-8")
-        else:
-            _PROMPT_CACHE[name] = (_PROMPTS_DIR / name).read_text(encoding="utf-8")
-    return _PROMPT_CACHE[name]
+    return get_prompt(name, _PROMPTS_DIR)
 
 
 def _load_adressatenprofil(name: str = "normalstation_intern") -> str:
