@@ -251,10 +251,13 @@ export function PatientChatPanel({ patientId, patient, refreshPatient, onPatient
     setChatBusy(true);
     setChatBusyLong(isLong);
     try {
+      const chatMessages = optimistic
+        .filter((e): e is ChatTextEntry => e.kind === "chat-text")
+        .map((e) => ({ role: e.role, content: e.content }));
       const res = await fetch(`/api/patients/${patientId}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: [{ role: "user", content: text }] }),
+        body: JSON.stringify({ messages: chatMessages }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => null);

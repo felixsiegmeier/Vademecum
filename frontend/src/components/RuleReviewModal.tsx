@@ -194,6 +194,7 @@ export default function RuleReviewModal({
               <RuleCandidateCard
                 key={idx}
                 candidate={c}
+                ruleText={state.ruleText}
                 accepted={state.accepted}
                 onToggleAccept={(v) => updateCardState(idx, { accepted: v })}
                 onRuleTextChange={(t) => updateCardState(idx, { ruleText: t })}
@@ -222,6 +223,7 @@ export default function RuleReviewModal({
                       <RuleCandidateCard
                         key={idx}
                         candidate={trivialToCandidate(tc)}
+                        ruleText={state.ruleText}
                         accepted={state.accepted}
                         onToggleAccept={(v) => updateTrivialCardState(idx, { accepted: v })}
                         onRuleTextChange={(t) => updateTrivialCardState(idx, { ruleText: t })}

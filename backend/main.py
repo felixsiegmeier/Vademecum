@@ -932,7 +932,7 @@ async def patient_chat(patient_id: str, req: PatientChatRequest):
             )
         else:
             # Kurzer Input → Single-Pass (Tool-Call oder Text-Antwort)
-            proposals, reply = await run_single_pass_chat(llm, patient, user_text, date.today())
+            proposals, reply = await run_single_pass_chat(llm, patient, req.messages, date.today())
             if reply:
                 return JSONResponse(
                     content={

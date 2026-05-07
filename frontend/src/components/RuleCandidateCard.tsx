@@ -9,6 +9,7 @@ import type { ConflictResolution, LearnRuleCandidate } from "../types";
 
 interface Props {
   candidate: LearnRuleCandidate;
+  ruleText: string;
   accepted: boolean;
   onToggleAccept: (accepted: boolean) => void;
   onRuleTextChange: (text: string) => void;
@@ -31,6 +32,7 @@ const SECTION_COLORS: Record<string, string> = {
 
 export default function RuleCandidateCard({
   candidate,
+  ruleText,
   accepted,
   onToggleAccept,
   onRuleTextChange,
@@ -39,7 +41,6 @@ export default function RuleCandidateCard({
   onConflictResolve,
   onRebuild,
 }: Props) {
-  const [ruleText, setRuleText] = useState(candidate.rule_text);
   const [showClarification, setShowClarification] = useState(false);
   const [clarification, setClarification] = useState("");
   const [rebuilding, setRebuilding] = useState(false);
@@ -65,7 +66,6 @@ export default function RuleCandidateCard({
   }
 
   function handleRuleTextChange(val: string) {
-    setRuleText(val);
     onRuleTextChange(val);
   }
 

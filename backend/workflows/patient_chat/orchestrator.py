@@ -57,7 +57,7 @@ def build_system_prompt(patient: Patient, today: date) -> str:
 async def run_single_pass_chat(
     llm,
     patient: Patient,
-    user_text: str,
+    messages: list[dict],
     today: date,
 ) -> tuple[list[Proposal], Optional[str]]:
     """Single-Pass Chat: LLM entscheidet selbst ob Tool-Call oder Text-Antwort.
@@ -69,10 +69,7 @@ async def run_single_pass_chat(
     """
     system = build_system_prompt(patient, today)
     response = await llm.chat_completion(
-        [
-            {"role": "system", "content": system},
-            {"role": "user", "content": user_text},
-        ],
+        [{"role": "system", "content": system}] + messages,
         tools=TOOL_SCHEMAS,
         tool_choice="auto",
         temperature=0,
