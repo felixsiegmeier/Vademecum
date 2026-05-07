@@ -26,7 +26,8 @@ logger = logging.getLogger(__name__)
 PATIENT_SCHEMA_VERSION = "0.4"
 SCHEMA_VERSION = "0.1"
 
-LERNLOG_DIR = Path(__file__).parent / "data" / "lernlog"
+# Regelmengen liegen als gitignorierte default.yml in den jeweiligen Section-lernlog/-Ordnern.
+LERNLOG_BASE = Path(__file__).parent / "workflows"
 SNAPSHOTS_DIR = Path(__file__).parent / "data" / "learning_snapshots"
 
 # Meilenstein-Sektionen — für Regel-Grouping im System-Prompt-Builder.
@@ -69,11 +70,11 @@ def new_rule(section: str, rule_text: str) -> Rule:
     )
 
 
-def _rules_path(user_id: str, domain: str, section: Optional[str] = None) -> Path:
+def _rules_path(domain: str, section: Optional[str], user_id: str = "default") -> Path:
     if section:
-        path = LERNLOG_DIR / domain / section / f"{user_id}.yml"
+        path = LERNLOG_BASE / domain / section / "lernlog" / f"{user_id}.yml"
     else:
-        path = LERNLOG_DIR / domain / f"{user_id}.yml"
+        path = LERNLOG_BASE / domain / "lernlog" / f"{user_id}.yml"
     path.parent.mkdir(parents=True, exist_ok=True)
     return path
 
@@ -90,7 +91,7 @@ def load_rules(
     section: Optional[str] = None,
 ) -> list[Rule]:
     """Lädt Regeln. Nicht-existente Datei → leere Liste."""
-    path = _rules_path(user_id, domain, section)
+    path = _rules_path(domain, section, user_id)
     if not path.exists():
         return []
 
@@ -132,7 +133,7 @@ def save_rules(
     section: Optional[str] = None,
 ) -> None:
     """Schreibt Regeln atomar (tempfile + os.replace)."""
-    path = _rules_path(user_id, domain, section)
+    path = _rules_path(domain, section, user_id)
     payload = {
         "schema_version": SCHEMA_VERSION,
         "rules": [r.model_dump() for r in rules],

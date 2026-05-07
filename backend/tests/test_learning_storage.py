@@ -46,7 +46,7 @@ def test_load_rules_logs_warning_on_schema_drift(isolated_data, caplog):
     """Rule mit veralteter patient_schema_version_at_creation → Warning, Rule trotzdem geladen."""
     # Regel mit veralteter Schema-Version direkt als Dict speichern
     import yaml, os
-    path = learning_storage._rules_path("default", "meilenstein")
+    path = learning_storage._rules_path("meilenstein", None)
     payload = {
         "schema_version": learning_storage.SCHEMA_VERSION,
         "rules": [
