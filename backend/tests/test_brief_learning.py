@@ -1,5 +1,7 @@
 """Tests für BR-B1: Brief-Lernlog — Storage, Endpoints, Agent-Injection."""
 import asyncio
+import json
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import storage
@@ -9,6 +11,9 @@ import brief_storage
 from main import app
 from fastapi.testclient import TestClient
 from models.patient import Patient, Stammdaten
+from utils.prompts import get_prompt as _get_prompt_from_dir
+
+_CURATE_PROMPTS_DIR = Path(__file__).parent.parent / "workflows" / "brief" / "verlauf" / "03_curate" / "prompts"
 
 client = TestClient(app)
 
@@ -164,8 +169,9 @@ def test_verlauf_rules_only_injected_in_curate_pass(isolated_data):
     rule = learning_storage.new_rule("Verlauf", "Schluss immer mit Verlegungssatz")
     learning_storage.save_rules([rule], domain="brief", section="verlauf")
 
-    collected_stub = "CLUSTER A\nSCHLUSS_INDIKATOR: KEINE_DOKUMENTATION"
-    audited_stub = collected_stub + "\nAUDIT_RESULT: ALLES_ABGEDECKT"
+    collected_substance = "CLUSTER A\nSCHLUSS_INDIKATOR: KEINE_DOKUMENTATION"
+    collected_stub = json.dumps({"substance": collected_substance, "curate_variant": "kompakt"})
+    audited_stub = collected_substance + "\nAUDIT_RESULT: ALLES_ABGEDECKT"
     final_stub = "Verlauf war komplikationslos."
 
     mock_client = MagicMock()
@@ -212,9 +218,6 @@ def test_brief_system_prompt_verlauf_returns_combined_curate_prompt(isolated_dat
     # Shared-Block und format-spezifischer Block müssen beide enthalten sein
     assert len(content) > 100
     # Beide Quell-Dateien existieren und wurden kombiniert (Inhalt ist länger als jede einzelne)
-    from pathlib import Path
-    from utils.prompts import get_prompt
-    prompts_dir = Path(__file__).parent.parent / "workflows" / "brief" / "verlauf"
-    shared_len = len(get_prompt("brief_verlauf_curate_shared.md", prompts_dir))
-    specific_len = len(get_prompt("brief_verlauf_curate_kompakt.md", prompts_dir))
+    shared_len = len(_get_prompt_from_dir("shared.md", _CURATE_PROMPTS_DIR))
+    specific_len = len(_get_prompt_from_dir("kompakt.md", _CURATE_PROMPTS_DIR))
     assert len(content) >= shared_len + specific_len

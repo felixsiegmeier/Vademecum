@@ -1,5 +1,5 @@
 ---
-id: brief-verlauf-audit
+id: verlauf-audit
 version: 2026-05-07
 model: gemini-3-flash-preview
 role: user

@@ -7,12 +7,14 @@ da tmp_path eindeutige Pfade liefert.
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator
 
 _PROMPT_CACHE: dict[Path, str] = {}
 
 
 class PromptFrontmatter(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
     id: str
     version: str        # ISO-Datum: "2026-05-07" oder "2026-05-07-2"
     model: str          # bindend — Orchestrator liest Modell aus Frontmatter

@@ -643,11 +643,10 @@ def _assert_valid_brief_section(section: str) -> None:
 
 def _get_brief_section_system_prompt(section: str) -> str:
     if section == "verlauf":
-        # Verlauf nutzt seit c1.8 drei format-spezifische Curate-Prompts.
         # Für Display/Learning-Kontext: shared + kompakt als repräsentativer Default.
-        verlauf_dir = _BRIEF_SECTION_PROMPT_DIRS["verlauf"]
-        shared = _get_prompt("brief_verlauf_curate_shared.txt", verlauf_dir)
-        specific = _get_prompt("brief_verlauf_curate_kompakt.txt", verlauf_dir)
+        curate_dir = _BRIEF_SECTION_PROMPT_DIRS["verlauf"] / "03_curate" / "prompts"
+        shared = _get_prompt("shared.md", curate_dir)
+        specific = _get_prompt("kompakt.md", curate_dir)
         return shared + "\n\n" + specific
     filename = _BRIEF_SECTION_PROMPT_FILES[section]
     prompt_dir = _BRIEF_SECTION_PROMPT_DIRS.get(section, _PROMPTS_DIR)

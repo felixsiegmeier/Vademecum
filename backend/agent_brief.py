@@ -27,8 +27,7 @@ from utils.prompts import _PROMPT_CACHE, get_prompt  # _PROMPT_CACHE re-exported
 from workflows.brief.anamnese import skill as _anamnese_skill
 from workflows.brief.diagnosen import skill as _diagnosen_skill
 from workflows.brief.therapie import skill as _therapie_skill
-from workflows.brief.verlauf import skill as _verlauf_skill
-from workflows.brief.verlauf.skill import _extract_substanz_tiefe, _load_curate_prompt  # re-exported for tests
+from workflows.brief.verlauf import orchestrator as _verlauf_skill
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +37,6 @@ _llm_lite: Optional[LLMClient] = None
 
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
 _ADRESSATEN_DIR = _PROMPTS_DIR / "adressaten"
-_BRIEF_VERLAUF_DIR = Path(__file__).parent / "workflows" / "brief" / "verlauf"
 
 
 def _lite() -> LLMClient:
@@ -49,10 +47,7 @@ def _lite() -> LLMClient:
 
 
 def _get_prompt(name: str) -> str:
-    stem = name.rsplit(".", 1)[0] if "." in name else name
-    if (_PROMPTS_DIR / f"{stem}.md").exists() or (_PROMPTS_DIR / name).exists():
-        return get_prompt(name, _PROMPTS_DIR)
-    return get_prompt(name, _BRIEF_VERLAUF_DIR)
+    return get_prompt(name, _PROMPTS_DIR)
 
 
 def _load_adressatenprofil(name: str = "normalstation_intern") -> str:

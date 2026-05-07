@@ -1,9 +1,10 @@
 ---
-id: brief-verlauf-curate-ausfuehrlich
+id: verlauf-curate-ausfuehrlich
 version: 2026-05-07
 model: gemini-3-flash-preview
 role: user
 inputs: []
+description: "über 14 Tage ITS — bis zu ~25 Sätze"
 ---
 == FORMAT: AUSFUEHRLICH ==
 

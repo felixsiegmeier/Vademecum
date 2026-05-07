@@ -1,9 +1,10 @@
 ---
-id: brief-verlauf-curate-kompakt
+id: verlauf-curate-kompakt
 version: 2026-05-07
 model: gemini-3-flash-preview
 role: user
 inputs: []
+description: "2-14 Tage ITS — maximal 8-12 Sätze"
 ---
 == FORMAT: KOMPAKT ==
 

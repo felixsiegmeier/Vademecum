@@ -1,5 +1,5 @@
 ---
-id: brief-verlauf-curate-shared
+id: verlauf-curate-shared
 version: 2026-05-07
 model: gemini-3-flash-preview
 role: user
@@ -100,7 +100,7 @@ a) Konnektoren mit logischer Funktion einsetzen — kausal ("weshalb", "sodass",
 
 b) Anaphorische Bezüge nutzen — der nachfolgende Satz greift ein Stichwort des vorigen Satzes auf und führt es weiter. Beispiel: "...führte zu einem Hämatothorax. Dieser wurde am 05.04. notfallmäßig ausgeräumt."
 
-c) Cluster-Übergänge moderieren (nur bei SUBSTANZ_TIEFE mittel/ausführlich) — beim Wechsel des Themas einen Brückensatz, der den vorigen Cluster rekapituliert oder das neue Thema kausal/zeitlich anbindet. NICHT einfach "Hämodynamisch zeigte sich..." als Allzweck-Eröffnung jedes Clusters. Beispiel-Brücke: "Parallel zur respiratorischen Situation gestaltete sich die Hämodynamik problematisch."
+c) Cluster-Übergänge moderieren (nur bei SUBSTANZ_TIEFE ausfuehrlich) — beim Wechsel des Themas einen Brückensatz, der den vorigen Cluster rekapituliert oder das neue Thema kausal/zeitlich anbindet. NICHT einfach "Hämodynamisch zeigte sich..." als Allzweck-Eröffnung jedes Clusters. Beispiel-Brücke: "Parallel zur respiratorischen Situation gestaltete sich die Hämodynamik problematisch."
    Bei SUBSTANZ_TIEFE minimal/kompakt: KEIN separater Brückensatz. Direkter Einstieg in den nächsten Cluster — die SUBSTANZ_TIEFE-DISZIPLIN-Regel hat Vorrang.
 
 d) Keine isolierten Sätze — jeder Satz ist entweder durch den Vorgängersatz vorbereitet oder leitet einen klar markierten Themenwechsel ein. Ein Satz wie "Die Ernährung erfolgte über eine Magensonde." ohne Kontext-Anbindung wirkt fremdkörperhaft.

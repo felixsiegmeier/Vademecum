@@ -1,6 +1,8 @@
 """Tests für Brief-Generator V1: brief_storage, agent_brief, Endpoints."""
 import asyncio
+import importlib
 import json
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -11,6 +13,12 @@ import brief_storage
 import storage
 from main import app
 from models.patient import Patient, Stammdaten
+from utils.prompts import get_prompt as _get_prompt_from_dir
+
+_VERLAUF_DIR = Path(__file__).parent.parent / "workflows" / "brief" / "verlauf"
+_COLLECT_DIR = _VERLAUF_DIR / "01_collect"
+_AUDIT_DIR = _VERLAUF_DIR / "02_audit"
+_CURATE_PROMPTS_DIR = _VERLAUF_DIR / "03_curate" / "prompts"
 
 client = TestClient(app)
 
@@ -151,8 +159,9 @@ def test_generate_verlauf_passes_all_context(isolated_data):
     """generate_verlauf: 3 LLM-Calls; Pass 1 enthält alle Kontext-Inputs; Ergebnis = Pass-3-Output."""
     patient = Patient(stammdaten=Stammdaten(id="P-0001", name="Test, Patient", aufnahmedatum="2026-04-01"))
 
-    collected_stub = "CLUSTER A — ÜBERNAHME\n- Aufnahme nach OP\nSCHLUSS_INDIKATOR: KEINE_DOKUMENTATION"
-    audited_stub = collected_stub + "\nAUDIT_RESULT: ALLES_ABGEDECKT"
+    collected_substance = "CLUSTER A — ÜBERNAHME\n- Aufnahme nach OP\nSCHLUSS_INDIKATOR: KEINE_DOKUMENTATION"
+    collected_stub = json.dumps({"substance": collected_substance, "curate_variant": "kompakt"})
+    audited_stub = collected_substance + "\nAUDIT_RESULT: ALLES_ABGEDECKT"
     final_stub = "Der Verlauf war komplikationslos."
 
     mock_client = MagicMock()
@@ -413,9 +422,8 @@ def test_endpoint_regenerate_section_passes_extra_context(isolated_data):
 # ── 20. Prompt-Validierung: collect-Prompt enthält keine fertigen Brief-Sätze ──
 
 def test_collect_prompt_contains_no_finished_sentences(isolated_data):
-    """brief_verlauf_collect.txt darf keine Few-Shot-Fließtext-Sätze enthalten."""
-    import agent_brief as ab
-    prompt = ab._get_prompt("brief_verlauf_collect.txt")
+    """collect-Prompt darf keine Few-Shot-Fließtext-Sätze enthalten."""
+    prompt = _get_prompt_from_dir("prompt.md", _COLLECT_DIR)
     # Sammler-Prompt soll kein fertiges Schluss-Pattern im Fließtext-Stil haben
     assert "Wir verlegen" not in prompt
     assert "verstarb am" not in prompt
@@ -427,9 +435,8 @@ def test_collect_prompt_contains_no_finished_sentences(isolated_data):
 # ── 21. Prompt-Validierung: audit-Prompt hat read-only-Klausel ───────────────
 
 def test_audit_prompt_is_read_only_for_existing_items(isolated_data):
-    """brief_verlauf_audit.txt muss die Klausel 'NICHTS löschen oder umformulieren' enthalten."""
-    import agent_brief as ab
-    prompt = ab._get_prompt("brief_verlauf_audit.txt")
+    """audit-Prompt muss die Klausel 'NICHTS löschen oder umformulieren' enthalten."""
+    prompt = _get_prompt_from_dir("prompt.md", _AUDIT_DIR)
     assert "NICHTS löschen oder umformulieren" in prompt
     assert "{collected_substance}" in prompt
     assert "AUDIT_RESULT" in prompt
@@ -438,9 +445,8 @@ def test_audit_prompt_is_read_only_for_existing_items(isolated_data):
 # ── 22. Prompt-Validierung: curate-Prompt verbietet neue Fakten ──────────────
 
 def test_curate_prompt_forbids_new_facts(isolated_data):
-    """brief_verlauf_curate_shared.txt muss die Klausel 'KEINE NEUEN FAKTEN' enthalten."""
-    import agent_brief as ab
-    prompt = ab._get_prompt("brief_verlauf_curate_shared.txt")
+    """curate shared-Prompt muss die Klausel 'KEINE NEUEN FAKTEN' enthalten."""
+    prompt = _get_prompt_from_dir("shared.md", _CURATE_PROMPTS_DIR)
     assert "KEINE NEUEN FAKTEN" in prompt
     assert "{audited_substance}" in prompt
     assert "SCHLUSS_INDIKATOR" in prompt
@@ -449,14 +455,12 @@ def test_curate_prompt_forbids_new_facts(isolated_data):
 # ── 23. Prompt-Validierung: collect-Prompt enthält Aufenthaltsdauer-Logik ─────
 
 def test_collect_prompt_includes_aufenthaltsdauer_logic(isolated_data):
-    """brief_verlauf_collect.txt muss SUBSTANZ_TIEFE und die 4-Stufen-Liste enthalten."""
-    import agent_brief as ab
-    prompt = ab._get_prompt("brief_verlauf_collect.txt")
+    """collect-Prompt muss SUBSTANZ_TIEFE und die Stufen-Liste enthalten."""
+    prompt = _get_prompt_from_dir("prompt.md", _COLLECT_DIR)
     assert "SUBSTANZ_TIEFE" in prompt
     assert "minimal" in prompt
     assert "kompakt" in prompt
-    assert "mittel" in prompt
-    assert "ausführlich" in prompt
+    assert "ausfuehrlich" in prompt
     assert "AUFENTHALTSDAUER_TAGE" in prompt
 
 
@@ -627,8 +631,7 @@ def test_polish_section_all_sections_use_lektor_prompt(isolated_data):
 
 def test_collect_prompt_has_hard_limit_clause(isolated_data):
     """collect-Prompt enthält hartes AUFENTHALTSDAUER-Limit und NEGATIV-BEISPIEL."""
-    import agent_brief as ab
-    prompt = ab._get_prompt("brief_verlauf_collect.txt")
+    prompt = _get_prompt_from_dir("prompt.md", _COLLECT_DIR)
     assert "HARTES SUBSTANZ_TIEFE-LIMIT" in prompt, "Hartes-Limit-Klausel fehlt"
     assert "unter 48h" in prompt, "Bed-and-Breakfast-Grenze fehlt"
     assert "INHALTLICHE KOMPLEXITÄT" in prompt, "Komplexitäts-Override-Verbot fehlt"
@@ -639,8 +642,7 @@ def test_collect_prompt_has_hard_limit_clause(isolated_data):
 
 def test_collect_prompt_its_liegezeit_not_hospital_los(isolated_data):
     """collect-Prompt berechnet ITS-Liegezeit, nicht Hospital-Liegezeit."""
-    import agent_brief as ab
-    prompt = ab._get_prompt("brief_verlauf_collect.txt")
+    prompt = _get_prompt_from_dir("prompt.md", _COLLECT_DIR)
     assert "ITS-Liegezeit" in prompt, "ITS-Liegezeit-Klausel fehlt"
     assert "hospital_los_fallback" in prompt, "Fallback-Marker fehlt"
     assert "Präoperative Normalstations-Aufenthalte werden NICHT mitgezählt" in prompt
@@ -648,8 +650,7 @@ def test_collect_prompt_its_liegezeit_not_hospital_los(isolated_data):
 
 def test_curate_prompt_has_substanz_tiefe_disziplin(isolated_data):
     """curate-Prompt enthält SUBSTANZ_TIEFE-DISZIPLIN-Klausel."""
-    import agent_brief as ab
-    prompt = ab._get_prompt("brief_verlauf_curate_shared.txt")
+    prompt = _get_prompt_from_dir("shared.md", _CURATE_PROMPTS_DIR)
     assert "SUBSTANZ_TIEFE-DISZIPLIN" in prompt, "Disziplin-Klausel fehlt"
     assert "verbindlich" in prompt, "Verbindlichkeits-Formulierung fehlt"
     assert "Aufblähen" in prompt, "Aufblähverbot fehlt"
@@ -657,8 +658,7 @@ def test_curate_prompt_has_substanz_tiefe_disziplin(isolated_data):
 
 def test_curate_prompt_has_sicherheitspflicht_regel(isolated_data):
     """Alte 'alle-Cluster'-Pflicht durch SICHERHEITS-PFLICHT-INHALTE ersetzt."""
-    import agent_brief as ab
-    prompt = ab._get_prompt("brief_verlauf_curate_shared.txt")
+    prompt = _get_prompt_from_dir("shared.md", _CURATE_PROMPTS_DIR)
     assert "SICHERHEITS-PFLICHT-INHALTE" in prompt
     assert "Pending Items" in prompt, "Pending-Items in Sicherheits-Pflicht fehlen"
     assert "explizit weggelassen" in prompt, "Routine-Streich-Erlaubnis fehlt"
@@ -669,16 +669,14 @@ def test_curate_prompt_has_sicherheitspflicht_regel(isolated_data):
 
 def test_collect_prompt_bed_and_breakfast_boundary(isolated_data):
     """collect-Prompt nennt 48h-Grenze und maximal-Satz-Zahl für minimal."""
-    import agent_brief as ab
-    prompt = ab._get_prompt("brief_verlauf_collect.txt")
+    prompt = _get_prompt_from_dir("prompt.md", _COLLECT_DIR)
     assert "48h" in prompt
     assert "4-5 Sätze" in prompt or "maximal 4-5" in prompt
 
 
 def test_collect_prompt_komplikations_override_whitelist(isolated_data):
     """collect-Prompt enthält mindestens Reanimation und Tracheotomie in der Override-Whitelist."""
-    import agent_brief as ab
-    prompt = ab._get_prompt("brief_verlauf_collect.txt")
+    prompt = _get_prompt_from_dir("prompt.md", _COLLECT_DIR)
     assert "Reanimation" in prompt, "Reanimation als Override fehlt"
     assert "Tracheotomie" in prompt, "Tracheotomie als Override fehlt"
     assert "Versterben" in prompt, "Versterben als Override fehlt"
@@ -686,8 +684,7 @@ def test_collect_prompt_komplikations_override_whitelist(isolated_data):
 
 def test_collect_prompt_no_override_noradrenalin(isolated_data):
     """collect-Prompt benennt Noradrenalin-Boli explizit als KEIN Override-Kriterium."""
-    import agent_brief as ab
-    prompt = ab._get_prompt("brief_verlauf_collect.txt")
+    prompt = _get_prompt_from_dir("prompt.md", _COLLECT_DIR)
     assert "Noradrenalin" in prompt, "Nicht-Override-Beispiel Noradrenalin fehlt"
     assert "NICHT als Override" in prompt, "Nicht-Override-Klausel fehlt"
 
@@ -752,9 +749,13 @@ def test_curate_prompt_contains_adressatenprofil(isolated_data):
     patient = Patient(stammdaten=Stammdaten(id="P-0001", name="Test, Patient", aufnahmedatum="2026-04-01"))
 
     captured_prompts: list[str] = []
+    _call_idx = [0]
 
     async def capture(messages, **kwargs):
         captured_prompts.append(messages[0]["content"])
+        _call_idx[0] += 1
+        if _call_idx[0] == 1:  # Pass 1 must return valid CollectOutput JSON
+            return _llm_resp(json.dumps({"substance": "CLUSTER A", "curate_variant": "kompakt"}))
         return _llm_resp("ok")
 
     with patch("agent_brief._lite", return_value=MagicMock(chat_completion=capture)):
@@ -774,7 +775,7 @@ def test_generate_verlauf_accepts_adressat_argument(isolated_data):
 
     mock_client = MagicMock()
     mock_client.chat_completion = AsyncMock(side_effect=[
-        _llm_resp("CLUSTER A\nSCHLUSS_INDIKATOR: KEINE_DOKUMENTATION"),
+        _llm_resp(json.dumps({"substance": "CLUSTER A\nSCHLUSS_INDIKATOR: KEINE_DOKUMENTATION", "curate_variant": "kompakt"})),
         _llm_resp("AUDIT_RESULT: ALLES_ABGEDECKT"),
         _llm_resp("Komplikationsloser Verlauf."),
     ])
@@ -790,18 +791,16 @@ def test_generate_verlauf_accepts_adressat_argument(isolated_data):
 # ── 33. Routine-Filter + Negativ-Beispiel + Diagnose-Logging ─────────────────
 
 def test_curate_prompt_has_routine_filter(isolated_data):
-    """brief_verlauf_curate_shared.txt enthält ROUTINE-FILTER-Klausel."""
-    import agent_brief as ab
-    prompt = ab._get_prompt("brief_verlauf_curate_shared.txt")
+    """curate shared-Prompt enthält ROUTINE-FILTER-Klausel."""
+    prompt = _get_prompt_from_dir("shared.md", _CURATE_PROMPTS_DIR)
     assert "ROUTINE-FILTER" in prompt, "ROUTINE-FILTER-Klausel fehlt"
     assert "abgeschlossenen Phase" in prompt, "Kernaussage fehlt"
     assert "Auffüllen ist verboten" in prompt, "Auffüll-Verbot fehlt"
 
 
 def test_curate_prompt_has_negativ_beispiel(isolated_data):
-    """brief_verlauf_curate_shared.txt enthält NEGATIV-BEISPIEL-Abschnitt."""
-    import agent_brief as ab
-    prompt = ab._get_prompt("brief_verlauf_curate_shared.txt")
+    """curate shared-Prompt enthält NEGATIV-BEISPIEL-Abschnitt."""
+    prompt = _get_prompt_from_dir("shared.md", _CURATE_PROMPTS_DIR)
     assert "NEGATIV-BEISPIEL" in prompt, "NEGATIV-BEISPIEL-Marker fehlt"
     assert "SO NICHT" in prompt, "Negativ-Marker fehlt"
     assert "RICHTIG" in prompt, "Positiv-Gegenbeispiel fehlt"
@@ -811,14 +810,15 @@ def test_generate_verlauf_short_cabg_output_under_100_words(isolated_data):
     """generate_verlauf: unkomplizierter ~36h-CABG-Verlauf → Curate-Output < 100 Wörter."""
     patient = Patient(stammdaten=Stammdaten(id="P-0001", name="Schönberg, Karl", aufnahmedatum="2026-04-01"))
 
-    collected = (
+    collected_substance = (
         "CLUSTER A -- UEBERNAHME\n"
         "- 01.04.2026: Postoperativ nach CABG (2-Gefäß-Bypass)\n"
         "AUFENTHALTSDAUER_TAGE: 2\n"
         "SUBSTANZ_TIEFE: kompakt\n"
         "SCHLUSS_INDIKATOR: KEINE_DOKUMENTATION\n"
     )
-    audited = collected + "\nAUDIT_RESULT: ALLES_ABGEDECKT"
+    collected = json.dumps({"substance": collected_substance, "curate_variant": "kompakt"})
+    audited = collected_substance + "\nAUDIT_RESULT: ALLES_ABGEDECKT"
     final = (
         "Herr Schönberg wurde am 01.04.2026 postoperativ nach koronarer Bypassoperation übernommen. "
         "Der hämodynamische und respiratorische Verlauf gestaltete sich komplikationslos "
@@ -847,8 +847,9 @@ def test_generate_verlauf_diagnostic_logging(isolated_data, capsys):
     """generate_verlauf schreibt [BR-C1.7-DIAG]-Marker auf stderr."""
     patient = Patient(stammdaten=Stammdaten(id="P-0001", name="Test, Patient", aufnahmedatum="2026-04-01"))
 
-    collected = "CLUSTER A\nSCHLUSS_INDIKATOR: KEINE_DOKUMENTATION"
-    audited = collected + "\nAUDIT_RESULT: ALLES_ABGEDECKT"
+    collected_substance = "CLUSTER A\nSCHLUSS_INDIKATOR: KEINE_DOKUMENTATION"
+    collected = json.dumps({"substance": collected_substance, "curate_variant": "kompakt"})
+    audited = collected_substance + "\nAUDIT_RESULT: ALLES_ABGEDECKT"
     final = "Komplikationsloser Verlauf."
 
     mock_client = MagicMock()
@@ -871,7 +872,7 @@ def test_generate_verlauf_diagnostic_logging(isolated_data, capsys):
 
 def test_curate_prompt_has_konnektoren_disziplin(isolated_data):
     """KONNEKTOREN-DISZIPLIN-Block mit erlaubter und verbotener Kategorie vorhanden."""
-    prompt = agent_brief._get_prompt("brief_verlauf_curate_shared.txt")
+    prompt = _get_prompt_from_dir("shared.md", _CURATE_PROMPTS_DIR)
     assert "KONNEKTOREN-DISZIPLIN" in prompt
     assert "kausal-logisch" in prompt, "Erlaubte Kategorie fehlt"
     assert "parallel hierzu" in prompt, "Verbotene Beispiel-Phrase fehlt"
@@ -879,28 +880,26 @@ def test_curate_prompt_has_konnektoren_disziplin(isolated_data):
 
 def test_curate_prompt_has_konnektoren_faustregel(isolated_data):
     """Faustregel-Marker für den Füllkonnektor-Test vorhanden."""
-    prompt = agent_brief._get_prompt("brief_verlauf_curate_shared.txt")
+    prompt = _get_prompt_from_dir("shared.md", _CURATE_PROMPTS_DIR)
     assert "Faustregel" in prompt
 
 
 def test_curate_prompt_has_minimal_beispiel(isolated_data):
     """Minimal-Beispiel-Marker für few-shot-Kalibrierung kurzer Verläufe vorhanden."""
-    prompt = agent_brief._get_prompt("brief_verlauf_curate_minimal.txt")
+    prompt = _get_prompt_from_dir("minimal.md", _CURATE_PROMPTS_DIR)
     assert "Minimal-Beispiel" in prompt
 
 
 def test_collect_prompt_has_pending_marker(isolated_data):
     """collect-Prompt enthält PENDING-ITEMS-Klausel mit [PENDING]-Marker."""
-    import agent_brief as ab
-    prompt = ab._get_prompt("brief_verlauf_collect.txt")
+    prompt = _get_prompt_from_dir("prompt.md", _COLLECT_DIR)
     assert "PENDING-ITEMS" in prompt, "PENDING-ITEMS-Sektion fehlt"
     assert "[PENDING]" in prompt, "[PENDING]-Marker-Anweisung fehlt"
 
 
 def test_curate_prompt_no_im_weiteren_verlauf_in_kohäsion(isolated_data):
     """'im weiteren Verlauf' als Konnektor-Beispiel wurde aus KOHÄSION a) entfernt."""
-    import agent_brief as ab
-    prompt = ab._get_prompt("brief_verlauf_curate_shared.txt")
+    prompt = _get_prompt_from_dir("shared.md", _CURATE_PROMPTS_DIR)
     assert '"im weiteren Verlauf"' not in prompt, (
         "'im weiteren Verlauf' noch als Konnektor-Beispiel vorhanden — Floskel-Risiko"
     )
@@ -908,7 +907,7 @@ def test_curate_prompt_no_im_weiteren_verlauf_in_kohäsion(isolated_data):
 
 def test_curate_prompt_no_pauschales_konnektoren_verbot(isolated_data):
     """Altes pauschales Konnektoren-Verbot ist durch KONNEKTOREN-DISZIPLIN ersetzt."""
-    prompt = agent_brief._get_prompt("brief_verlauf_curate_shared.txt")
+    prompt = _get_prompt_from_dir("shared.md", _CURATE_PROMPTS_DIR)
     assert "Floskeln, Konnektoren" not in prompt, (
         "Pauschales Konnektoren-Verbot gefunden — muss durch KONNEKTOREN-DISZIPLIN-Block ersetzt sein"
     )
@@ -916,14 +915,14 @@ def test_curate_prompt_no_pauschales_konnektoren_verbot(isolated_data):
 
 def test_curate_prompt_has_pending_replacement_rule(isolated_data):
     """Curate-Prompt enthält [PENDING]-Marker-Replacement-Anweisung."""
-    prompt = agent_brief._get_prompt("brief_verlauf_curate_shared.txt")
+    prompt = _get_prompt_from_dir("shared.md", _CURATE_PROMPTS_DIR)
     assert "[PENDING]-Marker-Regel" in prompt, "Marker-Replacement-Klausel fehlt"
     assert "NIEMALS literal" in prompt, "Literal-Verbot fehlt"
 
 
 def test_curate_prompt_has_sofern_vorhanden(isolated_data):
     """SICHERHEITS-PFLICHT-INHALTE enthält 'sofern im Patientenfall vorhanden'."""
-    prompt = agent_brief._get_prompt("brief_verlauf_curate_shared.txt")
+    prompt = _get_prompt_from_dir("shared.md", _CURATE_PROMPTS_DIR)
     assert "sofern im Patientenfall vorhanden" in prompt
 
 
@@ -931,7 +930,7 @@ def test_curate_pending_marker_not_in_final_output(isolated_data):
     """[PENDING] aus Sammler-Output darf nicht literal im Curate-Ergebnis erscheinen."""
     patient = Patient(stammdaten=Stammdaten(id="P-0001", name="Test, Patient", aufnahmedatum="2026-04-01"))
 
-    collected = (
+    collected_substance = (
         "CLUSTER A -- ÜBERNAHME\n"
         "- 01.04.2026: Postoperativ nach CABG\n"
         "CLUSTER J -- WUNDEN\n"
@@ -940,7 +939,8 @@ def test_curate_pending_marker_not_in_final_output(isolated_data):
         "SCHLUSS_INDIKATOR: LEBEND_VERLEGUNG\nSCHLUSS_DATUM: 02.04.2026\nSCHLUSS_ZIEL: Normalstation\n"
         "LETZTER_DOKUMENTIERTER_ZUSTAND: Stabil.\n"
     )
-    audited = collected + "\nAUDIT: OK"
+    collected = json.dumps({"substance": collected_substance, "curate_variant": "minimal"})
+    audited = collected_substance + "\nAUDIT: OK"
     final = (
         "Herr Test wurde am 01.04.2026 postoperativ nach CABG übernommen. "
         "Der Verlauf gestaltete sich komplikationslos; der Drain-Zug ist auf Station vorgesehen. "
@@ -962,74 +962,56 @@ def test_curate_pending_marker_not_in_final_output(isolated_data):
     assert "vorgesehen" in result or "steht noch aus" in result or "auf Station" in result
 
 
-# ── 40. BR-C1.8: _extract_substanz_tiefe + _load_curate_prompt ───────────────
+# ── 40. BR-C1.8: CollectOutput-Validierung ───────────────────────────────────
 
-def test_extract_substanz_tiefe_parses_correctly(isolated_data):
-    """_extract_substanz_tiefe liest SUBSTANZ_TIEFE-Zeile korrekt aus Sammler-Output."""
-    import agent_brief as ab
-    for tiefe in ("minimal", "kompakt", "mittel", "ausführlich"):
-        collected = f"CLUSTER A -- TEST\n- foo\nSUBSTANZ_TIEFE: {tiefe}\n"
-        assert ab._extract_substanz_tiefe(collected) == tiefe
-
-
-def test_extract_substanz_tiefe_fallback_on_missing(isolated_data):
-    """_extract_substanz_tiefe gibt 'kompakt' zurück wenn SUBSTANZ_TIEFE fehlt."""
-    import agent_brief as ab
-    result = ab._extract_substanz_tiefe("CLUSTER A -- TEST\n- foo\n")
-    assert result == "kompakt"
+def test_collect_output_accepts_known_variants(isolated_data):
+    """CollectOutput akzeptiert alle Varianten die als .md-Dateien in 03_curate/prompts liegen."""
+    collect_mod = importlib.import_module("workflows.brief.verlauf.01_collect.schema")
+    CollectOutputCls = collect_mod.CollectOutput
+    for variant in ("minimal", "kompakt", "ausfuehrlich"):
+        obj = CollectOutputCls(substance="CLUSTER A", curate_variant=variant)
+        assert obj.curate_variant == variant
 
 
-def test_load_curate_prompt_minimal_contains_format_header(isolated_data):
-    """_load_curate_prompt('minimal') enthält FORMAT: MINIMAL aus der format-spezifischen Datei."""
-    import agent_brief as ab
-    ab._PROMPT_CACHE.clear()
-    prompt = ab._load_curate_prompt("minimal")
-    assert "FORMAT: MINIMAL" in prompt
-    assert "KEINE NEUEN FAKTEN" in prompt, "Shared-Inhalt fehlt in kombiniertem Prompt"
+def test_collect_output_rejects_unknown_variant(isolated_data):
+    """CollectOutput wirft ValidationError wenn curate_variant unbekannt."""
+    from pydantic import ValidationError
+    collect_mod = importlib.import_module("workflows.brief.verlauf.01_collect.schema")
+    CollectOutputCls = collect_mod.CollectOutput
+    with pytest.raises(ValidationError):
+        CollectOutputCls(substance="CLUSTER A", curate_variant="mittel")
 
 
-def test_load_curate_prompt_kompakt_contains_format_header(isolated_data):
-    """_load_curate_prompt('kompakt') enthält FORMAT: KOMPAKT."""
-    import agent_brief as ab
-    ab._PROMPT_CACHE.clear()
-    prompt = ab._load_curate_prompt("kompakt")
-    assert "FORMAT: KOMPAKT" in prompt
-    assert "KEINE NEUEN FAKTEN" in prompt
+def test_collect_output_rejects_ausfuehrlich_with_umlaut(isolated_data):
+    """CollectOutput akzeptiert nur 'ausfuehrlich' (ohne Umlaut), nicht 'ausführlich'."""
+    from pydantic import ValidationError
+    collect_mod = importlib.import_module("workflows.brief.verlauf.01_collect.schema")
+    CollectOutputCls = collect_mod.CollectOutput
+    with pytest.raises(ValidationError):
+        CollectOutputCls(substance="CLUSTER A", curate_variant="ausführlich")
 
 
-def test_load_curate_prompt_ausfuehrlich_contains_format_header(isolated_data):
-    """_load_curate_prompt('ausführlich') enthält FORMAT: AUSFUEHRLICH."""
-    import agent_brief as ab
-    ab._PROMPT_CACHE.clear()
-    prompt = ab._load_curate_prompt("ausführlich")
-    assert "FORMAT: AUSFUEHRLICH" in prompt
-    assert "KEINE NEUEN FAKTEN" in prompt
+def test_collect_output_no_mittel_variant(isolated_data):
+    """'mittel' ist keine gültige curate_variant mehr."""
+    from pydantic import ValidationError
+    collect_mod = importlib.import_module("workflows.brief.verlauf.01_collect.schema")
+    CollectOutputCls = collect_mod.CollectOutput
+    with pytest.raises(ValidationError):
+        CollectOutputCls(substance="CLUSTER A", curate_variant="mittel")
 
 
-def test_load_curate_prompt_mittel_maps_to_kompakt(isolated_data):
-    """_load_curate_prompt('mittel') → selber Prompt wie 'kompakt', kein Warning."""
-    import agent_brief as ab
-    ab._PROMPT_CACHE.clear()
-    with patch("workflows.brief.verlauf.skill.logger") as mock_logger:
-        prompt = ab._load_curate_prompt("mittel")
-        mock_logger.warning.assert_not_called()
-    assert "FORMAT: KOMPAKT" in prompt
-
-
-def test_load_curate_prompt_unknown_falls_back_to_kompakt(isolated_data):
-    """_load_curate_prompt mit unbekanntem Wert → Fallback kompakt + logger.warning."""
-    import agent_brief as ab
-    ab._PROMPT_CACHE.clear()
-    with patch("workflows.brief.verlauf.skill.logger") as mock_logger:
-        prompt = ab._load_curate_prompt("unbekannt")
-        mock_logger.warning.assert_called_once()
-    assert "FORMAT: KOMPAKT" in prompt
+def test_curate_variants_have_format_headers(isolated_data):
+    """Jede variant-Prompt-Datei enthält ihren FORMAT-Header."""
+    for stem, header in [("minimal", "FORMAT: MINIMAL"), ("kompakt", "FORMAT: KOMPAKT"), ("ausfuehrlich", "FORMAT: AUSFUEHRLICH")]:
+        prompt = _get_prompt_from_dir(f"{stem}.md", _CURATE_PROMPTS_DIR)
+        assert header in prompt, f"{stem}.md fehlt {header}"
+        shared = _get_prompt_from_dir("shared.md", _CURATE_PROMPTS_DIR)
+        combined = shared + "\n\n" + prompt
+        assert "KEINE NEUEN FAKTEN" in combined, f"Shared-Inhalt fehlt für Variante {stem}"
 
 
 def test_no_cross_contamination_minimal_has_no_ausfuehrlich_stilanker(isolated_data):
     """Minimal-Prompt enthält keine Ausführlich-Stil-Anker (Vasoplegie, Impella)."""
-    import agent_brief as ab
-    ab._PROMPT_CACHE.clear()
-    prompt = ab._load_curate_prompt("minimal")
+    prompt = _get_prompt_from_dir("minimal.md", _CURATE_PROMPTS_DIR)
     assert "vasoplegisch" not in prompt.lower()
     assert "Impella" not in prompt

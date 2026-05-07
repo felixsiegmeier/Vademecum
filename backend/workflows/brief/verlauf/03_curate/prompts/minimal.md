@@ -1,9 +1,10 @@
 ---
-id: brief-verlauf-curate-minimal
+id: verlauf-curate-minimal
 version: 2026-05-07
 model: gemini-3-flash-preview
 role: user
 inputs: []
+description: "unter 48h ITS — maximal 4-5 Sätze"
 ---
 == FORMAT: MINIMAL ==
 
