@@ -12,13 +12,14 @@ Patient-Snapshots (nicht user-spezifisch):
 
 import logging
 import os
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
 import yaml
 from pydantic import BaseModel, field_validator
+
+from utils.ulid import generate_ulid
 
 logger = logging.getLogger(__name__)
 
@@ -43,20 +44,6 @@ MEILENSTEIN_SECTIONS = [
 # Brief-Sektionen mit Lernlog (befunde explizit ausgeschlossen).
 BRIEF_SECTIONS_WITH_LEARNING = {"diagnosen", "anamnese", "therapie", "verlauf"}
 
-_CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
-
-
-def _generate_ulid() -> str:
-    timestamp_ms = int(time.time() * 1000) & ((1 << 48) - 1)
-    randomness = int.from_bytes(os.urandom(10), "big")
-    n = (timestamp_ms << 80) | randomness
-    chars = []
-    for _ in range(26):
-        chars.append(_CROCKFORD[n & 0x1F])
-        n >>= 5
-    return "".join(reversed(chars))
-
-
 class Rule(BaseModel):
     id: str
     section: str  # free-form label; für meilenstein: einer der MEILENSTEIN_SECTIONS
@@ -74,7 +61,7 @@ class Rule(BaseModel):
 
 def new_rule(section: str, rule_text: str) -> Rule:
     return Rule(
-        id=_generate_ulid(),
+        id=generate_ulid(),
         section=section,
         rule_text=rule_text,
         created_at=datetime.now(timezone.utc).isoformat(),

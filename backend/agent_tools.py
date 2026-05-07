@@ -1,5 +1,3 @@
-import os
-import time
 from typing import Callable
 
 from models.patient import (
@@ -9,24 +7,7 @@ from models.patient import (
     VerlaufsEintrag,
 )
 from storage import load_patient, save_patient
-
-
-# ── ULID ──────────────────────────────────────────────────────────────────────
-# Crockford-Base32 (26 Zeichen). 48 Bit Zeitstempel + 80 Bit Zufall = 128 Bit.
-# Ausreichend kollisionsarm ohne externe Dependency.
-
-_CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
-
-
-def generate_ulid() -> str:
-    timestamp_ms = int(time.time() * 1000) & ((1 << 48) - 1)
-    randomness = int.from_bytes(os.urandom(10), "big")
-    n = (timestamp_ms << 80) | randomness
-    chars = []
-    for _ in range(26):
-        chars.append(_CROCKFORD[n & 0x1F])
-        n >>= 5
-    return "".join(reversed(chars))
+from utils.ulid import generate_ulid
 
 
 # ── Listen-Felder (für delete_entry) ─────────────────────────────────────────
