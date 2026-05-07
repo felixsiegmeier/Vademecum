@@ -202,3 +202,18 @@ def test_brief_system_prompt_endpoint_returns_prompt(isolated_data):
     assert res.status_code == 200
     body = res.json()
     assert "patient_yaml" in body["content"]
+
+
+def test_brief_system_prompt_verlauf_returns_combined_curate_prompt(isolated_data):
+    """GET /api/learn/brief/verlauf/system-prompt kombiniert shared + kompakt (kein FileNotFoundError)."""
+    res = client.get("/api/learn/brief/verlauf/system-prompt")
+    assert res.status_code == 200
+    content = res.json()["content"]
+    # Shared-Block und format-spezifischer Block müssen beide enthalten sein
+    assert len(content) > 100
+    # Beide Quell-Dateien existieren und wurden kombiniert (Inhalt ist länger als jede einzelne)
+    from pathlib import Path
+    prompts_dir = Path(__file__).parent.parent / "prompts"
+    shared_len = len((prompts_dir / "brief_verlauf_curate_shared.txt").read_text())
+    specific_len = len((prompts_dir / "brief_verlauf_curate_kompakt.txt").read_text())
+    assert len(content) >= shared_len + specific_len

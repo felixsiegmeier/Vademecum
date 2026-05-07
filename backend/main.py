@@ -650,7 +650,6 @@ _BRIEF_SECTION_PROMPT_FILES: dict[str, str] = {
     "diagnosen": "brief_diagnosen.txt",
     "anamnese": "brief_anamnese.txt",
     "therapie": "brief_therapie.txt",
-    "verlauf": "brief_verlauf_curate.txt",
 }
 
 
@@ -660,8 +659,15 @@ def _assert_valid_brief_section(section: str) -> None:
 
 
 def _get_brief_section_system_prompt(section: str) -> str:
+    prompts_dir = Path(__file__).parent / "prompts"
+    if section == "verlauf":
+        # Verlauf nutzt seit c1.8 drei format-spezifische Curate-Prompts.
+        # Für Display/Learning-Kontext: shared + kompakt als repräsentativer Default.
+        shared = (prompts_dir / "brief_verlauf_curate_shared.txt").read_text(encoding="utf-8")
+        specific = (prompts_dir / "brief_verlauf_curate_kompakt.txt").read_text(encoding="utf-8")
+        return shared + "\n\n" + specific
     filename = _BRIEF_SECTION_PROMPT_FILES[section]
-    return (Path(__file__).parent / "prompts" / filename).read_text(encoding="utf-8")
+    return (prompts_dir / filename).read_text(encoding="utf-8")
 
 
 @app.post("/api/learn/brief/{section}/from-edits")
