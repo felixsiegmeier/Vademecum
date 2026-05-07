@@ -68,10 +68,10 @@ def delete_patient(patient_id: str) -> None:
     yaml_path = PATIENTS_DIR / f"{patient_id}.yml"
     if yaml_path.exists():
         yaml_path.unlink()
-    import brief_storage as _brief_storage
+    from . import brief_storage as _brief_storage
     _brief_storage.delete_brief(patient_id)
     delete_meilenstein(patient_id)
-    from chat_storage import delete_chat
+    from .chat_storage import delete_chat
     delete_chat(patient_id)
 
 # ── Staleness-Erkennung ───────────────────────────────────────────────────────

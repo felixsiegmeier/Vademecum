@@ -6,7 +6,7 @@ from pathlib import Path
 
 import yaml
 
-import learning_storage
+from storage import learning_storage
 from llm_client import LLMClient
 from models.patient import Patient
 from utils.prompts import get_prompt

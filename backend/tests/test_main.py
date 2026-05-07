@@ -586,7 +586,7 @@ def test_upload_response_is_ndjson_with_done_event(isolated_data):
 # ── Meilenstein V1: generate endpoint ────────────────────────────────────────
 
 import main as _main  # noqa: E402 — needed for patch.object on llm instance
-import learning_storage as _ls  # noqa: E402
+from storage import learning_storage as _ls  # noqa: E402
 
 
 # ── Meilenstein Prompt-Builder (Regel-Injection) ──────────────────────────────

@@ -5,9 +5,8 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import storage
-import learning_storage
+from storage import brief_storage, learning_storage
 from workflows.brief import orchestrator as brief
-import brief_storage
 from main import app
 from fastapi.testclient import TestClient
 from models.patient import Patient, Stammdaten

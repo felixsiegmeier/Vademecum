@@ -9,8 +9,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from workflows.brief import orchestrator as brief
-import brief_storage
 import storage
+from storage import brief_storage
 from main import app
 from models.patient import Patient, Stammdaten
 from utils.prompts import get_prompt as _get_prompt_from_dir
@@ -468,7 +468,7 @@ def test_collect_prompt_includes_aufenthaltsdauer_logic(isolated_data):
 
 def test_delete_brief_endpoint_removes_brief_and_snapshots(isolated_data):
     """DELETE /api/brief/{id} löscht Brief + last-Snapshots, lässt rules.yml in Ruhe."""
-    import learning_storage
+    from storage import learning_storage
 
     pid = "P-0001"
     _make_patient(pid)

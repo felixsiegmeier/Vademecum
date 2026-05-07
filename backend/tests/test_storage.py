@@ -1,6 +1,6 @@
 from models.patient import Patient
 import storage
-import brief_storage
+from storage import brief_storage
 
 # ---- Patienten-Tests: Speichern, Laden, Hash, Löschen --------------------------------------------------
 

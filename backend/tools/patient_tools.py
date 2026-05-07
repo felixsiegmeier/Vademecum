@@ -9,7 +9,7 @@ from models.patient import (
     Therapie,
     VerlaufsEintrag,
 )
-from storage import load_patient, save_patient
+from storage.patients import load_patient, save_patient
 from utils.ulid import generate_ulid
 
 

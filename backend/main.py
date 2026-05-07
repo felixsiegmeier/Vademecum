@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 from openai import APIConnectionError, APIStatusError, RateLimitError
 from pydantic import BaseModel, field_validator
 from workflows.brief.verlauf import validate_curate_variant as _validate_curate_variant
-import learning_storage
+from storage import brief_storage, learning_storage
 from skills import learning
 from tools.patient_tools import TOOL_ARGS, TOOL_FUNCTIONS
 from workflows.document_extraction.orchestrator import extract_proposals, extract_proposals_streaming
@@ -23,7 +23,7 @@ from workflows.stammdaten_extraction.orchestrator import extract_stammdaten
 from workflows.meilenstein import orchestrator as meilenstein_orchestrator
 from llm_client import LLMClient
 from models.patient import Patient, PatientSummary, Stammdaten
-from storage import (
+from storage.patients import (
     delete_patient,
     list_patient_ids,
     load_meilenstein,
@@ -36,9 +36,8 @@ from storage import (
     update_meilenstein_content,
 )
 
-import brief_storage
 from workflows.brief import orchestrator as brief
-from brief_storage import BRIEF_SECTIONS as _BRIEF_SECTIONS
+from storage.brief_storage import BRIEF_SECTIONS as _BRIEF_SECTIONS
 from utils.prompts import get_prompt as _get_prompt
 
 load_dotenv()
@@ -835,7 +834,7 @@ async def extract_text(files: list[UploadFile] = File(...)):
 
 # ── Chat-History (persistente Text-Messages pro Patient) ─────────────────────
 
-from chat_storage import delete_chat, load_chat, save_chat
+from storage.chat_storage import delete_chat, load_chat, save_chat
 from models.chat import ChatHistory
 
 

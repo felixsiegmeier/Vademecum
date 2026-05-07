@@ -3,8 +3,8 @@ import logging
 
 import pytest
 
-import learning_storage
-from learning_storage import Rule, load_rules, new_rule, save_rules
+from storage import learning_storage
+from storage.learning_storage import Rule, load_rules, new_rule, save_rules
 
 
 def _make_rule(section: str = "Behandlungsdiagnosen", rule_text: str = "KHK immer konsolidieren") -> Rule:

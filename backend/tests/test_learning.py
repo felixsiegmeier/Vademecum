@@ -3,7 +3,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import storage
-import learning_storage
+from storage import learning_storage
 import main as _main
 from skills import learning
 from main import app

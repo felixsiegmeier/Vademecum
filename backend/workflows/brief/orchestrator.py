@@ -18,7 +18,7 @@ from typing import Optional
 
 import yaml
 
-import learning_storage
+from storage import learning_storage
 from llm_client import LLMClient
 from models.patient import Patient
 from utils.prompts import _PROMPT_CACHE, get_prompt  # noqa: F401  # re-exported for tests
