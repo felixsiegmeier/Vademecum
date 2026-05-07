@@ -33,9 +33,13 @@ backend/data/meilensteine/*.meta.json
 backend/data/briefe/*.json
 backend/data/briefs/*.yml
 
-# Test-PDFs — echte Patientendaten, dürfen nie ins Remote
+# Test-PDFs und -Dokumente — echte Patientendaten, dürfen nie ins Remote
 backend/test_data/*.pdf
 backend/test_data/*.PDF
+backend/test_data/celik_*.md
+
+# Learning logs — enthalten patientenspezifische Daten, aktuell nicht auf GitHub
+backend/data/learnings/
 
 # Editor
 .vscode/
