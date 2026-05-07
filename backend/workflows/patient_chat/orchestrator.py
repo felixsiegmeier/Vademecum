@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 # Kürzere Inputs → Single-Pass mit direktem LLM-Routing (Tool-Call oder Text-Antwort).
 CHAT_2PASS_CUTOFF = 2000
 
-_PROMPTS_DIR = Path(__file__).parent / "workflows" / "patient_chat"
+_PROMPTS_DIR = Path(__file__).parent
 _TEMPLATE_CACHE: Template | None = None
 
 

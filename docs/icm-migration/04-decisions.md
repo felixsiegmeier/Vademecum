@@ -48,3 +48,6 @@ Regex-Parsing von LLM-Output ist verboten; alle Fundstellen (s. `01-analysis.md 
 
 **F15 [SEMI-REVERSIBEL] — Multi-User-Vorbereitung**
 `user_id` wird als expliziter Parameter durch alle Skills, Storage-Aufrufe und Orchestratoren durchgereicht; `.env`-Flag `MULTI_USER=true|false` schaltet nur die Middleware (`utils/auth_context.py`) um; bei `false` (Default) wird immer `user_id="default"` injiziert.
+
+**F16 [BEKANNTE SCHULD] — `tool_loop` Cross-Workflow-Import**
+`workflows/patient_chat/orchestrator.py` importiert `Proposal` und `group_proposals` aus `workflows/document_extraction/tool_loop.py` (Cross-Workflow-Import). Akzeptiert für Phase 3; `tool_loop` hat zwei Konsumenten: `document_extraction` (eigen) und `patient_chat` (Importer). Promotion nach `tools/extraction_loop.py` oder `utils/tool_loop.py` in Phase 5/6 evaluieren.

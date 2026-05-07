@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 import storage
 from workflows.document_extraction.tool_loop import Proposal, ToolCallInfo
-from agent_patient_chat import CHAT_2PASS_CUTOFF
+from workflows.patient_chat.orchestrator import CHAT_2PASS_CUTOFF
 from workflows.stammdaten_extraction.schema import StammdatenExtractResult
 from main import app
 from models.patient import Patient, Stammdaten

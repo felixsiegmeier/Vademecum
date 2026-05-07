@@ -3,7 +3,7 @@ import hashlib
 from datetime import date
 
 from models.patient import Patient, Stammdaten
-from agent_patient_chat import build_system_prompt
+from workflows.patient_chat.orchestrator import build_system_prompt
 
 _DUMMY_PATIENT = Patient(stammdaten=Stammdaten(
     id="P-SNAP",
