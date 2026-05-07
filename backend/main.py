@@ -19,7 +19,7 @@ import learning_storage
 from skills import learning
 from tools.patient_tools import TOOL_ARGS, TOOL_FUNCTIONS
 from agent_document_extraction import extract_proposals, extract_proposals_streaming
-from agent_extraction_core import Proposal
+from workflows.document_extraction.tool_loop import Proposal
 from agent_patient_chat import CHAT_2PASS_CUTOFF, run_single_pass_chat
 from agent_stammdaten_extraction import extract_stammdaten
 from workflows.stammdaten_extraction.schema import StammdatenExtractResult

@@ -7,7 +7,7 @@ from typing import AsyncGenerator, Literal
 import yaml
 from openai import APIConnectionError, APIStatusError, RateLimitError
 
-from agent_extraction_core import (
+from workflows.document_extraction.tool_loop import (
     MAX_ITERATIONS_BLOCK_1,
     MAX_TOTAL_TOKENS_BLOCK_1,
     MAX_TOTAL_TOKENS_BLOCK_2,

@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi.testclient import TestClient
 
 import storage
-from agent_extraction_core import Proposal, ToolCallInfo
+from workflows.document_extraction.tool_loop import Proposal, ToolCallInfo
 from agent_patient_chat import CHAT_2PASS_CUTOFF
 from agent_stammdaten_extraction import StammdatenExtractResult
 from main import app
