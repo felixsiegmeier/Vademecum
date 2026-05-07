@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi.testclient import TestClient
 
 import storage
-from workflows.document_extraction.tool_loop import Proposal, ToolCallInfo
+from utils.tool_loop import Proposal, ToolCallInfo
 from workflows.patient_chat.orchestrator import CHAT_2PASS_CUTOFF
 from workflows.stammdaten_extraction.schema import StammdatenExtractResult
 from main import app

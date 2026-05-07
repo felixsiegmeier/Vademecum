@@ -7,7 +7,7 @@ from typing import Optional
 
 import yaml
 
-from workflows.document_extraction.tool_loop import Proposal, group_proposals
+from utils.tool_loop import Proposal, group_proposals
 from tools.patient_tools import TOOL_SCHEMAS
 from models.patient import Patient
 from utils.prompts import get_prompt

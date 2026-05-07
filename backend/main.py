@@ -20,7 +20,7 @@ import learning_storage
 from skills import learning
 from tools.patient_tools import TOOL_ARGS, TOOL_FUNCTIONS
 from workflows.document_extraction.orchestrator import extract_proposals, extract_proposals_streaming
-from workflows.document_extraction.tool_loop import Proposal
+from utils.tool_loop import Proposal
 from workflows.patient_chat.orchestrator import CHAT_2PASS_CUTOFF, run_single_pass_chat
 from workflows.stammdaten_extraction.orchestrator import extract_stammdaten
 from workflows.stammdaten_extraction.schema import StammdatenExtractResult

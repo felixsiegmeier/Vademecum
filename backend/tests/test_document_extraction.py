@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 import storage
-from workflows.document_extraction.tool_loop import (
+from utils.tool_loop import (
     MAX_ITERATIONS_BLOCK_1,
     MAX_TOTAL_TOKENS_BLOCK_1,
     MAX_TOTAL_TOKENS_BLOCK_2,
@@ -947,7 +947,7 @@ def test_streaming_heartbeat_appears_during_slow_llm():
     mock_llm.chat_completion = slow_chat
 
     # Heartbeat-Intervall für Test auf 0.05 s kürzen
-    with patch("workflows.document_extraction.tool_loop._HEARTBEAT_INTERVAL", 0.05):
+    with patch("utils.tool_loop._HEARTBEAT_INTERVAL", 0.05):
         events = _collect_streaming(run_pass_streaming(
             llm=mock_llm,
             system_prompt="test",
