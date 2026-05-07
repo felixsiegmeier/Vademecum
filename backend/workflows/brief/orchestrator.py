@@ -1,17 +1,15 @@
-"""Brief-Generator — 4 LLM-Sub-Agents + 1 Pre-Pass-Helper.
+"""Brief-Generator — 4 LLM-Calls + 1 Pre-Pass-Helper.
 
-Sub-Agents:
-  generate_diagnosen  — JSON-Mode → Markdown (flash-lite)
-  generate_anamnese   — plain Text (flash-lite)
-  generate_therapie   — JSON-Mode → Markdown (flash-lite)
-  generate_verlauf    — 3-Pass: Substanz-Sammler → Coverage-Auditor → Stil-Kurator
-  format_sap_befunde  — Pre-Pass Befunde-Formatierung (flash-lite)
+Öffentliche API:
+  generate_diagnosen  — JSON-Mode → Markdown
+  generate_anamnese   — plain Text
+  generate_therapie   — JSON-Mode → Markdown
+  generate_verlauf    — 3-Pass: collect → audit → curate
+  polish_section      — Lektor-Korrektur einer einzelnen Sektion
+  format_sap_befunde  — Pre-Pass Befunde-Formatierung
 
-Alle 4 LLM-Sub-Agents akzeptieren optional extra_context: str — ephemerer
+Alle generate-Funktionen akzeptieren optional extra_context: str — ephemerer
 Nutzer-Kontext der pro Call injiziert wird, nicht persistiert wird.
-
-Modell für alle Passes: LLMClient() Default (keine eigene Flash-Konstante;
-vollständig via LLM_BACKEND Env-Variable steuerbar, vorbereitet für Qwen-Migration).
 """
 
 import logging
@@ -27,16 +25,14 @@ from utils.prompts import _PROMPT_CACHE, get_prompt  # _PROMPT_CACHE re-exported
 from workflows.brief.anamnese import skill as _anamnese_skill
 from workflows.brief.diagnosen import skill as _diagnosen_skill
 from workflows.brief.therapie import skill as _therapie_skill
-from workflows.brief.verlauf import orchestrator as _verlauf_skill
+from workflows.brief.verlauf import orchestrator as _verlauf_orchestrator
 
 logger = logging.getLogger(__name__)
 
-# Lazy-initialisierter Client — erst beim ersten LLM-Call erzeugt, damit
-# der Import vor load_dotenv() in main.py keine ValueError wirft.
 _llm_lite: Optional[LLMClient] = None
 
-_PROMPTS_DIR = Path(__file__).parent / "prompts"
-_ADRESSATEN_DIR = _PROMPTS_DIR / "adressaten"
+_PROMPTS_DIR = Path(__file__).parent / "polish"
+_ADRESSATEN_DIR = Path(__file__).parent / "verlauf" / "03_curate" / "adressaten"
 
 
 def _lite() -> LLMClient:
@@ -51,7 +47,6 @@ def _get_prompt(name: str) -> str:
 
 
 def _load_adressatenprofil(name: str = "normalstation_intern") -> str:
-    """Lädt ein Adressaten-Profil aus prompts/adressaten/. Fällt auf normalstation_intern zurück."""
     for ext in (".md", ".txt"):
         path = _ADRESSATEN_DIR / f"{name}{ext}"
         if path.exists():
@@ -72,7 +67,6 @@ def _to_yaml(patient: Patient) -> str:
 
 
 def _inject_extra_context(prompt: str, extra_context: str) -> str:
-    """Ersetzt {extra_context}-Platzhalter. Non-empty → Hinweis-Block; leer → entfernt."""
     if not extra_context.strip():
         return prompt.replace("{extra_context}\n", "").replace("{extra_context}", "")
     block = (
@@ -101,12 +95,9 @@ def _build_rules_block(rules: list) -> str:
 
 
 def _inject_rules(prompt: str, rules_block: str) -> str:
-    """Ersetzt {gelernte_regeln}-Platzhalter. Non-empty → XML-Block; leer → entfernt."""
     if not rules_block:
         return prompt.replace("{gelernte_regeln}\n", "").replace("{gelernte_regeln}", "")
     return prompt.replace("{gelernte_regeln}", rules_block)
-
-
 
 
 async def generate_diagnosen(patient: Patient, extra_context: str = "") -> str:
@@ -155,12 +146,12 @@ async def generate_verlauf(
     extra_context: str = "",
     adressat: str = "normalstation_intern",
 ) -> str:
-    """3-Pass: Substanz-Sammler (collect) → Coverage-Auditor (audit) → Stil-Kurator (curate)."""
+    """3-Pass: collect → audit → curate."""
     rules = learning_storage.load_rules(domain="brief", section="verlauf")
     rules_block = _build_rules_block(rules)
     adressatenprofil = _load_adressatenprofil(adressat)
     try:
-        result = await _verlauf_skill.run(
+        result = await _verlauf_orchestrator.run(
             _lite(), patient, rules_block, extra_context,
             meilenstein=meilenstein,
             befunde_formatted=befunde_formatted,
@@ -180,13 +171,9 @@ async def polish_section(
     section: str,
     current_text: str,
     extra_context: str = "",
-    patient: Optional["Patient"] = None,
+    patient: Optional[Patient] = None,
 ) -> str:
-    """Lektor-Korrektur einer einzelnen Brief-Sektion (alle 4 Sektionen).
-
-    Verlauf: brief_verlauf_polish.txt (Lektor-Klauseln, kein Curate-Pass).
-    Andere: brief_section_polish.txt — gleiche Lektor-Klauseln, Struktur-Treue-Hinweis.
-    """
+    """Lektor-Korrektur einer einzelnen Brief-Sektion (alle 4 Sektionen)."""
     patient_id = patient.stammdaten.id if patient else ""
     prompt_file = "brief_verlauf_polish.txt" if section == "verlauf" else "brief_section_polish.txt"
     rules = learning_storage.load_rules(domain="brief", section=section)

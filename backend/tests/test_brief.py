@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-import agent_brief
+from workflows.brief import orchestrator as brief
 import brief_storage
 import storage
 from main import app
@@ -116,8 +116,8 @@ def test_generate_diagnosen_renders_json(isolated_data):
     mock_client = MagicMock()
     mock_client.chat_completion = AsyncMock(return_value=_llm_resp(payload))
 
-    with patch("agent_brief._lite", return_value=mock_client):
-        result = asyncio.run(agent_brief.generate_diagnosen(patient))
+    with patch("workflows.brief.orchestrator._lite", return_value=mock_client):
+        result = asyncio.run(brief.generate_diagnosen(patient))
 
     assert "**Behandlungsdiagnosen:**" in result
     assert "**Aortenklappenstenose**" in result
@@ -142,8 +142,8 @@ def test_generate_therapie_renders_three_subblocks(isolated_data):
     mock_client = MagicMock()
     mock_client.chat_completion = AsyncMock(return_value=_llm_resp(payload))
 
-    with patch("agent_brief._lite", return_value=mock_client):
-        result = asyncio.run(agent_brief.generate_therapie(patient))
+    with patch("workflows.brief.orchestrator._lite", return_value=mock_client):
+        result = asyncio.run(brief.generate_therapie(patient))
 
     assert "**Initial-OP:**" in result
     assert "AVR" in result
@@ -171,8 +171,8 @@ def test_generate_verlauf_passes_all_context(isolated_data):
         _llm_resp(final_stub),
     ])
 
-    with patch("agent_brief._lite", return_value=mock_client):
-        result = asyncio.run(agent_brief.generate_verlauf(
+    with patch("workflows.brief.orchestrator._lite", return_value=mock_client):
+        result = asyncio.run(brief.generate_verlauf(
             patient,
             meilenstein="MEILENSTEIN-TEXT",
             befunde_formatted="BEFUNDE-TEXT",
@@ -210,8 +210,8 @@ def test_format_sap_befunde_strips_boilerplate(isolated_data):
         return_value=_llm_resp("**TTE vom 01.04.2026**\nLVEF 55%.")
     )
 
-    with patch("agent_brief._lite", return_value=mock_client):
-        result = asyncio.run(agent_brief.format_sap_befunde("Rohtext SAP"))
+    with patch("workflows.brief.orchestrator._lite", return_value=mock_client):
+        result = asyncio.run(brief.format_sap_befunde("Rohtext SAP"))
 
     assert mock_client.chat_completion.called
     assert "**TTE vom 01.04.2026**" in result
@@ -224,10 +224,10 @@ def test_endpoint_generate_full_brief(isolated_data):
     _make_patient("P-0001")
 
     with (
-        patch("agent_brief.generate_diagnosen", new_callable=AsyncMock) as m_diag,
-        patch("agent_brief.generate_anamnese", new_callable=AsyncMock) as m_anam,
-        patch("agent_brief.generate_therapie", new_callable=AsyncMock) as m_ther,
-        patch("agent_brief.generate_verlauf", new_callable=AsyncMock) as m_verl,
+        patch("workflows.brief.orchestrator.generate_diagnosen", new_callable=AsyncMock) as m_diag,
+        patch("workflows.brief.orchestrator.generate_anamnese", new_callable=AsyncMock) as m_anam,
+        patch("workflows.brief.orchestrator.generate_therapie", new_callable=AsyncMock) as m_ther,
+        patch("workflows.brief.orchestrator.generate_verlauf", new_callable=AsyncMock) as m_verl,
     ):
         m_diag.return_value = "Diagnosen-Text"
         m_anam.return_value = "Anamnese-Text"
@@ -253,10 +253,10 @@ def test_endpoint_generate_full_preserves_existing_befunde(isolated_data):
     brief_storage.update_section("P-0001", "befunde", "Vorhandener Befund")
 
     with (
-        patch("agent_brief.generate_diagnosen", new_callable=AsyncMock) as m_diag,
-        patch("agent_brief.generate_anamnese", new_callable=AsyncMock) as m_anam,
-        patch("agent_brief.generate_therapie", new_callable=AsyncMock) as m_ther,
-        patch("agent_brief.generate_verlauf", new_callable=AsyncMock) as m_verl,
+        patch("workflows.brief.orchestrator.generate_diagnosen", new_callable=AsyncMock) as m_diag,
+        patch("workflows.brief.orchestrator.generate_anamnese", new_callable=AsyncMock) as m_anam,
+        patch("workflows.brief.orchestrator.generate_therapie", new_callable=AsyncMock) as m_ther,
+        patch("workflows.brief.orchestrator.generate_verlauf", new_callable=AsyncMock) as m_verl,
     ):
         m_diag.return_value = "D"
         m_anam.return_value = "A"
@@ -291,7 +291,7 @@ def test_endpoint_regenerate_section_verlauf_uses_current_state(isolated_data):
         captured["befunde"] = befunde
         return "Neuer Verlauf"
 
-    with patch("agent_brief.generate_verlauf", side_effect=capture_verlauf):
+    with patch("workflows.brief.orchestrator.generate_verlauf", side_effect=capture_verlauf):
         res = client.post("/api/brief/P-0001/generate-section/verlauf")
 
     assert res.status_code == 200
@@ -316,7 +316,7 @@ def test_endpoint_format_befunde(isolated_data):
     """POST /format-befunde → LLM-Antwort in befunde-Sektion persistiert."""
     _make_patient("P-0001")
 
-    with patch("agent_brief.format_sap_befunde", new_callable=AsyncMock) as mock_fmt:
+    with patch("workflows.brief.orchestrator.format_sap_befunde", new_callable=AsyncMock) as mock_fmt:
         mock_fmt.return_value = "**TTE vom 01.04.2026**\nLVEF 55%."
         res = client.post("/api/brief/P-0001/format-befunde", json={"raw_text": "SAP Roh-Export"})
 
@@ -333,7 +333,7 @@ def test_endpoint_save_section_edit(isolated_data):
     """PUT /section/verlauf → persistiert ohne LLM-Call."""
     _make_patient("P-0001")
 
-    with patch("agent_brief.generate_verlauf", new_callable=AsyncMock) as mock_llm:
+    with patch("workflows.brief.orchestrator.generate_verlauf", new_callable=AsyncMock) as mock_llm:
         res = client.put(
             "/api/brief/P-0001/section/verlauf",
             json={"content": "Manuell bearbeiteter Verlauf"},
@@ -352,7 +352,7 @@ def test_endpoint_save_section_edit(isolated_data):
 def test_inject_extra_context_nonempty(isolated_data):
     """_inject_extra_context ersetzt Platzhalter mit Hinweis-Block bei nicht-leerem Context."""
     prompt = "Prefix\n{extra_context}\nSuffix"
-    result = agent_brief._inject_extra_context(prompt, "Wichtige Zusatzinfo")
+    result = brief._inject_extra_context(prompt, "Wichtige Zusatzinfo")
     assert "Zusätzliche Anmerkungen" in result
     assert "Wichtige Zusatzinfo" in result
     assert "{extra_context}" not in result
@@ -363,7 +363,7 @@ def test_inject_extra_context_nonempty(isolated_data):
 def test_inject_extra_context_empty(isolated_data):
     """_inject_extra_context entfernt Platzhalter spurlos bei leerem extra_context."""
     prompt = "Prefix\n{extra_context}\nSuffix"
-    result = agent_brief._inject_extra_context(prompt, "")
+    result = brief._inject_extra_context(prompt, "")
     assert "{extra_context}" not in result
     assert "Zusätzliche Anmerkungen" not in result
     assert "Prefix" in result
@@ -383,10 +383,10 @@ def test_endpoint_generate_accepts_extra_context_body(isolated_data):
         return "D"
 
     with (
-        patch("agent_brief.generate_diagnosen", side_effect=capture_diag),
-        patch("agent_brief.generate_anamnese", new_callable=AsyncMock, return_value="A"),
-        patch("agent_brief.generate_therapie", new_callable=AsyncMock, return_value="T"),
-        patch("agent_brief.generate_verlauf", new_callable=AsyncMock, return_value="V"),
+        patch("workflows.brief.orchestrator.generate_diagnosen", side_effect=capture_diag),
+        patch("workflows.brief.orchestrator.generate_anamnese", new_callable=AsyncMock, return_value="A"),
+        patch("workflows.brief.orchestrator.generate_therapie", new_callable=AsyncMock, return_value="T"),
+        patch("workflows.brief.orchestrator.generate_verlauf", new_callable=AsyncMock, return_value="V"),
     ):
         res = client.post(
             "/api/brief/P-0001/generate",
@@ -409,7 +409,7 @@ def test_endpoint_regenerate_section_passes_extra_context(isolated_data):
         captured["extra_context"] = extra_context
         return "Neue Anamnese"
 
-    with patch("agent_brief.generate_anamnese", side_effect=capture_anam):
+    with patch("workflows.brief.orchestrator.generate_anamnese", side_effect=capture_anam):
         res = client.post(
             "/api/brief/P-0001/generate-section/anamnese",
             json={"extra_context": "Hinweis nur für Anamnese"},
@@ -526,7 +526,7 @@ def test_polish_section_endpoint(isolated_data):
     polished = "Frau Test wurde am 01.04.2026 aufgenommen."
     mock_resp = _llm_resp(polished)
 
-    with patch.object(agent_brief._lite(), "chat_completion", new=AsyncMock(return_value=mock_resp)):
+    with patch.object(brief._lite(), "chat_completion", new=AsyncMock(return_value=mock_resp)):
         res = client.post("/api/brief/P-0001/polish-section/anamnese", json={})
     assert res.status_code == 200
     data = res.json()
@@ -560,17 +560,16 @@ def test_polish_section_endpoint_invalid_section(isolated_data):
 
 def test_polish_section_verlauf_uses_verlauf_polish_prompt(isolated_data):
     """polish_section(verlauf) muss brief_verlauf_polish.txt laden, nicht brief_verlauf_curate_shared.txt."""
-    import agent_brief as ab
-
+    
     captured_prompts = []
 
     async def capture_and_return(messages, **kwargs):
         captured_prompts.append(messages[0]["content"])
         return _llm_resp(messages[0]["content"])  # Echo input
 
-    with patch.object(ab._lite(), "chat_completion", new=capture_and_return):
+    with patch.object(brief._lite(), "chat_completion", new=capture_and_return):
         import asyncio
-        asyncio.run(ab.polish_section(
+        asyncio.run(brief.polish_section(
             section="verlauf",
             current_text="Patient wurde verlegt.",
         ))
@@ -584,35 +583,32 @@ def test_polish_section_verlauf_uses_verlauf_polish_prompt(isolated_data):
 
 def test_polish_section_output_unchanged_when_no_errors(isolated_data):
     """Wenn LLM den Input zurückgibt, ist der Output identisch (kein Aufblähen)."""
-    import agent_brief as ab
-
+    
     original = "Die Patientin wurde am 01.04.2026 aufgenommen."
 
-    with patch.object(ab._lite(), "chat_completion", new=AsyncMock(return_value=_llm_resp(original))):
+    with patch.object(brief._lite(), "chat_completion", new=AsyncMock(return_value=_llm_resp(original))):
         import asyncio
-        result = asyncio.run(ab.polish_section(section="anamnese", current_text=original))
+        result = asyncio.run(brief.polish_section(section="anamnese", current_text=original))
 
     assert result == original
 
 
 def test_polish_section_corrects_typo(isolated_data):
     """Wenn LLM einen Tippfehler korrigiert, gibt polish_section die korrigierte Version zurück."""
-    import agent_brief as ab
-
+    
     original = "Die Patientinn wurde aufgenommen."
     corrected = "Die Patientin wurde aufgenommen."
 
-    with patch.object(ab._lite(), "chat_completion", new=AsyncMock(return_value=_llm_resp(corrected))):
+    with patch.object(brief._lite(), "chat_completion", new=AsyncMock(return_value=_llm_resp(corrected))):
         import asyncio
-        result = asyncio.run(ab.polish_section(section="anamnese", current_text=original))
+        result = asyncio.run(brief.polish_section(section="anamnese", current_text=original))
 
     assert result == corrected
 
 
 def test_polish_section_all_sections_use_lektor_prompt(isolated_data):
     """Alle 4 Sektionen landen im Lektor-Prompt (AUFGABE: Korrekturlesen)."""
-    import agent_brief as ab
-
+    
     for section in ("diagnosen", "anamnese", "therapie", "verlauf"):
         captured = []
 
@@ -620,9 +616,9 @@ def test_polish_section_all_sections_use_lektor_prompt(isolated_data):
             captured.append(messages[0]["content"])
             return _llm_resp("ok")
 
-        with patch.object(ab._lite(), "chat_completion", new=cap):
+        with patch.object(brief._lite(), "chat_completion", new=cap):
             import asyncio
-            asyncio.run(ab.polish_section(section=section, current_text="x"))
+            asyncio.run(brief.polish_section(section=section, current_text="x"))
 
         assert "AUFGABE: Korrekturlesen" in captured[0], f"Sektion '{section}' hat kein Lektor-Prompt"
 
@@ -693,53 +689,49 @@ def test_collect_prompt_no_override_noradrenalin(isolated_data):
 
 def test_prompt_loader_prefers_md_over_txt(isolated_data):
     """_get_prompt bevorzugt .md wenn beide Varianten existieren."""
-    import agent_brief as ab
-
+    
     stem = "_test_loader_pref"
-    txt_path = ab._PROMPTS_DIR / f"{stem}.txt"
-    md_path = ab._PROMPTS_DIR / f"{stem}.md"
+    txt_path = brief._PROMPTS_DIR / f"{stem}.txt"
+    md_path = brief._PROMPTS_DIR / f"{stem}.md"
     txt_path.write_text("TXT_CONTENT", encoding="utf-8")
     md_path.write_text("MD_CONTENT", encoding="utf-8")
-    ab._PROMPT_CACHE.pop(f"{stem}.txt", None)
+    brief._PROMPT_CACHE.pop(f"{stem}.txt", None)
     try:
-        result = ab._get_prompt(f"{stem}.txt")
+        result = brief._get_prompt(f"{stem}.txt")
         assert result == "MD_CONTENT", f"Erwartet MD_CONTENT, got {result!r}"
     finally:
         txt_path.unlink(missing_ok=True)
         md_path.unlink(missing_ok=True)
-        ab._PROMPT_CACHE.pop(f"{stem}.txt", None)
+        brief._PROMPT_CACHE.pop(f"{stem}.txt", None)
 
 
 def test_prompt_loader_txt_fallback(isolated_data):
     """_get_prompt fällt auf .txt zurück wenn kein .md existiert."""
-    import agent_brief as ab
-
+    
     stem = "_test_loader_fallback"
-    txt_path = ab._PROMPTS_DIR / f"{stem}.txt"
+    txt_path = brief._PROMPTS_DIR / f"{stem}.txt"
     txt_path.write_text("TXT_ONLY", encoding="utf-8")
-    ab._PROMPT_CACHE.pop(f"{stem}.txt", None)
+    brief._PROMPT_CACHE.pop(f"{stem}.txt", None)
     try:
-        result = ab._get_prompt(f"{stem}.txt")
+        result = brief._get_prompt(f"{stem}.txt")
         assert result == "TXT_ONLY", f"Erwartet TXT_ONLY, got {result!r}"
     finally:
         txt_path.unlink(missing_ok=True)
-        ab._PROMPT_CACHE.pop(f"{stem}.txt", None)
+        brief._PROMPT_CACHE.pop(f"{stem}.txt", None)
 
 
 # ── 32. Adressaten-Profil-Mechanik ───────────────────────────────────────────
 
 def test_load_adressatenprofil_existing(isolated_data):
     """_load_adressatenprofil lädt normalstation_intern erfolgreich."""
-    import agent_brief as ab
-    profil = ab._load_adressatenprofil("normalstation_intern")
+    profil = brief._load_adressatenprofil("normalstation_intern")
     assert "ADRESSATENPROFIL" in profil, "Header fehlt im Profil"
     assert "NORMALSTATION" in profil, "Profil-Bezeichnung fehlt"
 
 
 def test_load_adressatenprofil_fallback(isolated_data):
     """_load_adressatenprofil fällt bei unbekanntem Namen auf normalstation_intern zurück."""
-    import agent_brief as ab
-    profil = ab._load_adressatenprofil("nicht_vorhanden_xyz")
+    profil = brief._load_adressatenprofil("nicht_vorhanden_xyz")
     # Fallback: normalstation_intern-Inhalt erwartet
     assert "NORMALSTATION" in profil, "Fallback-Profil nicht geladen"
 
@@ -758,8 +750,8 @@ def test_curate_prompt_contains_adressatenprofil(isolated_data):
             return _llm_resp(json.dumps({"substance": "CLUSTER A", "curate_variant": "kompakt"}))
         return _llm_resp("ok")
 
-    with patch("agent_brief._lite", return_value=MagicMock(chat_completion=capture)):
-        asyncio.run(agent_brief.generate_verlauf(
+    with patch("workflows.brief.orchestrator._lite", return_value=MagicMock(chat_completion=capture)):
+        asyncio.run(brief.generate_verlauf(
             patient, meilenstein=None, befunde_formatted="", diagnosen="", anamnese="", therapie=""
         ))
 
@@ -780,8 +772,8 @@ def test_generate_verlauf_accepts_adressat_argument(isolated_data):
         _llm_resp("Komplikationsloser Verlauf."),
     ])
 
-    with patch("agent_brief._lite", return_value=mock_client):
-        result = asyncio.run(agent_brief.generate_verlauf(
+    with patch("workflows.brief.orchestrator._lite", return_value=mock_client):
+        result = asyncio.run(brief.generate_verlauf(
             patient, meilenstein=None, befunde_formatted="", diagnosen="", anamnese="", therapie="",
             adressat="normalstation_intern",
         ))
@@ -834,8 +826,8 @@ def test_generate_verlauf_short_cabg_output_under_100_words(isolated_data):
         _llm_resp(final),
     ])
 
-    with patch("agent_brief._lite", return_value=mock_client):
-        result = asyncio.run(agent_brief.generate_verlauf(
+    with patch("workflows.brief.orchestrator._lite", return_value=mock_client):
+        result = asyncio.run(brief.generate_verlauf(
             patient, meilenstein=None, befunde_formatted="", diagnosen="", anamnese="", therapie=""
         ))
 
@@ -859,8 +851,8 @@ def test_generate_verlauf_diagnostic_logging(isolated_data, capsys):
         _llm_resp(final),
     ])
 
-    with patch("agent_brief._lite", return_value=mock_client):
-        asyncio.run(agent_brief.generate_verlauf(
+    with patch("workflows.brief.orchestrator._lite", return_value=mock_client):
+        asyncio.run(brief.generate_verlauf(
             patient, meilenstein=None, befunde_formatted="", diagnosen="", anamnese="", therapie=""
         ))
 
@@ -953,8 +945,8 @@ def test_curate_pending_marker_not_in_final_output(isolated_data):
         _llm_resp(collected), _llm_resp(audited), _llm_resp(final),
     ])
 
-    with patch("agent_brief._lite", return_value=mock_client):
-        result = asyncio.run(agent_brief.generate_verlauf(
+    with patch("workflows.brief.orchestrator._lite", return_value=mock_client):
+        result = asyncio.run(brief.generate_verlauf(
             patient, meilenstein=None, befunde_formatted="", diagnosen="", anamnese="", therapie=""
         ))
 

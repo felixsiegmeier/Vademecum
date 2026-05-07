@@ -563,6 +563,7 @@ Siehe Hinweis am Anfang dieses Dokuments.
 - `storage.py`: `BRIEF_FIELDS`, `save_brief`, `load_brief`, `delete_brief`, `brief_input_hash`, `empty_brief_data` entfernen
 - `tests/test_storage.py`: Alt-Brief-Tests entfernen
 - `data/briefe/` (altes Alt-System JSON): nach Schritt 0.4b-Bestätigung wipe-bar
+- Re-Export-Brücken aus Phase 1 entfernen: alte `agent_.py`-Module dürfen keine Pydantic-Schemas mehr re-exportieren. Tests auf neue Imports umstellen.
 
 **Aufwand:** 2–3h
 

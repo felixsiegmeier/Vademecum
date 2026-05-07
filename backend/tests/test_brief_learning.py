@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import storage
 import learning_storage
-import agent_brief
+from workflows.brief import orchestrator as brief
 import brief_storage
 from main import app
 from fastapi.testclient import TestClient
@@ -152,8 +152,8 @@ def test_generate_diagnosen_persists_last_output(isolated_data):
     mock_client = MagicMock()
     mock_client.chat_completion = AsyncMock(return_value=_llm_resp(payload))
 
-    with patch("agent_brief._lite", return_value=mock_client):
-        asyncio.run(agent_brief.generate_diagnosen(patient))
+    with patch("workflows.brief.orchestrator._lite", return_value=mock_client):
+        asyncio.run(brief.generate_diagnosen(patient))
 
     saved = learning_storage.load_last_output("P-0001", domain="brief", section="diagnosen")
     assert saved is not None
@@ -181,8 +181,8 @@ def test_verlauf_rules_only_injected_in_curate_pass(isolated_data):
         _llm_resp(final_stub),
     ])
 
-    with patch("agent_brief._lite", return_value=mock_client):
-        asyncio.run(agent_brief.generate_verlauf(
+    with patch("workflows.brief.orchestrator._lite", return_value=mock_client):
+        asyncio.run(brief.generate_verlauf(
             patient,
             meilenstein=None,
             befunde_formatted="",

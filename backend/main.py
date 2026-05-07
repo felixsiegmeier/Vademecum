@@ -46,7 +46,7 @@ from storage import (
 )
 
 import brief_storage
-import agent_brief
+from workflows.brief import orchestrator as brief
 from brief_storage import BRIEF_SECTIONS as _BRIEF_SECTIONS
 from utils.prompts import get_prompt as _get_prompt
 
@@ -979,11 +979,11 @@ async def generate_brief_agent(
     befunde_existing = current.get("befunde", "")
 
     diag, anam, ther = await asyncio.gather(
-        agent_brief.generate_diagnosen(patient, extra_context=extra_context),
-        agent_brief.generate_anamnese(patient, extra_context=extra_context),
-        agent_brief.generate_therapie(patient, extra_context=extra_context),
+        brief.generate_diagnosen(patient, extra_context=extra_context),
+        brief.generate_anamnese(patient, extra_context=extra_context),
+        brief.generate_therapie(patient, extra_context=extra_context),
     )
-    verlauf = await agent_brief.generate_verlauf(
+    verlauf = await brief.generate_verlauf(
         patient, meilenstein_text, befunde_existing, diag, anam, ther,
         extra_context=extra_context,
     )
@@ -1012,15 +1012,15 @@ async def regenerate_section_agent(
     current = brief_storage.load_brief(patient_id)
 
     if section == "diagnosen":
-        result = await agent_brief.generate_diagnosen(patient, extra_context=extra_context)
+        result = await brief.generate_diagnosen(patient, extra_context=extra_context)
     elif section == "anamnese":
-        result = await agent_brief.generate_anamnese(patient, extra_context=extra_context)
+        result = await brief.generate_anamnese(patient, extra_context=extra_context)
     elif section == "therapie":
-        result = await agent_brief.generate_therapie(patient, extra_context=extra_context)
+        result = await brief.generate_therapie(patient, extra_context=extra_context)
     else:  # verlauf
         meilenstein_result = load_meilenstein(patient_id)
         meilenstein_text = meilenstein_result[0] if meilenstein_result else None
-        result = await agent_brief.generate_verlauf(
+        result = await brief.generate_verlauf(
             patient,
             meilenstein_text,
             current.get("befunde", ""),
@@ -1042,7 +1042,7 @@ async def format_befunde_agent(patient_id: str, body: dict):
     if not raw:
         raise HTTPException(400, "raw_text leer.")
     extra_context = body.get("extra_context", "")
-    formatted = await agent_brief.format_sap_befunde(raw, extra_context=extra_context)
+    formatted = await brief.format_sap_befunde(raw, extra_context=extra_context)
     brief_storage.update_section(patient_id, "befunde", formatted)
     return {"befunde": formatted}
 
@@ -1079,7 +1079,7 @@ async def polish_section_agent(
     if not current_text:
         raise HTTPException(400, f"Sektion '{section}' ist leer — bitte zuerst generieren.")
 
-    result = await agent_brief.polish_section(
+    result = await brief.polish_section(
         section=section,
         current_text=current_text,
         extra_context=extra_context,
@@ -1110,7 +1110,7 @@ async def extract_text(files: list[UploadFile] = File(...)):
             parts.append(_docx_to_text(data))
         else:
             content_parts = file_to_content_parts(data, mime)
-            resp = await agent_brief._lite().chat_completion(
+            resp = await brief._lite().chat_completion(
                 [{"role": "user", "content": content_parts + [
                     {"type": "text", "text": "Gib den gesamten Text dieses Dokuments wieder. Keine Zusammenfassung, kein Kommentar."}
                 ]}],
