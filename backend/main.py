@@ -215,6 +215,8 @@ class SaveRulesRuleItem(BaseModel):
 class SaveRulesRequest(BaseModel):
     rules_to_add: list[SaveRulesRuleItem] = []
     rule_ids_to_delete: list[str] = []
+    patient_id: Optional[str] = None
+    edited_content: Optional[str] = None
 
 
 class RebuildRuleRequest(BaseModel):
@@ -454,6 +456,8 @@ def learn_meilenstein_save_rules(req: SaveRulesRequest):
         saved_count += 1
 
     learning_storage.save_rules(existing, domain="meilenstein")
+    if req.patient_id and req.edited_content is not None:
+        learning_storage.save_last_output(req.patient_id, req.edited_content, domain="meilenstein")
     return JSONResponse(content={
         "saved_count": saved_count,
         "deleted_count": deleted_count,
@@ -572,6 +576,8 @@ def learn_brief_save_rules(section: str, req: SaveRulesRequest):
         saved_count += 1
 
     learning_storage.save_rules(existing, domain="brief", section=section)
+    if req.patient_id and req.edited_content is not None:
+        learning_storage.save_last_output(req.patient_id, req.edited_content, domain="brief", section=section)
     return JSONResponse(content={
         "saved_count": saved_count,
         "deleted_count": deleted_count,

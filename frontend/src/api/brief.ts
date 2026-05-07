@@ -148,11 +148,18 @@ export async function saveLearnRules(
   section: string | undefined,
   rulesToAdd: { section: string; rule_text: string }[],
   ruleIdsToDelete: string[],
+  patientId?: string,
+  editedContent?: string,
 ): Promise<{ saved_count: number; deleted_count: number; total_rules: number }> {
   const res = await fetch(`${learnBase(domain, section)}/save-rules`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ rules_to_add: rulesToAdd, rule_ids_to_delete: ruleIdsToDelete }),
+    body: JSON.stringify({
+      rules_to_add: rulesToAdd,
+      rule_ids_to_delete: ruleIdsToDelete,
+      patient_id: patientId,
+      edited_content: editedContent,
+    }),
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
