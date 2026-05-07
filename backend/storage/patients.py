@@ -10,7 +10,7 @@ from models.patient import Patient
 
 # Alle Patientendaten liegen als plain-text Dateien im data/-Verzeichnis.
 # Kein Datenbankserver nötig — einfaches Dateisystem als Storage-Backend.
-DATA_DIR = Path(__file__).parent / "data"
+DATA_DIR = Path(__file__).parent.parent / "data"
 PATIENTS_DIR = DATA_DIR / "patienten"     # P-0001.yml, P-0002.yml, ...
 MEILENSTEINE_DIR = DATA_DIR / "meilensteine"  # P-0001.md + P-0001.meta.json
 

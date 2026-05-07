@@ -3,7 +3,7 @@ from pathlib import Path
 
 from models.chat import ChatHistory
 
-_CHAT_DIR = Path(__file__).parent / "data" / "chat"
+_CHAT_DIR = Path(__file__).parent.parent / "data" / "chat"
 
 
 def _path(patient_id: str) -> Path:

@@ -10,7 +10,7 @@ from pathlib import Path
 
 import yaml
 
-BRIEFS_DIR = Path(__file__).parent / "data" / "briefe"
+BRIEFS_DIR = Path(__file__).parent.parent / "data" / "briefe"
 
 BRIEF_SECTIONS = {"diagnosen", "anamnese", "therapie", "befunde", "verlauf"}
 
