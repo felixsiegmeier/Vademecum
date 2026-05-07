@@ -35,6 +35,8 @@ RICHTIG (3 Sätze, KEINE_DOKUMENTATION-Schluss):
    - Therapieänderungen mit Konsequenz für die Weiterbehandlung (insbesondere geänderte Antikoagulation, neue Dauermedikation, Pacing-Indikationen)
    - Pending Items für die Übernehmenden (z.B. ausstehender Drain-Zug, Konsil-Termin, ausstehende Befunde) — in der Substanz mit [PENDING] markiert
 
+   [PENDING]-Marker-Regel: Der Marker [PENDING] darf NIEMALS literal im Output erscheinen. Ersetze ihn durch natürlichsprachliche Formulierungen passend zum Kontext: "ist vorgesehen", "steht noch aus", "wird auf Station durchgeführt", "erfolgt auf Station".
+
    Routine-Postop-Inhalte ohne Konsequenz für die Übernehmenden sollen explizit weggelassen werden — siehe ROUTINE-FILTER. Diese Nicht-Weglassungspflicht gilt nur für die oben gelisteten Sicherheits-Pflicht-Inhalte, nicht für alle Cluster.
 
 3. KONSISTENZ-HINWEISE BEACHTEN: Items mit "[KONSISTENZ-HINWEIS: ...]" gemäß Anweisung verarbeiten (z.B. nicht als Tabelle wiederholen, nur Verlaufsereignis nehmen).
