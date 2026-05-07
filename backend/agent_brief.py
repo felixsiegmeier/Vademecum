@@ -16,6 +16,7 @@ vollständig via LLM_BACKEND Env-Variable steuerbar, vorbereitet für Qwen-Migra
 
 import json
 import logging
+import re
 import sys
 from pathlib import Path
 from typing import Optional
@@ -75,6 +76,30 @@ def _to_yaml(patient: Patient) -> str:
         default_flow_style=False,
         width=100,
     )
+
+
+def _extract_substanz_tiefe(collected: str) -> str:
+    m = re.search(r"^SUBSTANZ_TIEFE:\s*(\S+)", collected, re.MULTILINE)
+    if not m:
+        logger.warning("[generate_verlauf] SUBSTANZ_TIEFE nicht in Sammler-Output — fallback kompakt")
+        return "kompakt"
+    return m.group(1).strip()
+
+
+def _load_curate_prompt(substanz_tiefe: str) -> str:
+    tiefe = substanz_tiefe.lower().strip()
+    if tiefe == "minimal":
+        tiefe_normalized = "minimal"
+    elif tiefe in {"kompakt", "mittel"}:
+        tiefe_normalized = "kompakt"
+    elif tiefe in {"ausführlich", "ausfuehrlich"}:
+        tiefe_normalized = "ausfuehrlich"
+    else:
+        logger.warning("[generate_verlauf] unbekannte SUBSTANZ_TIEFE '%s', fallback kompakt", tiefe)
+        tiefe_normalized = "kompakt"
+    shared = _get_prompt("brief_verlauf_curate_shared.txt")
+    specific = _get_prompt(f"brief_verlauf_curate_{tiefe_normalized}.txt")
+    return shared + "\n\n" + specific
 
 
 def _inject_extra_context(prompt: str, extra_context: str) -> str:
@@ -299,11 +324,12 @@ async def generate_verlauf(
     audited = (resp2.choices[0].message.content or "").strip()
 
     # Pass 3 — Stil-Kurator (mit Regel-Injection und Adressaten-Profil)
+    substanz_tiefe = _extract_substanz_tiefe(collected)
     verlauf_rules = learning_storage.load_rules(domain="brief", section="verlauf")
     adressatenprofil = _load_adressatenprofil(adressat)
     curate_prompt = _inject_rules(
         _fill(
-            _get_prompt("brief_verlauf_curate.txt"),
+            _load_curate_prompt(substanz_tiefe),
             extra={
                 "{audited_substance}": audited,
                 "{ADRESSATENPROFIL}": adressatenprofil,

@@ -438,9 +438,9 @@ def test_audit_prompt_is_read_only_for_existing_items(isolated_data):
 # ── 22. Prompt-Validierung: curate-Prompt verbietet neue Fakten ──────────────
 
 def test_curate_prompt_forbids_new_facts(isolated_data):
-    """brief_verlauf_curate.txt muss die Klausel 'KEINE NEUEN FAKTEN' enthalten."""
+    """brief_verlauf_curate_shared.txt muss die Klausel 'KEINE NEUEN FAKTEN' enthalten."""
     import agent_brief as ab
-    prompt = ab._get_prompt("brief_verlauf_curate.txt")
+    prompt = ab._get_prompt("brief_verlauf_curate_shared.txt")
     assert "KEINE NEUEN FAKTEN" in prompt
     assert "{audited_substance}" in prompt
     assert "SCHLUSS_INDIKATOR" in prompt
@@ -555,7 +555,7 @@ def test_polish_section_endpoint_invalid_section(isolated_data):
 # ── 26. polish_section — Lektor-Verhalten ─────────────────────────────────────
 
 def test_polish_section_verlauf_uses_verlauf_polish_prompt(isolated_data):
-    """polish_section(verlauf) muss brief_verlauf_polish.txt laden, nicht brief_verlauf_curate.txt."""
+    """polish_section(verlauf) muss brief_verlauf_polish.txt laden, nicht brief_verlauf_curate_shared.txt."""
     import agent_brief as ab
 
     captured_prompts = []
@@ -649,7 +649,7 @@ def test_collect_prompt_its_liegezeit_not_hospital_los(isolated_data):
 def test_curate_prompt_has_substanz_tiefe_disziplin(isolated_data):
     """curate-Prompt enthält SUBSTANZ_TIEFE-DISZIPLIN-Klausel."""
     import agent_brief as ab
-    prompt = ab._get_prompt("brief_verlauf_curate.txt")
+    prompt = ab._get_prompt("brief_verlauf_curate_shared.txt")
     assert "SUBSTANZ_TIEFE-DISZIPLIN" in prompt, "Disziplin-Klausel fehlt"
     assert "verbindlich" in prompt, "Verbindlichkeits-Formulierung fehlt"
     assert "Aufblähen" in prompt, "Aufblähverbot fehlt"
@@ -658,7 +658,7 @@ def test_curate_prompt_has_substanz_tiefe_disziplin(isolated_data):
 def test_curate_prompt_has_sicherheitspflicht_regel(isolated_data):
     """Alte 'alle-Cluster'-Pflicht durch SICHERHEITS-PFLICHT-INHALTE ersetzt."""
     import agent_brief as ab
-    prompt = ab._get_prompt("brief_verlauf_curate.txt")
+    prompt = ab._get_prompt("brief_verlauf_curate_shared.txt")
     assert "SICHERHEITS-PFLICHT-INHALTE" in prompt
     assert "Pending Items" in prompt, "Pending-Items in Sicherheits-Pflicht fehlen"
     assert "explizit weggelassen" in prompt, "Routine-Streich-Erlaubnis fehlt"
@@ -790,18 +790,18 @@ def test_generate_verlauf_accepts_adressat_argument(isolated_data):
 # ── 33. Routine-Filter + Negativ-Beispiel + Diagnose-Logging ─────────────────
 
 def test_curate_prompt_has_routine_filter(isolated_data):
-    """brief_verlauf_curate.txt enthält ROUTINE-FILTER-Klausel."""
+    """brief_verlauf_curate_shared.txt enthält ROUTINE-FILTER-Klausel."""
     import agent_brief as ab
-    prompt = ab._get_prompt("brief_verlauf_curate.txt")
+    prompt = ab._get_prompt("brief_verlauf_curate_shared.txt")
     assert "ROUTINE-FILTER" in prompt, "ROUTINE-FILTER-Klausel fehlt"
     assert "abgeschlossenen Phase" in prompt, "Kernaussage fehlt"
     assert "Auffüllen ist verboten" in prompt, "Auffüll-Verbot fehlt"
 
 
 def test_curate_prompt_has_negativ_beispiel(isolated_data):
-    """brief_verlauf_curate.txt enthält NEGATIV-BEISPIEL-Abschnitt."""
+    """brief_verlauf_curate_shared.txt enthält NEGATIV-BEISPIEL-Abschnitt."""
     import agent_brief as ab
-    prompt = ab._get_prompt("brief_verlauf_curate.txt")
+    prompt = ab._get_prompt("brief_verlauf_curate_shared.txt")
     assert "NEGATIV-BEISPIEL" in prompt, "NEGATIV-BEISPIEL-Marker fehlt"
     assert "SO NICHT" in prompt, "Negativ-Marker fehlt"
     assert "RICHTIG" in prompt, "Positiv-Gegenbeispiel fehlt"
@@ -871,7 +871,7 @@ def test_generate_verlauf_diagnostic_logging(isolated_data, capsys):
 
 def test_curate_prompt_has_konnektoren_disziplin(isolated_data):
     """KONNEKTOREN-DISZIPLIN-Block mit erlaubter und verbotener Kategorie vorhanden."""
-    prompt = agent_brief._get_prompt("brief_verlauf_curate.txt")
+    prompt = agent_brief._get_prompt("brief_verlauf_curate_shared.txt")
     assert "KONNEKTOREN-DISZIPLIN" in prompt
     assert "kausal-logisch" in prompt, "Erlaubte Kategorie fehlt"
     assert "parallel hierzu" in prompt, "Verbotene Beispiel-Phrase fehlt"
@@ -879,13 +879,13 @@ def test_curate_prompt_has_konnektoren_disziplin(isolated_data):
 
 def test_curate_prompt_has_konnektoren_faustregel(isolated_data):
     """Faustregel-Marker für den Füllkonnektor-Test vorhanden."""
-    prompt = agent_brief._get_prompt("brief_verlauf_curate.txt")
+    prompt = agent_brief._get_prompt("brief_verlauf_curate_shared.txt")
     assert "Faustregel" in prompt
 
 
 def test_curate_prompt_has_minimal_beispiel(isolated_data):
     """Minimal-Beispiel-Marker für few-shot-Kalibrierung kurzer Verläufe vorhanden."""
-    prompt = agent_brief._get_prompt("brief_verlauf_curate.txt")
+    prompt = agent_brief._get_prompt("brief_verlauf_curate_minimal.txt")
     assert "Minimal-Beispiel" in prompt
 
 
@@ -900,7 +900,7 @@ def test_collect_prompt_has_pending_marker(isolated_data):
 def test_curate_prompt_no_im_weiteren_verlauf_in_kohäsion(isolated_data):
     """'im weiteren Verlauf' als Konnektor-Beispiel wurde aus KOHÄSION a) entfernt."""
     import agent_brief as ab
-    prompt = ab._get_prompt("brief_verlauf_curate.txt")
+    prompt = ab._get_prompt("brief_verlauf_curate_shared.txt")
     assert '"im weiteren Verlauf"' not in prompt, (
         "'im weiteren Verlauf' noch als Konnektor-Beispiel vorhanden — Floskel-Risiko"
     )
@@ -908,7 +908,7 @@ def test_curate_prompt_no_im_weiteren_verlauf_in_kohäsion(isolated_data):
 
 def test_curate_prompt_no_pauschales_konnektoren_verbot(isolated_data):
     """Altes pauschales Konnektoren-Verbot ist durch KONNEKTOREN-DISZIPLIN ersetzt."""
-    prompt = agent_brief._get_prompt("brief_verlauf_curate.txt")
+    prompt = agent_brief._get_prompt("brief_verlauf_curate_shared.txt")
     assert "Floskeln, Konnektoren" not in prompt, (
         "Pauschales Konnektoren-Verbot gefunden — muss durch KONNEKTOREN-DISZIPLIN-Block ersetzt sein"
     )
@@ -916,14 +916,14 @@ def test_curate_prompt_no_pauschales_konnektoren_verbot(isolated_data):
 
 def test_curate_prompt_has_pending_replacement_rule(isolated_data):
     """Curate-Prompt enthält [PENDING]-Marker-Replacement-Anweisung."""
-    prompt = agent_brief._get_prompt("brief_verlauf_curate.txt")
+    prompt = agent_brief._get_prompt("brief_verlauf_curate_shared.txt")
     assert "[PENDING]-Marker-Regel" in prompt, "Marker-Replacement-Klausel fehlt"
     assert "NIEMALS literal" in prompt, "Literal-Verbot fehlt"
 
 
 def test_curate_prompt_has_sofern_vorhanden(isolated_data):
     """SICHERHEITS-PFLICHT-INHALTE enthält 'sofern im Patientenfall vorhanden'."""
-    prompt = agent_brief._get_prompt("brief_verlauf_curate.txt")
+    prompt = agent_brief._get_prompt("brief_verlauf_curate_shared.txt")
     assert "sofern im Patientenfall vorhanden" in prompt
 
 
@@ -960,3 +960,77 @@ def test_curate_pending_marker_not_in_final_output(isolated_data):
 
     assert "[PENDING]" not in result, f"[PENDING] literal im Output: {result!r}"
     assert "vorgesehen" in result or "steht noch aus" in result or "auf Station" in result
+
+
+# ── 40. BR-C1.8: _extract_substanz_tiefe + _load_curate_prompt ───────────────
+
+def test_extract_substanz_tiefe_parses_correctly(isolated_data):
+    """_extract_substanz_tiefe liest SUBSTANZ_TIEFE-Zeile korrekt aus Sammler-Output."""
+    import agent_brief as ab
+    for tiefe in ("minimal", "kompakt", "mittel", "ausführlich"):
+        collected = f"CLUSTER A -- TEST\n- foo\nSUBSTANZ_TIEFE: {tiefe}\n"
+        assert ab._extract_substanz_tiefe(collected) == tiefe
+
+
+def test_extract_substanz_tiefe_fallback_on_missing(isolated_data):
+    """_extract_substanz_tiefe gibt 'kompakt' zurück wenn SUBSTANZ_TIEFE fehlt."""
+    import agent_brief as ab
+    result = ab._extract_substanz_tiefe("CLUSTER A -- TEST\n- foo\n")
+    assert result == "kompakt"
+
+
+def test_load_curate_prompt_minimal_contains_format_header(isolated_data):
+    """_load_curate_prompt('minimal') enthält FORMAT: MINIMAL aus der format-spezifischen Datei."""
+    import agent_brief as ab
+    ab._PROMPT_CACHE.clear()
+    prompt = ab._load_curate_prompt("minimal")
+    assert "FORMAT: MINIMAL" in prompt
+    assert "KEINE NEUEN FAKTEN" in prompt, "Shared-Inhalt fehlt in kombiniertem Prompt"
+
+
+def test_load_curate_prompt_kompakt_contains_format_header(isolated_data):
+    """_load_curate_prompt('kompakt') enthält FORMAT: KOMPAKT."""
+    import agent_brief as ab
+    ab._PROMPT_CACHE.clear()
+    prompt = ab._load_curate_prompt("kompakt")
+    assert "FORMAT: KOMPAKT" in prompt
+    assert "KEINE NEUEN FAKTEN" in prompt
+
+
+def test_load_curate_prompt_ausfuehrlich_contains_format_header(isolated_data):
+    """_load_curate_prompt('ausführlich') enthält FORMAT: AUSFUEHRLICH."""
+    import agent_brief as ab
+    ab._PROMPT_CACHE.clear()
+    prompt = ab._load_curate_prompt("ausführlich")
+    assert "FORMAT: AUSFUEHRLICH" in prompt
+    assert "KEINE NEUEN FAKTEN" in prompt
+
+
+def test_load_curate_prompt_mittel_maps_to_kompakt(isolated_data):
+    """_load_curate_prompt('mittel') → selber Prompt wie 'kompakt', kein Warning."""
+    import agent_brief as ab
+    import logging
+    ab._PROMPT_CACHE.clear()
+    with patch("agent_brief.logger") as mock_logger:
+        prompt = ab._load_curate_prompt("mittel")
+        mock_logger.warning.assert_not_called()
+    assert "FORMAT: KOMPAKT" in prompt
+
+
+def test_load_curate_prompt_unknown_falls_back_to_kompakt(isolated_data):
+    """_load_curate_prompt mit unbekanntem Wert → Fallback kompakt + logger.warning."""
+    import agent_brief as ab
+    ab._PROMPT_CACHE.clear()
+    with patch("agent_brief.logger") as mock_logger:
+        prompt = ab._load_curate_prompt("unbekannt")
+        mock_logger.warning.assert_called_once()
+    assert "FORMAT: KOMPAKT" in prompt
+
+
+def test_no_cross_contamination_minimal_has_no_ausfuehrlich_stilanker(isolated_data):
+    """Minimal-Prompt enthält keine Ausführlich-Stil-Anker (Vasoplegie, Impella)."""
+    import agent_brief as ab
+    ab._PROMPT_CACHE.clear()
+    prompt = ab._load_curate_prompt("minimal")
+    assert "vasoplegisch" not in prompt.lower()
+    assert "Impella" not in prompt
