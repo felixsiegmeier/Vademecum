@@ -16,7 +16,7 @@ from dotenv import load_dotenv
 from openai import APIConnectionError, APIStatusError, RateLimitError
 from pydantic import BaseModel
 import learning_storage
-import agent_meilenstein_learning as _learning_agent
+from skills import learning
 from tools.patient_tools import TOOL_ARGS, TOOL_FUNCTIONS
 from agent_document_extraction import extract_proposals, extract_proposals_streaming
 from agent_extraction_core import Proposal
@@ -546,37 +546,11 @@ async def learn_meilenstein_from_edits(req: LearnFromEditsRequest):
     if req.edited_content.strip() == last_generated.strip():
         return JSONResponse(content={"rule_candidates": [], "trivial_changes": []})
 
-    extraction = await _learning_agent.extract_rule_candidates(
-        llm, last_generated, req.edited_content
-    )
-
     existing_rules = learning_storage.load_rules(domain="meilenstein")
-    result_candidates: list[dict] = []
-    for candidate in extraction.candidates:
-        section_rules = [r for r in existing_rules if r.section == candidate.section]
-        conflict = await _learning_agent.detect_conflict(
-            llm, candidate.rule_text, candidate.section, section_rules
-        )
-        result_candidates.append({
-            "section": candidate.section,
-            "rule_text": candidate.rule_text,
-            "reasoning": candidate.reasoning,
-            "anchor": candidate.anchor,
-            "conflict": {
-                "conflicting_rule_id": conflict.conflicting_rule_id,
-                "explanation": conflict.explanation,
-            } if conflict.has_conflict else None,
-        })
-
-    trivial_changes = [
-        {"section": tc.section, "rule_text": tc.rule_text, "reasoning": tc.reasoning, "anchor": tc.anchor}
-        for tc in extraction.trivial_changes
-    ]
-
-    return JSONResponse(content={
-        "rule_candidates": result_candidates,
-        "trivial_changes": trivial_changes,
-    })
+    result_candidates, trivial_changes = await learning.from_edits(
+        llm, last_generated, req.edited_content, existing_rules
+    )
+    return JSONResponse(content={"rule_candidates": result_candidates, "trivial_changes": trivial_changes})
 
 
 @app.post("/api/learn/meilenstein/save-rules")
@@ -609,7 +583,7 @@ def learn_meilenstein_save_rules(req: SaveRulesRequest):
 
 @app.post("/api/learn/meilenstein/rebuild-rule")
 async def learn_meilenstein_rebuild_rule(req: RebuildRuleRequest):
-    result = await _learning_agent.rebuild_rule_candidate(
+    result = await learning.rebuild(
         client=llm,
         section=req.section,
         original_rule_text=req.original_rule_text,
@@ -682,37 +656,11 @@ async def learn_brief_from_edits(section: str, req: LearnFromEditsRequest):
     if req.edited_content.strip() == last_generated.strip():
         return JSONResponse(content={"rule_candidates": [], "trivial_changes": []})
 
-    extraction = await _learning_agent.extract_rule_candidates(
-        llm, last_generated, req.edited_content
-    )
-
     existing_rules = learning_storage.load_rules(domain="brief", section=section)
-    result_candidates: list[dict] = []
-    for candidate in extraction.candidates:
-        section_rules = [r for r in existing_rules if r.section == candidate.section]
-        conflict = await _learning_agent.detect_conflict(
-            llm, candidate.rule_text, candidate.section, section_rules
-        )
-        result_candidates.append({
-            "section": candidate.section,
-            "rule_text": candidate.rule_text,
-            "reasoning": candidate.reasoning,
-            "anchor": candidate.anchor,
-            "conflict": {
-                "conflicting_rule_id": conflict.conflicting_rule_id,
-                "explanation": conflict.explanation,
-            } if conflict.has_conflict else None,
-        })
-
-    trivial_changes = [
-        {"section": tc.section, "rule_text": tc.rule_text, "reasoning": tc.reasoning, "anchor": tc.anchor}
-        for tc in extraction.trivial_changes
-    ]
-
-    return JSONResponse(content={
-        "rule_candidates": result_candidates,
-        "trivial_changes": trivial_changes,
-    })
+    result_candidates, trivial_changes = await learning.from_edits(
+        llm, last_generated, req.edited_content, existing_rules
+    )
+    return JSONResponse(content={"rule_candidates": result_candidates, "trivial_changes": trivial_changes})
 
 
 @app.post("/api/learn/brief/{section}/save-rules")
@@ -747,7 +695,7 @@ def learn_brief_save_rules(section: str, req: SaveRulesRequest):
 @app.post("/api/learn/brief/{section}/rebuild-rule")
 async def learn_brief_rebuild_rule(section: str, req: RebuildRuleRequest):
     _assert_valid_brief_section(section)
-    result = await _learning_agent.rebuild_rule_candidate(
+    result = await learning.rebuild(
         client=llm,
         section=req.section,
         original_rule_text=req.original_rule_text,

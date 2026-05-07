@@ -1,11 +1,11 @@
-"""Tests für B2+B3: last_meilenstein-Persistierung, learn-from-edits, save-rules, rebuild-rule."""
+"""Tests für B2+B3: last_output-Persistierung, learn-from-edits, save-rules, rebuild-rule."""
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import storage
 import learning_storage
 import main as _main
-import agent_meilenstein_learning as _la
+from skills import learning
 from main import app
 from fastapi.testclient import TestClient
 from models.patient import Patient, Stammdaten
@@ -13,7 +13,7 @@ from models.patient import Patient, Stammdaten
 client = TestClient(app)
 
 
-# ── Storage: last_meilenstein ─────────────────────────────────────────────────
+# ── Storage: last_output ──────────────────────────────────────────────────────
 
 def test_last_meilenstein_roundtrip(isolated_data):
     """save_last_output → load_last_output gibt gleichen Text zurück."""
@@ -29,7 +29,7 @@ def test_load_last_meilenstein_returns_none_when_missing(isolated_data):
     assert result is None
 
 
-# ── Endpoint: generate persistiert last_meilenstein ──────────────────────────
+# ── Endpoint: generate persistiert last_output ───────────────────────────────
 
 def _make_patient_minimal(pid: str = "P-0001") -> Patient:
     p = Patient(
@@ -51,7 +51,7 @@ _MOCK_LLM_OUT = f"```plain text\n{_MOCK_CONTENT}\n```"
 
 
 def test_generate_meilenstein_persists_last_meilenstein(isolated_data):
-    """Nach POST generate ist load_last_meilenstein nicht None und enthält den generierten Text."""
+    """Nach POST generate ist load_last_output nicht None und enthält den generierten Text."""
     _make_patient_minimal("P-0001")
 
     with patch.object(_main.llm, "chat_completion", new_callable=AsyncMock) as mock_llm:
@@ -95,27 +95,22 @@ def test_learn_from_edits_returns_candidates_with_conflict_field(isolated_data):
     """Inhaltsänderung → Kandidaten mit conflict-Feld (None wenn kein Konflikt)."""
     learning_storage.save_last_output("P-0001", _MOCK_CONTENT, domain="meilenstein")
 
-    from agent_meilenstein_learning import ConflictResult, ExtractionResult, RuleCandidate, TrivialChange
+    result_candidates = [{
+        "section": "Befunde",
+        "rule_text": "Immer LVEF im Echo nennen",
+        "reasoning": "Arzt hat LVEF ergänzt",
+        "anchor": "TTE: LVEF 30%",
+        "conflict": None,
+    }]
+    trivial_changes = [{
+        "section": "Befunde",
+        "rule_text": "LVEF immer ausschreiben",
+        "reasoning": "Lesbarkeit",
+        "anchor": "LVEF 30%",
+    }]
 
-    extraction = ExtractionResult(
-        candidates=[
-            RuleCandidate(
-                section="Befunde",
-                rule_text="Immer LVEF im Echo nennen",
-                reasoning="Arzt hat LVEF ergänzt",
-                anchor="TTE: LVEF 30%",
-            )
-        ],
-        trivial_changes=[TrivialChange(section="Befunde", rule_text="LVEF immer ausschreiben", reasoning="Lesbarkeit", anchor="LVEF 30%")],
-    )
-    conflict = ConflictResult(has_conflict=False, explanation="", conflicting_rule_id="")
-
-    with (
-        patch.object(_la, "extract_rule_candidates", new_callable=AsyncMock) as mock_extract,
-        patch.object(_la, "detect_conflict", new_callable=AsyncMock) as mock_conflict,
-    ):
-        mock_extract.return_value = extraction
-        mock_conflict.return_value = conflict
+    with patch.object(learning, "from_edits", new_callable=AsyncMock) as mock_from_edits:
+        mock_from_edits.return_value = (result_candidates, trivial_changes)
 
         res = client.post("/api/learn/meilenstein/from-edits", json={
             "patient_id": "P-0001",
@@ -162,7 +157,6 @@ def test_save_rules_endpoint_adds_rules(isolated_data):
 
 def test_save_rules_endpoint_deletes_then_adds(isolated_data):
     """POST save-rules löscht alte Regel und fügt neue hinzu (Konflikt-Ersetzen-Pfad)."""
-    # Erstmal eine Regel speichern
     rule = learning_storage.new_rule("Befunde", "Alte Regel")
     learning_storage.save_rules([rule], domain="meilenstein")
 
@@ -186,14 +180,14 @@ def test_save_rules_endpoint_deletes_then_adds(isolated_data):
 
 def test_rebuild_rule_endpoint_returns_refined(isolated_data):
     """POST rebuild-rule liefert verfeinerten rule_text und reasoning (Mock-LLM)."""
-    from agent_meilenstein_learning import RebuildResult
+    from skills.learning import RebuildResult
 
     rebuild_result = RebuildResult(
         rule_text="KHK mit DES-Vorgeschichte und Bypass-OP konsolidieren",
         reasoning="Arzt hat klargestellt, dass auch OP-Daten gehören",
     )
 
-    with patch.object(_la, "rebuild_rule_candidate", new_callable=AsyncMock) as mock_rebuild:
+    with patch.object(learning, "rebuild", new_callable=AsyncMock) as mock_rebuild:
         mock_rebuild.return_value = rebuild_result
         res = client.post("/api/learn/meilenstein/rebuild-rule", json={
             "section": "Behandlungsdiagnosen",
@@ -244,9 +238,9 @@ def test_delete_rule_endpoint_404_for_unknown(isolated_data):
 
 # ── Prompt Smoke Tests ────────────────────────────────────────────────────────
 
-_EXTRACTION_PROMPT_PATH = Path(__file__).parent.parent / "prompts" / "learning_rule_extraction.md"
-_CONFLICT_PROMPT_PATH = Path(__file__).parent.parent / "prompts" / "learning_conflict_detection.md"
-_REBUILD_PROMPT_PATH = Path(__file__).parent.parent / "prompts" / "learning_rule_rebuild.md"
+_EXTRACTION_PROMPT_PATH = Path(__file__).parent.parent / "skills" / "learning" / "prompts" / "rule_extraction.md"
+_CONFLICT_PROMPT_PATH = Path(__file__).parent.parent / "skills" / "learning" / "prompts" / "conflict_detection.md"
+_REBUILD_PROMPT_PATH = Path(__file__).parent.parent / "skills" / "learning" / "prompts" / "rule_rebuild.md"
 
 
 def test_extraction_prompt_contains_anonymization_clause():
