@@ -1,4 +1,4 @@
-"""Tests für Brief-Generator V1: brief_storage, agent_brief, Endpoints."""
+"""Tests für Brief-Generator V1: brief_storage, workflows/brief/orchestrator, Endpoints."""
 import asyncio
 import importlib
 import json
@@ -102,7 +102,7 @@ def test_brief_storage_section_whitelist(isolated_data):
         assert result[section] == f"Inhalt für {section}"
 
 
-# ── 6. agent_brief: Diagnosen JSON → Markdown ─────────────────────────────────
+# ── 6. brief-orchestrator: Diagnosen JSON → Markdown ──────────────────────────
 
 def test_generate_diagnosen_renders_json(isolated_data):
     """LLM-Mock gibt JSON zurück → korrekte Markdown-Struktur mit fetter Hauptdiagnose."""
@@ -128,7 +128,7 @@ def test_generate_diagnosen_renders_json(isolated_data):
     assert "Arterielle Hypertonie" in result
 
 
-# ── 7. agent_brief: Therapie JSON → 3 Sub-Blöcke ────────────────────────────
+# ── 7. brief-orchestrator: Therapie JSON → 3 Sub-Blöcke ─────────────────────
 
 def test_generate_therapie_renders_three_subblocks(isolated_data):
     """LLM-Mock gibt JSON zurück → alle 3 Sub-Blöcke im Markdown-Output."""
@@ -153,7 +153,7 @@ def test_generate_therapie_renders_three_subblocks(isolated_data):
     assert "Kardioversion" in result
 
 
-# ── 8. agent_brief: Verlauf 3-Pass — Kontext-Durchreichung ───────────────────
+# ── 8. brief-orchestrator: Verlauf 3-Pass — Kontext-Durchreichung ────────────
 
 def test_generate_verlauf_passes_all_context(isolated_data):
     """generate_verlauf: 3 LLM-Calls; Pass 1 enthält alle Kontext-Inputs; Ergebnis = Pass-3-Output."""
@@ -201,7 +201,7 @@ def test_generate_verlauf_passes_all_context(isolated_data):
     assert "AUDIT_RESULT: ALLES_ABGEDECKT" in pass3_prompt
 
 
-# ── 9. agent_brief: format_sap_befunde ────────────────────────────────────────
+# ── 9. brief-orchestrator: format_sap_befunde ────────────────────────────────
 
 def test_format_sap_befunde_strips_boilerplate(isolated_data):
     """format_sap_befunde ruft LLM auf und gibt dessen Antwort zurück."""
