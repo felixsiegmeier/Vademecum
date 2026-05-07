@@ -685,39 +685,35 @@ def test_collect_prompt_no_override_noradrenalin(isolated_data):
     assert "NICHT als Override" in prompt, "Nicht-Override-Klausel fehlt"
 
 
-# ── 31. Prompt-Loader: .md bevorzugt, .txt als Fallback ──────────────────────
+# ── 31. Prompt-Loader: Frontmatter-Pflicht ───────────────────────────────────
 
-def test_prompt_loader_prefers_md_over_txt(isolated_data):
-    """_get_prompt bevorzugt .md wenn beide Varianten existieren."""
-    
-    stem = "_test_loader_pref"
-    txt_path = brief._PROMPTS_DIR / f"{stem}.txt"
+def test_prompt_loader_strips_frontmatter(isolated_data):
+    """_get_prompt gibt Body ohne Frontmatter zurück."""
+    stem = "_test_loader_fm"
     md_path = brief._PROMPTS_DIR / f"{stem}.md"
-    txt_path.write_text("TXT_CONTENT", encoding="utf-8")
-    md_path.write_text("MD_CONTENT", encoding="utf-8")
-    brief._PROMPT_CACHE.pop(f"{stem}.txt", None)
+    md_path.write_text(
+        "---\nid: test\nversion: \"2026-05-07\"\nmodel: gemini\nrole: user\ninputs: []\n---\nBODY",
+        encoding="utf-8",
+    )
     try:
-        result = brief._get_prompt(f"{stem}.txt")
-        assert result == "MD_CONTENT", f"Erwartet MD_CONTENT, got {result!r}"
+        result = brief._get_prompt(stem)
+        assert result == "BODY"
     finally:
-        txt_path.unlink(missing_ok=True)
         md_path.unlink(missing_ok=True)
-        brief._PROMPT_CACHE.pop(f"{stem}.txt", None)
+        brief._PROMPT_CACHE.pop(md_path.resolve(), None)
 
 
-def test_prompt_loader_txt_fallback(isolated_data):
-    """_get_prompt fällt auf .txt zurück wenn kein .md existiert."""
-    
-    stem = "_test_loader_fallback"
-    txt_path = brief._PROMPTS_DIR / f"{stem}.txt"
-    txt_path.write_text("TXT_ONLY", encoding="utf-8")
-    brief._PROMPT_CACHE.pop(f"{stem}.txt", None)
+def test_prompt_loader_rejects_missing_frontmatter(isolated_data):
+    """_get_prompt wirft ValueError wenn .md kein Frontmatter hat."""
+    stem = "_test_loader_nofm"
+    md_path = brief._PROMPTS_DIR / f"{stem}.md"
+    md_path.write_text("KEIN FRONTMATTER", encoding="utf-8")
     try:
-        result = brief._get_prompt(f"{stem}.txt")
-        assert result == "TXT_ONLY", f"Erwartet TXT_ONLY, got {result!r}"
+        with pytest.raises(ValueError, match="kein Frontmatter"):
+            brief._get_prompt(stem)
     finally:
-        txt_path.unlink(missing_ok=True)
-        brief._PROMPT_CACHE.pop(f"{stem}.txt", None)
+        md_path.unlink(missing_ok=True)
+        brief._PROMPT_CACHE.pop(md_path.resolve(), None)
 
 
 # ── 32. Adressaten-Profil-Mechanik ───────────────────────────────────────────

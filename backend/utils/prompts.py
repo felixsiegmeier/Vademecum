@@ -39,20 +39,20 @@ def _parse_and_validate(raw: str) -> str:
 def get_prompt(name: str, prompts_dir: Path) -> str:
     """Lädt Prompt-Text aus prompts_dir.
 
-    - Bevorzugt <stem>.md über <stem>.txt (Backwards-Compat).
-    - Wenn Frontmatter vorhanden (Datei beginnt mit ---): validiert und strippt es.
-    - Kein Frontmatter → Raw-Text unverändert.
+    - Erwartet <name>.md mit YAML-Frontmatter.
+    - Validiert Pflichtfelder und strippt Frontmatter.
     - Cacht pro aufgelöstem Pfad.
     """
     stem = name.rsplit(".", 1)[0] if "." in name else name
-    md_path = prompts_dir / f"{stem}.md"
-    resolved = md_path if md_path.exists() else (prompts_dir / name)
+    resolved = prompts_dir / f"{stem}.md"
 
     if resolved in _PROMPT_CACHE:
         return _PROMPT_CACHE[resolved]
 
     raw = resolved.read_text(encoding="utf-8")
-    result = _parse_and_validate(raw) if raw.startswith("---") else raw
+    if not raw.startswith("---"):
+        raise ValueError(f"Prompt '{resolved}' hat kein Frontmatter")
+    result = _parse_and_validate(raw)
 
     _PROMPT_CACHE[resolved] = result
     return result
