@@ -9,11 +9,14 @@ import pytest
 import storage
 from agent_extraction_core import (
     MAX_ITERATIONS_BLOCK_1,
+    MAX_TOTAL_TOKENS_BLOCK_1,
+    MAX_TOTAL_TOKENS_BLOCK_2,
     THINKING_BUDGET_BLOCK_1,
     THINKING_BUDGET_BLOCK_2,
     Proposal,
     ToolCallInfo,
     _HEARTBEAT_INTERVAL,
+    _extract_call_tokens,
     group_proposals,
     run_pass,
     run_pass_streaming,
@@ -1071,3 +1074,142 @@ def test_timeout_yields_error_event():
     assert err.get("phase") == "block1"
     # Kein done-Event nach timeout
     assert not any(e["type"] == "done" for e in events), "done-Event nach Timeout unerwünscht"
+
+
+# ── Token-Budget-Tests (1.7) ──────────────────────────────────────────────────
+
+
+def _llm_response_with_usage(tool_calls, total_tokens: int) -> MagicMock:
+    """Mock-Response mit kontrolliertem usage.total_tokens."""
+    resp = MagicMock()
+    resp.choices[0].message.tool_calls = tool_calls
+    resp.choices[0].message.model_dump.return_value = {"role": "assistant", "content": None}
+    resp.choices[0].finish_reason = "tool_calls"
+    resp.usage = MagicMock()
+    resp.usage.total_tokens = total_tokens
+    return resp
+
+
+def test_token_budget_constants_defined():
+    """Konstanten MAX_TOTAL_TOKENS_BLOCK_1/2 müssen definiert und plausibel hoch sein."""
+    assert MAX_TOTAL_TOKENS_BLOCK_1 == 200_000
+    assert MAX_TOTAL_TOKENS_BLOCK_2 == 100_000
+
+
+def test_extract_call_tokens_with_total_tokens():
+    """_extract_call_tokens gibt total_tokens zurück wenn vorhanden."""
+    usage = MagicMock()
+    usage.total_tokens = 42_000
+    assert _extract_call_tokens(usage) == 42_000
+
+
+def test_extract_call_tokens_no_usage_returns_none():
+    """_extract_call_tokens gibt None zurück wenn usage=None."""
+    assert _extract_call_tokens(None) is None
+
+
+def test_extract_call_tokens_fallback_to_sum():
+    """_extract_call_tokens summiert prompt + completion wenn total_tokens fehlt."""
+    usage = MagicMock(spec=["prompt_tokens", "completion_tokens"])
+    usage.prompt_tokens = 8_000
+    usage.completion_tokens = 1_500
+    assert _extract_call_tokens(usage) == 9_500
+
+
+def test_run_pass_aborts_on_token_budget():
+    """run_pass bricht sauber ab wenn cumulative_tokens >= max_total_tokens.
+
+    Budget=1500, jede Antwort kostet 1000 Tokens:
+    - iter 1: cumulative=1000 → unter Budget → weiter
+    - iter 2: cumulative=2000 → über Budget → Abbruch nach dieser Iteration
+    LLM wird genau 2x aufgerufen, max_iterations=5 wird nie ausgeschöpft.
+    """
+    tc = _mock_tool_call("add_behandlungsdiagnose", {"text": "X", "datum": None, "source_quote": "q"})
+    mock_llm = MagicMock()
+    mock_llm.chat_completion = AsyncMock(
+        return_value=_llm_response_with_usage([tc], total_tokens=1_000)
+    )
+
+    iters = asyncio.run(run_pass(
+        llm=mock_llm,
+        system_prompt="test",
+        user_messages=[{"role": "user", "content": "doc"}],
+        tools=[],
+        thinking_budget=0,
+        max_iterations=5,
+        max_total_tokens=1_500,
+    ))
+
+    assert mock_llm.chat_completion.call_count == 2, (
+        f"Erwartet 2 LLM-Aufrufe, got {mock_llm.chat_completion.call_count}"
+    )
+    assert len(iters) == 2, f"Erwartet 2 Iterationen, got {len(iters)}"
+
+
+def test_run_pass_no_usage_does_not_crash():
+    """run_pass schlägt nicht fehl wenn usage=None — zählt 0 Tokens weiter."""
+    tc = _mock_tool_call("add_behandlungsdiagnose", {"text": "X", "datum": None, "source_quote": "q"})
+    mock_llm = MagicMock()
+    mock_llm.chat_completion = AsyncMock(side_effect=[
+        # usage=None explizit setzen
+        _make_resp_no_usage([tc]),
+        _make_resp_no_usage(None),  # kein Tool-Call → Abbruch
+    ])
+
+    iters = asyncio.run(run_pass(
+        llm=mock_llm,
+        system_prompt="test",
+        user_messages=[{"role": "user", "content": "doc"}],
+        tools=[],
+        thinking_budget=0,
+    ))
+    assert len(iters) == 1  # normale Ausführung, kein Crash
+
+
+def _make_resp_no_usage(tool_calls) -> MagicMock:
+    resp = _llm_response(tool_calls)
+    resp.usage = None
+    return resp
+
+
+def test_run_pass_streaming_yields_aborted_event():
+    """run_pass_streaming liefert aborted-Event wenn Token-Budget überschritten.
+
+    Budget=1500, jede Antwort kostet 1000 Tokens:
+    - iter 1: proposals + cumulative=1000 → unter Budget → weiter
+    - iter 2: proposals + cumulative=2000 → über Budget → aborted-Event + return
+    """
+    tc = _mock_tool_call("add_behandlungsdiagnose", {"text": "X", "datum": None, "source_quote": "q"})
+    mock_llm = MagicMock()
+    mock_llm.chat_completion = AsyncMock(
+        return_value=_llm_response_with_usage([tc], total_tokens=1_000)
+    )
+
+    events = _collect_streaming(run_pass_streaming(
+        llm=mock_llm,
+        system_prompt="test",
+        user_messages=[{"role": "user", "content": "doc"}],
+        tools=[],
+        thinking_budget=0,
+        phase="block1",
+        max_iterations=5,
+        max_total_tokens=1_500,
+    ))
+
+    aborted = [e for e in events if e["type"] == "aborted"]
+    assert aborted, f"Kein aborted-Event — alle Events: {[e['type'] for e in events]}"
+    evt = aborted[0]
+    assert evt["reason"] == "token_budget_exceeded"
+    assert evt["phase"] == "block1"
+    assert evt["cumulative_tokens"] >= 1_500
+    assert evt["max_total_tokens"] == 1_500
+
+    # Proposals aus den abgearbeiteten Iterationen müssen vor aborted kommen
+    proposal_events = [e for e in events if e["type"] == "proposals"]
+    assert proposal_events, "Keine proposals vor dem Abbruch"
+    aborted_idx = next(i for i, e in enumerate(events) if e["type"] == "aborted")
+    last_proposal_idx = max(i for i, e in enumerate(events) if e["type"] == "proposals")
+    assert last_proposal_idx < aborted_idx, "aborted kam vor letztem proposals-Event"
+
+    # Nach aborted kein weiteres LLM-Aufruf
+    assert mock_llm.chat_completion.call_count == 2

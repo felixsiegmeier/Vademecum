@@ -13,6 +13,11 @@ THINKING_BUDGET_BLOCK_2 = 1024
 MAX_ITERATIONS_BLOCK_1 = 8
 MAX_ITERATIONS_BLOCK_2 = 5
 
+# Token-Budgets: Notbremse gegen Runaway-Loops, nicht Kostenkontrolle.
+# Absichtlich hoch angesetzt — ein realer Überlauf wäre ein Bug, kein Normalfall.
+MAX_TOTAL_TOKENS_BLOCK_1 = 200_000
+MAX_TOTAL_TOKENS_BLOCK_2 = 100_000
+
 _MAX_MALFORMED_RETRIES = 2  # 1 initial + 2 retries = 3 total attempts
 
 
@@ -30,6 +35,22 @@ class Proposal(BaseModel):
     add_call: Optional[ToolCallInfo] = None
 
 
+def _extract_call_tokens(usage) -> int | None:
+    """Extrahiert die Token-Anzahl aus einem LLM-Response-Usage-Objekt.
+
+    Gibt None zurück wenn usage fehlt — Caller behandelt das als 0 + WARN.
+    Nutzt total_tokens falls vorhanden, sonst prompt + completion.
+    """
+    if usage is None:
+        return None
+    total = getattr(usage, "total_tokens", None)
+    if total is not None:
+        return int(total)
+    prompt = getattr(usage, "prompt_tokens", 0) or 0
+    completion = getattr(usage, "completion_tokens", 0) or 0
+    return prompt + completion
+
+
 async def run_pass(
     llm,
     system_prompt: str,
@@ -38,13 +59,15 @@ async def run_pass(
     thinking_budget: int,
     max_iterations: int = 5,
     max_tokens: int = 8192,
+    max_total_tokens: int = MAX_TOTAL_TOKENS_BLOCK_1,
     pass_name: str = "pass",
 ) -> list[list[dict]]:
     """Multi-Turn-Loop für einen Extraction-Pass.
 
     Sammelt Tool-Calls iterationsweise ohne sie anzuwenden. Tool-Results
     sind einfache Acknowledgment-Strings, damit der LLM weitermachen kann.
-    Bricht ab wenn der LLM 0 Tool-Calls liefert oder max_iterations erreicht.
+    Bricht ab wenn der LLM 0 Tool-Calls liefert, max_iterations erreicht
+    oder max_total_tokens überschritten wird.
 
     Returns: Liste von Iterationen, jede Iteration ist eine Liste von
     {"tool": str, "args": dict}-Dicts.
@@ -56,7 +79,15 @@ async def run_pass(
     iterations: list[list[dict]] = []
     exit_reason = "max_iter"
     last_iter = 0
-    print(f"[{pass_name} start] conversation_msgs={len(conversation)}, user_msg_content_len={sum(len(str(m.get('content',''))) for m in conversation if m.get('role')=='user')}")
+    cumulative_tokens = 0
+    _warned_no_usage = False
+
+    logger.info(
+        "[%s] start: conversation_msgs=%d, user_content_len=%d",
+        pass_name,
+        len(conversation),
+        sum(len(str(m.get("content", ""))) for m in conversation if m.get("role") == "user"),
+    )
 
     for iter_n in range(1, max_iterations + 1):
         last_iter = iter_n
@@ -76,16 +107,20 @@ async def run_pass(
             retries = 0
             while "MALFORMED_FUNCTION_CALL" in str(finish_reason or ""):
                 if retries >= _MAX_MALFORMED_RETRIES:
-                    print(f"[{pass_name} retry exhausted] 3 attempts all failed with MALFORMED_FUNCTION_CALL, raising")
+                    logger.warning(
+                        "[%s] retry erschöpft: 3 Versuche alle MALFORMED_FUNCTION_CALL",
+                        pass_name,
+                    )
                     raise RuntimeError(
                         f"LLM provider instability: {pass_name} failed after "
                         f"{_MAX_MALFORMED_RETRIES + 1} attempts (PDF drop). "
                         f"Bitte Upload erneut starten."
                     )
                 retries += 1
-                print(
-                    f"[{pass_name} retry] iteration=1 failed with MALFORMED_FUNCTION_CALL "
-                    f"(likely PDF drop), retrying after 500ms..."
+                logger.warning(
+                    "[%s] iter=1 MALFORMED_FUNCTION_CALL (PDF-Drop?), retry %d/3 nach 500ms",
+                    pass_name,
+                    retries,
                 )
                 await asyncio.sleep(0.5)
                 response = await llm.chat_completion(
@@ -100,13 +135,24 @@ async def run_pass(
 
         msg = response.choices[0].message
         usage = getattr(response, "usage", None)
-        tokens_in = usage.prompt_tokens if usage else "?"
-        tokens_out = usage.completion_tokens if usage else "?"
+        call_tokens = _extract_call_tokens(usage)
+        if call_tokens is None:
+            if not _warned_no_usage:
+                logger.warning(
+                    "[%s] Response ohne usage-Objekt — Token-Zählung inakkurat ab jetzt",
+                    pass_name,
+                )
+                _warned_no_usage = True
+            call_tokens = 0
+        cumulative_tokens += call_tokens
 
         if not msg.tool_calls:
             exit_reason = "empty_response" if iter_n == 1 else "complete"
-            print(f"[{pass_name} iter {iter_n}/{max_iterations}] iteration={iter_n}, proposals_in_response=0, tokens_in={tokens_in}, tokens_out={tokens_out}, finish_reason={finish_reason}")
-            print(f"[{pass_name} no-tool-call response] content={repr(msg.content)[:500]}, usage_raw={usage}")
+            logger.info(
+                "[%s] iter %d/%d: no tool calls, exit=%s, tokens=%d/%d, finish=%s",
+                pass_name, iter_n, max_iterations, exit_reason,
+                cumulative_tokens, max_total_tokens, finish_reason,
+            )
             break
 
         # Parse valide Tool-Calls — malformed JSON wird übersprungen
@@ -115,11 +161,18 @@ async def run_pass(
             try:
                 args = json.loads(tc.function.arguments)
             except json.JSONDecodeError:
-                logger.warning("Malformed JSON args für Tool %s, wird übersprungen", tc.function.name)
+                logger.warning(
+                    "[%s] Malformed JSON args für Tool %s, wird übersprungen",
+                    pass_name, tc.function.name,
+                )
                 continue
             valid_calls.append({"tool": tc.function.name, "args": args})
 
-        print(f"[{pass_name} iter {iter_n}/{max_iterations}] iteration={iter_n}, proposals_in_response={len(valid_calls)}, tokens_in={tokens_in}, tokens_out={tokens_out}, finish_reason={finish_reason}")
+        logger.info(
+            "[%s] iter %d/%d: proposals=%d, call_tokens=%d, cumulative=%d/%d, finish=%s",
+            pass_name, iter_n, max_iterations, len(valid_calls),
+            call_tokens, cumulative_tokens, max_total_tokens, finish_reason,
+        )
 
         if valid_calls:
             iterations.append(valid_calls)
@@ -136,8 +189,19 @@ async def run_pass(
                 "content": f"queued: {tc.function.name}",
             })
 
+        if cumulative_tokens >= max_total_tokens:
+            exit_reason = "token_budget_exceeded"
+            logger.warning(
+                "[%s] Token-Budget erschöpft nach iter %d: %d >= %d — Loop-Abbruch",
+                pass_name, iter_n, cumulative_tokens, max_total_tokens,
+            )
+            break
+
     total_proposals = sum(len(i) for i in iterations)
-    print(f"[{pass_name} done] total_iterations={last_iter}, total_proposals={total_proposals}, exit_reason={exit_reason}")
+    logger.info(
+        "[%s] done: total_iters=%d, total_proposals=%d, exit=%s, cumulative_tokens=%d",
+        pass_name, last_iter, total_proposals, exit_reason, cumulative_tokens,
+    )
     return iterations
 
 
@@ -181,6 +245,7 @@ async def run_pass_streaming(
     phase: Literal["block1", "block2"],
     max_iterations: int = 5,
     max_tokens: int = 8192,
+    max_total_tokens: int = MAX_TOTAL_TOKENS_BLOCK_1,
     pass_name: str = "pass",
 ) -> AsyncGenerator[dict, None]:
     """Multi-Turn-Loop (streaming variant). Yields status, heartbeat, proposals events.
@@ -189,6 +254,9 @@ async def run_pass_streaming(
     → proposals (after successful tool batch). status-before-proposals guarantees
     the client sees "working on block1, iter N" before results; the done event is
     the caller's responsibility (emitted after both passes complete).
+
+    Yields {"type": "aborted", "reason": "token_budget_exceeded", ...} and returns
+    when max_total_tokens is exceeded after completing the current iteration.
     """
     conversation: list[dict] = [
         {"role": "system", "content": system_prompt},
@@ -197,7 +265,15 @@ async def run_pass_streaming(
     items_in_phase = 0
     exit_reason = "max_iter"
     last_iter = 0
-    print(f"[{pass_name} stream start] conversation_msgs={len(conversation)}, user_msg_content_len={sum(len(str(m.get('content', ''))) for m in conversation if m.get('role') == 'user')}")
+    cumulative_tokens = 0
+    _warned_no_usage = False
+
+    logger.info(
+        "[%s] stream start: conversation_msgs=%d, user_content_len=%d",
+        pass_name,
+        len(conversation),
+        sum(len(str(m.get("content", ""))) for m in conversation if m.get("role") == "user"),
+    )
 
     for iter_n in range(1, max_iterations + 1):
         last_iter = iter_n
@@ -233,16 +309,19 @@ async def run_pass_streaming(
             retries = 0
             while "MALFORMED_FUNCTION_CALL" in str(finish_reason or ""):
                 if retries >= _MAX_MALFORMED_RETRIES:
-                    msg = (
+                    msg_text = (
                         f"LLM provider instability: {pass_name} failed after "
                         f"{_MAX_MALFORMED_RETRIES + 1} attempts (PDF drop). "
                         f"Bitte Upload erneut starten."
                     )
-                    print(f"[{pass_name} retry exhausted] 3 attempts failed, streaming error event")
-                    yield {"type": "error", "message": msg, "retryable": True}
+                    logger.warning("[%s] retry erschöpft: 3 Versuche MALFORMED_FUNCTION_CALL", pass_name)
+                    yield {"type": "error", "message": msg_text, "retryable": True}
                     return
                 retries += 1
-                print(f"[{pass_name} retry] iter=1 MALFORMED_FUNCTION_CALL (likely PDF drop), retry {retries}...")
+                logger.warning(
+                    "[%s] iter=1 MALFORMED_FUNCTION_CALL (PDF-Drop?), retry %d/3",
+                    pass_name, retries,
+                )
                 await asyncio.sleep(0.5)
                 resp_box = []
                 async for event in _yield_heartbeats_and_run(
@@ -262,12 +341,24 @@ async def run_pass_streaming(
 
         msg = response.choices[0].message
         usage = getattr(response, "usage", None)
-        tokens_in = usage.prompt_tokens if usage else "?"
-        tokens_out = usage.completion_tokens if usage else "?"
+        call_tokens = _extract_call_tokens(usage)
+        if call_tokens is None:
+            if not _warned_no_usage:
+                logger.warning(
+                    "[%s] Response ohne usage-Objekt — Token-Zählung inakkurat ab jetzt",
+                    pass_name,
+                )
+                _warned_no_usage = True
+            call_tokens = 0
+        cumulative_tokens += call_tokens
 
         if not msg.tool_calls:
             exit_reason = "empty_response" if iter_n == 1 else "complete"
-            print(f"[{pass_name} iter {iter_n}/{max_iterations}] no tool calls, exit={exit_reason}, tokens_in={tokens_in}, tokens_out={tokens_out}")
+            logger.info(
+                "[%s] iter %d/%d: no tool calls, exit=%s, tokens=%d/%d, finish=%s",
+                pass_name, iter_n, max_iterations, exit_reason,
+                cumulative_tokens, max_total_tokens, finish_reason,
+            )
             break
 
         valid_calls: list[dict] = []
@@ -275,11 +366,18 @@ async def run_pass_streaming(
             try:
                 args = json.loads(tc.function.arguments)
             except json.JSONDecodeError:
-                logger.warning("Malformed JSON args für Tool %s, wird übersprungen", tc.function.name)
+                logger.warning(
+                    "[%s] Malformed JSON args für Tool %s, wird übersprungen",
+                    pass_name, tc.function.name,
+                )
                 continue
             valid_calls.append({"tool": tc.function.name, "args": args})
 
-        print(f"[{pass_name} iter {iter_n}/{max_iterations}] proposals_in_response={len(valid_calls)}, tokens_in={tokens_in}, tokens_out={tokens_out}, finish_reason={finish_reason}")
+        logger.info(
+            "[%s] iter %d/%d: proposals=%d, call_tokens=%d, cumulative=%d/%d, finish=%s",
+            pass_name, iter_n, max_iterations, len(valid_calls),
+            call_tokens, cumulative_tokens, max_total_tokens, finish_reason,
+        )
 
         if valid_calls:
             # items_in_phase counts add_* calls cumulatively within the phase
@@ -301,7 +399,26 @@ async def run_pass_streaming(
                 "content": f"queued: {tc.function.name}",
             })
 
-    print(f"[{pass_name} stream done] total_iters={last_iter}, exit_reason={exit_reason}")
+        if cumulative_tokens >= max_total_tokens:
+            exit_reason = "token_budget_exceeded"
+            logger.warning(
+                "[%s] Token-Budget erschöpft nach iter %d: %d >= %d — Stream-Abbruch",
+                pass_name, iter_n, cumulative_tokens, max_total_tokens,
+            )
+            yield {
+                "type": "aborted",
+                "reason": "token_budget_exceeded",
+                "phase": phase,
+                "iter": iter_n,
+                "cumulative_tokens": cumulative_tokens,
+                "max_total_tokens": max_total_tokens,
+            }
+            return
+
+    logger.info(
+        "[%s] stream done: total_iters=%d, exit=%s, cumulative_tokens=%d",
+        pass_name, last_iter, exit_reason, cumulative_tokens,
+    )
 
 
 def group_proposals(iterations: list[list[dict]]) -> list[Proposal]:

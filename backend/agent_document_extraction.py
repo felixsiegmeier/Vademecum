@@ -9,6 +9,8 @@ from openai import APIConnectionError, APIStatusError, RateLimitError
 
 from agent_extraction_core import (
     MAX_ITERATIONS_BLOCK_1,
+    MAX_TOTAL_TOKENS_BLOCK_1,
+    MAX_TOTAL_TOKENS_BLOCK_2,
     THINKING_BUDGET_BLOCK_1,
     THINKING_BUDGET_BLOCK_2,
     Proposal,
@@ -110,6 +112,7 @@ async def extract_proposals(
             tools=_PASS1_TOOLS,
             thinking_budget=THINKING_BUDGET_BLOCK_1,
             max_iterations=MAX_ITERATIONS_BLOCK_1,
+            max_total_tokens=MAX_TOTAL_TOKENS_BLOCK_1,
             pass_name="Block1",
         )
     except APIStatusError:
@@ -125,6 +128,7 @@ async def extract_proposals(
             tools=_PASS1_TOOLS,
             thinking_budget=THINKING_BUDGET_BLOCK_1,
             max_iterations=MAX_ITERATIONS_BLOCK_1,
+            max_total_tokens=MAX_TOTAL_TOKENS_BLOCK_1,
             pass_name="Block1",
         )
 
@@ -136,6 +140,7 @@ async def extract_proposals(
         tools=_PASS2_TOOLS,
         thinking_budget=THINKING_BUDGET_BLOCK_2,
         max_tokens=16384,
+        max_total_tokens=MAX_TOTAL_TOKENS_BLOCK_2,
         pass_name="Block2",
     )
 
@@ -191,6 +196,7 @@ async def extract_proposals_streaming(
             thinking_budget=THINKING_BUDGET_BLOCK_1,
             phase="block1",
             max_iterations=MAX_ITERATIONS_BLOCK_1,
+            max_total_tokens=MAX_TOTAL_TOKENS_BLOCK_1,
             pass_name="Block1",
         ):
             if event.get("type") == "error":
@@ -226,6 +232,7 @@ async def extract_proposals_streaming(
                 thinking_budget=THINKING_BUDGET_BLOCK_1,
                 phase="block1",
                 max_iterations=MAX_ITERATIONS_BLOCK_1,
+                max_total_tokens=MAX_TOTAL_TOKENS_BLOCK_1,
                 pass_name="Block1-fallback",
             ):
                 if event.get("type") == "error":
@@ -268,6 +275,7 @@ async def extract_proposals_streaming(
             thinking_budget=THINKING_BUDGET_BLOCK_2,
             phase="block2",
             max_tokens=16384,
+            max_total_tokens=MAX_TOTAL_TOKENS_BLOCK_2,
             pass_name="Block2",
         ):
             if event.get("type") == "error":
