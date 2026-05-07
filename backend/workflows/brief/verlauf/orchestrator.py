@@ -6,7 +6,6 @@ keine mit Ziffer beginnenden Namen erlauben.
 
 import importlib
 import logging
-import sys
 from typing import Optional
 
 from llm_client import LLMClient
@@ -43,10 +42,7 @@ async def run(
         therapie=therapie,
         extra_context=extra_context,
     )
-    print(
-        f"[BR-C1.7-DIAG] verlauf_collect ({len(collect_output.substance)} chars):\n{collect_output.substance}\n",
-        file=sys.stderr,
-    )
+    logger.debug("[BR-C1.7-DIAG] verlauf_collect (%d chars):\n%s\n", len(collect_output.substance), collect_output.substance)
 
     audited = await _audit.run(
         llm, patient, collect_output.substance,
@@ -70,8 +66,5 @@ async def run(
         therapie=therapie,
         adressatenprofil=adressatenprofil,
     )
-    print(
-        f"[BR-C1.7-DIAG] verlauf_curate ({len(result)} chars):\n{result}\n",
-        file=sys.stderr,
-    )
+    logger.debug("[BR-C1.7-DIAG] verlauf_curate (%d chars):\n%s\n", len(result), result)
     return result

@@ -834,8 +834,9 @@ def test_generate_verlauf_short_cabg_output_under_100_words(isolated_data):
     assert word_count < 100, f"Erwartet < 100 Wörter für CABG-Kurzbrief, got {word_count}: {result!r}"
 
 
-def test_generate_verlauf_diagnostic_logging(isolated_data, capsys):
-    """generate_verlauf schreibt [BR-C1.7-DIAG]-Marker auf stderr."""
+def test_generate_verlauf_diagnostic_logging(isolated_data, caplog):
+    """generate_verlauf schreibt [BR-C1.7-DIAG]-Marker als DEBUG-Log."""
+    import logging
     patient = Patient(stammdaten=Stammdaten(id="P-0001", name="Test, Patient", aufnahmedatum="2026-04-01"))
 
     collected_substance = "CLUSTER A\nSCHLUSS_INDIKATOR: KEINE_DOKUMENTATION"
@@ -850,15 +851,15 @@ def test_generate_verlauf_diagnostic_logging(isolated_data, capsys):
         _llm_resp(final),
     ])
 
-    with patch("workflows.brief.orchestrator._lite", return_value=mock_client):
-        asyncio.run(brief.generate_verlauf(
-            patient, meilenstein=None, befunde_formatted="", diagnosen="", anamnese="", therapie=""
-        ))
+    with caplog.at_level(logging.DEBUG, logger="workflows.brief.verlauf.orchestrator"):
+        with patch("workflows.brief.orchestrator._lite", return_value=mock_client):
+            asyncio.run(brief.generate_verlauf(
+                patient, meilenstein=None, befunde_formatted="", diagnosen="", anamnese="", therapie=""
+            ))
 
-    captured = capsys.readouterr()
-    assert "[BR-C1.7-DIAG]" in captured.err, "Diagnose-Log-Marker fehlt auf stderr"
-    assert "verlauf_collect" in captured.err, "Pass-1-Marker fehlt"
-    assert "verlauf_curate" in captured.err, "Pass-3-Marker fehlt"
+    assert "[BR-C1.7-DIAG]" in caplog.text, "Diagnose-Log-Marker fehlt"
+    assert "verlauf_collect" in caplog.text, "Pass-1-Marker fehlt"
+    assert "verlauf_curate" in caplog.text, "Pass-3-Marker fehlt"
 
 
 def test_curate_prompt_has_konnektoren_disziplin(isolated_data):
