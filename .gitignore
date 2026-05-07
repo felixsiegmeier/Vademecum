@@ -13,6 +13,8 @@ build/
 venv/
 env/
 .env
+.env.*
+!.env.example
 
 # Node
 node_modules/
@@ -35,10 +37,18 @@ backend/data/briefe/*.yml
 backend/data/lernlog/**
 backend/data/learning_snapshots/**
 
+# Lernlog-Whitelist — nur default.yml und .gitkeep sind tracked
+backend/workflows/**/lernlog/*
+!backend/workflows/**/lernlog/default.yml
+!backend/workflows/**/lernlog/.gitkeep
+
 # Test-PDFs und -Dokumente — echte Patientendaten, dürfen nie ins Remote
 backend/test_data/*.pdf
 backend/test_data/*.PDF
 backend/test_data/celik_*.md
+
+# pytest
+.pytest_cache/
 
 # Editor
 .vscode/
