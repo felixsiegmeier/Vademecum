@@ -1,0 +1,5 @@
+[tool.vulture]
+paths = ["."]
+ignore_names = ["cls"]
+min_confidence = 80
+exclude = ["tests/", ".venv/"]
