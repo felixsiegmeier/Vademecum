@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { MoreHorizontal, Loader2 } from "lucide-react";
-import { PatientChatPanel } from "./PatientChatPanel";
+import { clearPatientHistory, PatientChatPanel } from "./PatientChatPanel";
 import MeilensteinPanel from "./MeilensteinPanel";
 import BriefPanel from "./BriefPanel";
 import type { Patient } from "../types";
@@ -100,6 +100,7 @@ export default function PatientLanding({ onModified }: Props) {
     setActionBusy(true);
     try {
       await fetch(`/api/patients/${id}`, { method: "DELETE" });
+      clearPatientHistory(id);
       onModified();
       navigate("/");
     } finally {

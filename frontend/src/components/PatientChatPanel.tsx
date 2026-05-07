@@ -69,6 +69,10 @@ type HistoryEntry = ChatTextEntry | ProposalsEntry | AutoSkipEntry;
 // Chat-History pro Patient — bleibt beim Tab-Wechsel erhalten
 const historyStore = new Map<string, HistoryEntry[]>();
 
+export function clearPatientHistory(patientId: string) {
+  historyStore.delete(patientId);
+}
+
 // ── Hilfsfunktionen ──────────────────────────────────────────────────────────
 
 const ACCEPTED_MIME = [
