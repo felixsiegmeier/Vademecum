@@ -17,7 +17,7 @@ from openai import APIConnectionError, APIStatusError, RateLimitError
 from pydantic import BaseModel
 import learning_storage
 import agent_meilenstein_learning as _learning_agent
-from agent_tools import TOOL_FUNCTIONS
+from agent_tools import TOOL_ARGS, TOOL_FUNCTIONS
 from agent_document_extraction import extract_proposals, extract_proposals_streaming
 from agent_extraction_core import Proposal
 from agent_patient_chat import CHAT_2PASS_CUTOFF, run_single_pass_chat
@@ -1424,7 +1424,7 @@ async def apply_tools(patient_id: str, req: ApplyToolsRequest):
 
         fn = TOOL_FUNCTIONS[tool]
         try:
-            result = fn(patient_id, **args)
+            result = fn(patient_id, TOOL_ARGS[tool].model_validate(args))
             results.append({"tool": tool, **result})
         except TypeError as e:
             results.append({"tool": tool, "ok": False, "error": f"Argument error: {e}"})
@@ -1482,7 +1482,7 @@ def _run_tool(patient_id: str, tool: str, args: dict) -> dict:
     if fn is None:
         return {"ok": False, "error": f"Unknown tool: {tool}"}
     try:
-        return fn(patient_id, **args)
+        return fn(patient_id, TOOL_ARGS[tool].model_validate(args))
     except TypeError as e:
         return {"ok": False, "error": f"Argument error: {e}"}
     except Exception as e:

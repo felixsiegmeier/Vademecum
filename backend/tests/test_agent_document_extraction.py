@@ -25,7 +25,12 @@ from agent_document_extraction import (
     extract_proposals,
     extract_proposals_streaming,
 )
-from agent_tools import add_verlaufsdiagnose, delete_entry
+from agent_tools import (
+    AddVerlaufsdiagnoseArgs,
+    DeleteEntryArgs,
+    add_verlaufsdiagnose,
+    delete_entry,
+)
 from models.patient import Diagnose, Patient, Stammdaten, VerlaufsEintrag
 
 
@@ -335,15 +340,15 @@ def test_block2_uebergangstag_update_as_single_proposal():
 def test_apply_update_group(isolated_data):
     """Update-Proposal: altes Item weg, neues Item mit neuer ULID drin."""
     _make_patient()
-    old = add_verlaufsdiagnose(patient_id="P-0001", text="COPD", datum="2026-04-01", source_quote="q")
+    old = add_verlaufsdiagnose("P-0001", AddVerlaufsdiagnoseArgs(text="COPD", datum="2026-04-01", source_quote="q"))
     old_id = old["id"]
 
     # Transactional: delete altes, add neues
-    del_result = delete_entry(patient_id="P-0001", id=old_id, source_quote="update")
+    del_result = delete_entry("P-0001", DeleteEntryArgs(id=old_id, source_quote="update"))
     assert del_result["ok"] is True
 
     new_result = add_verlaufsdiagnose(
-        patient_id="P-0001", text="COPD GOLD 3 mit LTOT", datum="2026-04-01", source_quote="update"
+        "P-0001", AddVerlaufsdiagnoseArgs(text="COPD GOLD 3 mit LTOT", datum="2026-04-01", source_quote="update")
     )
     assert new_result["ok"] is True
     new_id = new_result["id"]
@@ -360,7 +365,7 @@ def test_apply_update_group_rollback_on_delete_fail(isolated_data):
     """Schlägt delete fehl, wird add NICHT ausgeführt."""
     _make_patient()
 
-    del_result = delete_entry(patient_id="P-0001", id="NONEXISTENT_ULID_12345678", source_quote="x")
+    del_result = delete_entry("P-0001", DeleteEntryArgs(id="NONEXISTENT_ULID_12345678", source_quote="x"))
     assert del_result["ok"] is False
 
     # Kein add nach fehlgeschlagenem delete → Patient bleibt unverändert

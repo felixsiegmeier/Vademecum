@@ -2,14 +2,21 @@ import pytest
 
 import storage
 from agent_tools import (
+    TOOL_ARGS,
     TOOL_FUNCTIONS,
     TOOL_SCHEMAS,
+    AddBefundArgs,
+    AddTherapieArgs,
+    AddVerlaufseintragArgs,
     add_befund,
     add_therapie,
     add_verlaufseintrag,
     delete_entry,
-    generate_ulid,
+    update_anamnese,
+    DeleteEntryArgs,
+    UpdateAnamneseArgs,
 )
+from utils.ulid import generate_ulid
 from models.patient import Patient, Stammdaten
 
 
@@ -68,24 +75,25 @@ def test_add_therapie_schema_includes_bedside():
 # ── Funktion-Akzeptiert-source_quote-Tests ────────────────────────────────────
 
 _MINIMAL_ARGS: dict[str, dict] = {
-    "add_behandlungsdiagnose": {"text": "Test-Diagnose", "datum": None},
-    "add_verlaufsdiagnose": {"text": "Test-Verlaufsdiagnose", "datum": "2026-04-15"},
-    "add_vorbekannte_diagnose": {"text": "Test-vorbekannt"},
-    "add_befund": {"datum": "2026-04-15", "art": "TTE", "text": "Test-Befund"},
+    "add_behandlungsdiagnose": {"text": "Test-Diagnose", "datum": None, "source_quote": "test-zitat"},
+    "add_verlaufsdiagnose": {"text": "Test-Verlaufsdiagnose", "datum": "2026-04-15", "source_quote": "test-zitat"},
+    "add_vorbekannte_diagnose": {"text": "Test-vorbekannt", "source_quote": "test-zitat"},
+    "add_befund": {"datum": "2026-04-15", "art": "TTE", "text": "Test-Befund", "source_quote": "test-zitat"},
     "add_therapie": {
         "kategorie": "antimikrobiell",
         "bezeichnung": "Test-AB",
         "beginn": "2026-04-15",
         "ende": None,
         "indikation": "V.a. Pneumonie",
+        "source_quote": "test-zitat",
     },
-    "add_verlaufseintrag": {"datum": "2026-04-15", "text": "Test-Verlauf"},
-    "update_anamnese": {"text": "Test-Anamnese"},
-    "update_therapieziel": {"text": "Test-Therapieziel"},
-    "update_status": {"aktiv": True},
-    "update_bettplatz": {"bettplatz": "ITS-1 / Bett 3"},
-    "update_verlegungsziel": {"verlegungsziel": "IMC"},
-    "update_stammdaten": {"feld": "name", "wert": "Test Name"},
+    "add_verlaufseintrag": {"datum": "2026-04-15", "text": "Test-Verlauf", "source_quote": "test-zitat"},
+    "update_anamnese": {"text": "Test-Anamnese", "source_quote": "test-zitat"},
+    "update_therapieziel": {"text": "Test-Therapieziel", "source_quote": "test-zitat"},
+    "update_status": {"aktiv": True, "source_quote": "test-zitat"},
+    "update_bettplatz": {"bettplatz": "ITS-1 / Bett 3", "source_quote": "test-zitat"},
+    "update_verlegungsziel": {"verlegungsziel": "IMC", "source_quote": "test-zitat"},
+    "update_stammdaten": {"feld": "name", "wert": "Test Name", "source_quote": "test-zitat"},
 }
 
 
@@ -100,8 +108,9 @@ def _make_test_patient():
 def test_tool_function_accepts_source_quote(tool_name, isolated_data):
     _make_test_patient()
     fn = TOOL_FUNCTIONS[tool_name]
-    args = _MINIMAL_ARGS[tool_name]
-    result = fn(patient_id="P-0001", **args, source_quote="test-zitat")
+    args_class = TOOL_ARGS[tool_name]
+    args = args_class.model_validate(_MINIMAL_ARGS[tool_name])
+    result = fn("P-0001", args)
     assert result["ok"] is True, f"{tool_name} failed: {result}"
 
 
@@ -124,11 +133,8 @@ def test_two_consecutive_ulids_differ():
 def test_add_befund_assigns_ulid(isolated_data):
     _make_test_patient()
     result = add_befund(
-        patient_id="P-0001",
-        datum="2026-04-15",
-        art="TTE",
-        text="LV-EF 45%",
-        source_quote="LV-EF visuell 45%",
+        "P-0001",
+        AddBefundArgs(datum="2026-04-15", art="TTE", text="LV-EF 45%", source_quote="LV-EF visuell 45%"),
     )
     assert result["ok"] is True
     p = storage.load_patient("P-0001")
@@ -141,8 +147,8 @@ def test_add_befund_assigns_ulid(isolated_data):
 
 def test_two_adds_get_different_ids(isolated_data):
     _make_test_patient()
-    add_befund(patient_id="P-0001", datum="2026-04-15", art="TTE", text="A", source_quote="q1")
-    add_befund(patient_id="P-0001", datum="2026-04-16", art="CT", text="B", source_quote="q2")
+    add_befund("P-0001", AddBefundArgs(datum="2026-04-15", art="TTE", text="A", source_quote="q1"))
+    add_befund("P-0001", AddBefundArgs(datum="2026-04-16", art="CT", text="B", source_quote="q2"))
     p = storage.load_patient("P-0001")
     assert p.befunde[0].id != p.befunde[1].id
 
@@ -152,11 +158,8 @@ def test_two_adds_get_different_ids(isolated_data):
 def test_add_befund_persists_source_quote(isolated_data):
     _make_test_patient()
     add_befund(
-        patient_id="P-0001",
-        datum="2026-04-15",
-        art="TTE",
-        text="LV-EF 45%",
-        source_quote="LV-EF visuell 45%",
+        "P-0001",
+        AddBefundArgs(datum="2026-04-15", art="TTE", text="LV-EF 45%", source_quote="LV-EF visuell 45%"),
     )
     p = storage.load_patient("P-0001")
     assert p.befunde[0].source_quote == "LV-EF visuell 45%"
@@ -164,11 +167,9 @@ def test_add_befund_persists_source_quote(isolated_data):
 
 def test_update_anamnese_ignores_source_quote(isolated_data):
     _make_test_patient()
-    from agent_tools import update_anamnese
     update_anamnese(
-        patient_id="P-0001",
-        text="Aufnahme bei dekomp. HI",
-        source_quote="zitat-wird-ignoriert",
+        "P-0001",
+        UpdateAnamneseArgs(text="Aufnahme bei dekomp. HI", source_quote="zitat-wird-ignoriert"),
     )
     p = storage.load_patient("P-0001")
     assert p.anamnese == "Aufnahme bei dekomp. HI"
@@ -179,28 +180,34 @@ def test_update_anamnese_ignores_source_quote(isolated_data):
 def test_delete_entry_across_lists(isolated_data):
     _make_test_patient()
     ther_id = add_therapie(
-        patient_id="P-0001",
-        kategorie="operativ",
-        bezeichnung="CABG 3-fach",
-        beginn="2026-04-15",
-        ende="2026-04-15",
-        indikation=None,
-        source_quote="OP-Bericht",
+        "P-0001",
+        AddTherapieArgs(
+            kategorie="operativ",
+            bezeichnung="CABG 3-fach",
+            beginn="2026-04-15",
+            ende="2026-04-15",
+            indikation=None,
+            source_quote="OP-Bericht",
+        ),
     )["id"]
     ther2_id = add_therapie(
-        patient_id="P-0001",
-        kategorie="antimikrobiell",
-        bezeichnung="Pip/Taz",
-        beginn="2026-04-15",
-        indikation="V.a. Pneumonie",
-        source_quote="Antibiose laut Visite",
+        "P-0001",
+        AddTherapieArgs(
+            kategorie="antimikrobiell",
+            bezeichnung="Pip/Taz",
+            beginn="2026-04-15",
+            ende=None,
+            indikation="V.a. Pneumonie",
+            source_quote="Antibiose laut Visite",
+        ),
     )["id"]
     verl_id = add_verlaufseintrag(
-        patient_id="P-0001", datum="2026-04-15", text="Tagesstatus stabil", source_quote="Visite"
+        "P-0001",
+        AddVerlaufseintragArgs(datum="2026-04-15", text="Tagesstatus stabil", source_quote="Visite"),
     )["id"]
 
     for entry_id in (ther_id, ther2_id, verl_id):
-        result = delete_entry(patient_id="P-0001", id=entry_id, source_quote="korrektur")
+        result = delete_entry("P-0001", DeleteEntryArgs(id=entry_id, source_quote="korrektur"))
         assert result["ok"] is True, f"delete für {entry_id} fehlgeschlagen: {result}"
 
     p = storage.load_patient("P-0001")
@@ -210,7 +217,7 @@ def test_delete_entry_across_lists(isolated_data):
 
 def test_delete_entry_unknown_id_errors(isolated_data):
     _make_test_patient()
-    result = delete_entry(patient_id="P-0001", id="01ABCDEFGHJKMNPQRSTVWXYZ12", source_quote="x")
+    result = delete_entry("P-0001", DeleteEntryArgs(id="01ABCDEFGHJKMNPQRSTVWXYZ12", source_quote="x"))
     assert result["ok"] is False
     assert "id=" in result["error"]
 
@@ -224,12 +231,15 @@ def test_delete_entry_unknown_id_errors(isolated_data):
 def test_add_therapie_accepts_all_categories(kategorie, isolated_data):
     _make_test_patient()
     result = add_therapie(
-        patient_id="P-0001",
-        kategorie=kategorie,
-        bezeichnung=f"Test-{kategorie}",
-        beginn="2026-04-15",
-        indikation="Test-Indikation",
-        source_quote="test-zitat",
+        "P-0001",
+        AddTherapieArgs(
+            kategorie=kategorie,
+            bezeichnung=f"Test-{kategorie}",
+            beginn="2026-04-15",
+            ende=None,
+            indikation="Test-Indikation",
+            source_quote="test-zitat",
+        ),
     )
     assert result["ok"] is True, f"{kategorie}: {result}"
     p = storage.load_patient("P-0001")
@@ -237,16 +247,16 @@ def test_add_therapie_accepts_all_categories(kategorie, isolated_data):
 
 
 def test_add_therapie_rejects_invalid_category(isolated_data):
-    _make_test_patient()
-    result = add_therapie(
-        patient_id="P-0001",
-        kategorie="quatsch",
-        bezeichnung="Test",
-        beginn="2026-04-15",
-        indikation="Test",
-        source_quote="test",
-    )
-    assert result["ok"] is False
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError):
+        AddTherapieArgs(
+            kategorie="quatsch",
+            bezeichnung="Test",
+            beginn="2026-04-15",
+            ende=None,
+            indikation="Test",
+            source_quote="test",
+        )
 
 
 # ── Neue Therapie-Tests: Event-Pattern und laufende Therapie ─────────────────
@@ -255,13 +265,15 @@ def test_add_therapie_mcs_event_pattern(isolated_data):
     """MCS-Kategorie mit beginn=ende (einmaliges Event-Pattern, z.B. Impella-Anlage)."""
     _make_test_patient()
     result = add_therapie(
-        patient_id="P-0001",
-        kategorie="MCS",
-        bezeichnung="Impella 5.5 via A. axillaris",
-        beginn="2026-04-04",
-        ende="2026-04-04",
-        indikation="Postkardiotomie-Schock",
-        source_quote="Impella 5.5 via A. axillaris rechts am 04.04.",
+        "P-0001",
+        AddTherapieArgs(
+            kategorie="MCS",
+            bezeichnung="Impella 5.5 via A. axillaris",
+            beginn="2026-04-04",
+            ende="2026-04-04",
+            indikation="Postkardiotomie-Schock",
+            source_quote="Impella 5.5 via A. axillaris rechts am 04.04.",
+        ),
     )
     assert result["ok"] is True
     p = storage.load_patient("P-0001")
@@ -275,13 +287,15 @@ def test_add_therapie_antimikrobiell_running(isolated_data):
     """Antimikrobiell mit ende=null (laufende Therapie)."""
     _make_test_patient()
     result = add_therapie(
-        patient_id="P-0001",
-        kategorie="antimikrobiell",
-        bezeichnung="Meropenem",
-        beginn="2026-04-14",
-        ende=None,
-        indikation="Nosokomiale Pneumonie",
-        source_quote="Meropenem seit 14.04., noch laufend",
+        "P-0001",
+        AddTherapieArgs(
+            kategorie="antimikrobiell",
+            bezeichnung="Meropenem",
+            beginn="2026-04-14",
+            ende=None,
+            indikation="Nosokomiale Pneumonie",
+            source_quote="Meropenem seit 14.04., noch laufend",
+        ),
     )
     assert result["ok"] is True
     p = storage.load_patient("P-0001")
@@ -295,13 +309,15 @@ def test_add_therapie_bedside_event_pattern(isolated_data):
     """`bedside`-Kategorie für Bedside-Eingriffe (PAK-Anlage, Bronchoskopie etc.) als Einzelevent."""
     _make_test_patient()
     result = add_therapie(
-        patient_id="P-0001",
-        kategorie="bedside",
-        bezeichnung="Bronchoskopie",
-        beginn="2026-04-23",
-        ende="2026-04-23",
-        indikation="erhöhte Sekretlast",
-        source_quote="Bronchoskopie 23.04. bei erhöhter Sekretlast",
+        "P-0001",
+        AddTherapieArgs(
+            kategorie="bedside",
+            bezeichnung="Bronchoskopie",
+            beginn="2026-04-23",
+            ende="2026-04-23",
+            indikation="erhöhte Sekretlast",
+            source_quote="Bronchoskopie 23.04. bei erhöhter Sekretlast",
+        ),
     )
     assert result["ok"] is True
     p = storage.load_patient("P-0001")
@@ -315,13 +331,15 @@ def test_add_therapie_indikation_optional(isolated_data):
     """indikation darf null sein."""
     _make_test_patient()
     result = add_therapie(
-        patient_id="P-0001",
-        kategorie="operativ",
-        bezeichnung="CABG 3-fach",
-        beginn="2026-04-04",
-        ende="2026-04-04",
-        indikation=None,
-        source_quote="CABG am 04.04.",
+        "P-0001",
+        AddTherapieArgs(
+            kategorie="operativ",
+            bezeichnung="CABG 3-fach",
+            beginn="2026-04-04",
+            ende="2026-04-04",
+            indikation=None,
+            source_quote="CABG am 04.04.",
+        ),
     )
     assert result["ok"] is True
     p = storage.load_patient("P-0001")
