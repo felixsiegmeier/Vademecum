@@ -574,10 +574,9 @@ Das Wort "agent" erscheint in 7 Python-Dateinamen und in zahlreichen Kommentaren
 - `test_agent_document_extraction.py:18` — direkter Import des privaten Symbols.
 - Bei Refactoring des Moduls müssen Tests angepasst werden.
 
-### R-8: Pass1/Pass2-Adressaten-Profil-Abhängigkeit (NIEDRIG) — Fix geplant in Schritt 4.2
-- `generate_verlauf()` akzeptiert `adressat: str = "normalstation_intern"`, aber dieser Parameter wird **nicht** von `regenerate_section_agent` in `main.py` an den Aufruf übergeben.
-- `main.py:1059` — `adressat` fehlt im `generate_verlauf`-Aufruf von `/generate-section/verlauf` (verwendet Default).
-- **Geplante Lösung (Schritt 4.2):** `regenerate_section` für `verlauf` übergibt `adressat` explizit. Aufwand: S (1h).
+### R-8: Pass1/Pass2-Adressaten-Profil-Abhängigkeit (NIEDRIG) — ✅ GELÖST in Schritt 4.2
+- `generate_verlauf()` akzeptiert `adressat: str = "normalstation_intern"`, aber dieser Parameter wurde **nicht** von `regenerate_section_agent` in `main.py` an den Aufruf übergeben.
+- **Lösung (Schritt 4.2):** `BriefAgentGenerateRequest` hat `adressat` und `curate_variant` als optionale Parameter; `regenerate_section_agent` übergibt beide an `generate_verlauf`; `validate_curate_variant` als freie Funktion in `workflows/brief/verlauf/__init__.py` — Validator-Reuse zwischen `CollectOutput`-Schema und HTTP-Request-Model ohne zirkuläre Imports.
 
 ### R-9: Unklare Chat-Persistenz (NIEDRIG, zu klären nach ICM-Migration)
 

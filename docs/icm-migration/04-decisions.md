@@ -16,8 +16,8 @@ Jeder Skill erhält `llm` als Parameter; Singleton `_lite()` entfällt; `llm_cli
 **F4 [REVERSIBEL] — Adressaten-Profile**
 Adressaten-Profile gelten nur für Verlauf und werden in das einheitliche `curate_variant`-Konzept (F4.2) überführt; `adressat`-Query-Parameter wird im API-Endpoint exponiert.
 
-**F4.2 — Curate-Varianten (Architektur-Konsolidierung)**
-`SUBSTANZ_TIEFE`-Regex-Signal und Adressaten werden zu `curate_variant` zusammengeführt; Varianten sind `.md`-Dateien in `workflows/brief/verlauf/03_curate/prompts/` (user-erweiterbar); Pass-1-Output wird als `CollectOutput(BaseModel)` mit `field_validator` gegen verfügbare Dateinamen validiert; `?adressat=...` erzwingt eine Variante; `_extract_substanz_tiefe()` entfällt.
+**F4.2 — Curate-Varianten (Architektur-Konsolidierung)** ✅ implementiert (Schritt 4.2)
+`SUBSTANZ_TIEFE`-Regex-Signal und Adressaten werden zu `curate_variant` zusammengeführt; Varianten sind `.md`-Dateien in `workflows/brief/verlauf/03_curate/prompts/` (user-erweiterbar); Pass-1-Output wird als `CollectOutput(BaseModel)` mit `field_validator` gegen verfügbare Dateinamen validiert; `?adressat=...` erzwingt eine Variante; `_extract_substanz_tiefe()` entfällt. **Validator-Reuse:** `validate_curate_variant(v: str) -> str` lebt als freie Funktion in `workflows/brief/verlauf/__init__.py` — wird sowohl von `CollectOutput` als auch vom HTTP-Request-Model delegiert; löst R-8.
 
 **F5 [SEMI-REVERSIBEL] — Befunde-Lernlog**
 `befunde` bleibt dauerhaft nicht-lernfähig (fachliche Entscheidung: SAP-Text-Übernahme ohne generalisierbares Lernpotenzial); dokumentiert in `backend/AGENTS.md`.

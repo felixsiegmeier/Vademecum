@@ -284,7 +284,7 @@ def test_endpoint_regenerate_section_verlauf_uses_current_state(isolated_data):
 
     captured: dict = {}
 
-    async def capture_verlauf(patient, meilenstein, befunde, diagnosen, anamnese, therapie, extra_context=""):
+    async def capture_verlauf(patient, meilenstein, befunde, diagnosen, anamnese, therapie, extra_context="", **kwargs):
         captured["diagnosen"] = diagnosen
         captured["anamnese"] = anamnese
         captured["therapie"] = therapie
@@ -730,10 +730,9 @@ def test_load_adressatenprofil_existing(isolated_data):
 
 
 def test_load_adressatenprofil_fallback(isolated_data):
-    """_load_adressatenprofil fällt bei unbekanntem Namen auf normalstation_intern zurück."""
-    profil = brief._load_adressatenprofil("nicht_vorhanden_xyz")
-    # Fallback: normalstation_intern-Inhalt erwartet
-    assert "NORMALSTATION" in profil, "Fallback-Profil nicht geladen"
+    """_load_adressatenprofil wirft ValueError bei unbekanntem Namen (kein stiller Fallback)."""
+    with pytest.raises(ValueError, match="Unbekannter Adressat"):
+        brief._load_adressatenprofil("nicht_vorhanden_xyz")
 
 
 def test_curate_prompt_contains_adressatenprofil(isolated_data):
@@ -1007,3 +1006,76 @@ def test_no_cross_contamination_minimal_has_no_ausfuehrlich_stilanker(isolated_d
     prompt = _get_prompt_from_dir("minimal.md", _CURATE_PROMPTS_DIR)
     assert "vasoplegisch" not in prompt.lower()
     assert "Impella" not in prompt
+
+
+# ── R-8: curate_variant_override + adressat-Plumbing ──────────────────────────
+
+def test_curate_variant_override_respected(isolated_data):
+    """curate_variant_override wird an Pass 3 weitergegeben und überschreibt CollectOutput."""
+    patient = _make_patient("P-R8A")
+    captured: list[str] = []
+    _idx = [0]
+
+    async def capture(messages, **kwargs):
+        captured.append(messages[0]["content"])
+        _idx[0] += 1
+        if _idx[0] == 1:
+            # Pass 1 liefert kompakt — aber Override soll das überschreiben
+            return _llm_resp(json.dumps({"substance": "CLUSTER A", "curate_variant": "kompakt"}))
+        return _llm_resp("ok")
+
+    with patch("workflows.brief.orchestrator._lite", return_value=MagicMock(chat_completion=capture)):
+        asyncio.run(brief.generate_verlauf(
+            patient, meilenstein=None, befunde_formatted="", diagnosen="", anamnese="", therapie="",
+            curate_variant_override="minimal",
+        ))
+
+    # Pass 3 ist der dritte Prompt — muss den minimal-Inhalt enthalten
+    assert len(captured) >= 3
+    assert "FORMAT: MINIMAL" in captured[2], "Override 'minimal' nicht im Curate-Prompt"
+    assert "FORMAT: KOMPAKT" not in captured[2], "kompakt (aus CollectOutput) darf nicht im Curate-Prompt sein"
+
+
+def test_curate_variant_auto_when_no_override(isolated_data):
+    """Ohne Override wählt CollectOutput die Variante (Regression)."""
+    patient = _make_patient("P-R8B")
+    captured: list[str] = []
+    _idx = [0]
+
+    async def capture(messages, **kwargs):
+        captured.append(messages[0]["content"])
+        _idx[0] += 1
+        if _idx[0] == 1:
+            return _llm_resp(json.dumps({"substance": "CLUSTER A", "curate_variant": "ausfuehrlich"}))
+        return _llm_resp("ok")
+
+    with patch("workflows.brief.orchestrator._lite", return_value=MagicMock(chat_completion=capture)):
+        asyncio.run(brief.generate_verlauf(
+            patient, meilenstein=None, befunde_formatted="", diagnosen="", anamnese="", therapie="",
+        ))
+
+    assert len(captured) >= 3
+    assert "FORMAT: AUSFUEHRLICH" in captured[2], "CollectOutput-Variante 'ausfuehrlich' nicht im Curate-Prompt"
+
+
+def test_invalid_curate_variant_raises(isolated_data):
+    """validate_curate_variant wirft ValueError für unbekannte Variante."""
+    from workflows.brief.verlauf import validate_curate_variant
+    with pytest.raises(ValueError, match="unbekannt"):
+        validate_curate_variant("ungueltig_xyz")
+
+
+def test_adressat_override_loads_correct_profile(isolated_data):
+    """adressat='normalstation_intern' lädt das korrekte Profil (kein ValueError)."""
+    profil = brief._load_adressatenprofil("normalstation_intern")
+    assert "NORMALSTATION" in profil
+
+
+def test_endpoint_curate_variant_422_for_non_verlauf(isolated_data):
+    """POST regenerate-section für section≠verlauf mit curate_variant → 422."""
+    _make_patient("P-R8E")
+    resp = client.post(
+        "/api/brief/P-R8E/generate-section/diagnosen",
+        json={"curate_variant": "minimal"},
+    )
+    assert resp.status_code == 422, f"Erwartet 422, got {resp.status_code}: {resp.text}"

@@ -14,7 +14,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from dotenv import load_dotenv
 from openai import APIConnectionError, APIStatusError, RateLimitError
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
+from workflows.brief.verlauf import validate_curate_variant as _validate_curate_variant
 import learning_storage
 from skills import learning
 from tools.patient_tools import TOOL_ARGS, TOOL_FUNCTIONS
@@ -271,6 +272,15 @@ class BriefRegenRequest(BaseModel):
 
 class BriefAgentGenerateRequest(BaseModel):
     extra_context: str = ""
+    adressat: Optional[str] = None
+    curate_variant: Optional[str] = None
+
+    @field_validator("curate_variant")
+    @classmethod
+    def _check_curate_variant(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        return _validate_curate_variant(v)
 
 
 # ── Patienten-CRUD ────────────────────────────────────────────────────────────
@@ -887,6 +897,8 @@ async def generate_brief_agent(
         raise HTTPException(404, f"Patient {patient_id} nicht gefunden")
 
     extra_context = req.extra_context if req else ""
+    adressat = (req.adressat if req else None) or "normalstation_intern"
+    curate_variant = req.curate_variant if req else None
     meilenstein_result = load_meilenstein(patient_id)
     meilenstein_text = meilenstein_result[0] if meilenstein_result else None
 
@@ -901,6 +913,8 @@ async def generate_brief_agent(
     verlauf = await brief.generate_verlauf(
         patient, meilenstein_text, befunde_existing, diag, anam, ther,
         extra_context=extra_context,
+        adressat=adressat,
+        curate_variant_override=curate_variant,
     )
 
     new_brief = {**current, "diagnosen": diag, "anamnese": anam, "therapie": ther, "verlauf": verlauf}
@@ -917,6 +931,11 @@ async def regenerate_section_agent(
     """Re-generiert eine einzelne Sektion (nicht befunde). extra_context ephemer."""
     if section not in {"diagnosen", "anamnese", "therapie", "verlauf"}:
         raise HTTPException(400, f"Section '{section}' nicht re-generierbar.")
+
+    adressat = req.adressat if req else None
+    curate_variant = req.curate_variant if req else None
+    if section != "verlauf" and (adressat is not None or curate_variant is not None):
+        raise HTTPException(422, "adressat/curate_variant nur für section=verlauf gültig.")
 
     try:
         patient = load_patient(patient_id)
@@ -943,6 +962,8 @@ async def regenerate_section_agent(
             current.get("anamnese", ""),
             current.get("therapie", ""),
             extra_context=extra_context,
+            adressat=adressat or "normalstation_intern",
+            curate_variant_override=curate_variant,
         )
 
     brief_storage.update_section(patient_id, section, result)

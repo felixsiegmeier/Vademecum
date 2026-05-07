@@ -51,9 +51,7 @@ def _load_adressatenprofil(name: str = "normalstation_intern") -> str:
         path = _ADRESSATEN_DIR / f"{name}{ext}"
         if path.exists():
             return path.read_text(encoding="utf-8")
-    if name != "normalstation_intern":
-        return _load_adressatenprofil("normalstation_intern")
-    raise FileNotFoundError(f"Adressaten-Profil '{name}' nicht gefunden")
+    raise ValueError(f"Unbekannter Adressat: '{name}'")
 
 
 def _to_yaml(patient: Patient) -> str:
@@ -145,6 +143,7 @@ async def generate_verlauf(
     therapie: str,
     extra_context: str = "",
     adressat: str = "normalstation_intern",
+    curate_variant_override: Optional[str] = None,
 ) -> str:
     """3-Pass: collect → audit → curate."""
     rules = learning_storage.load_rules(domain="brief", section="verlauf")
@@ -159,6 +158,7 @@ async def generate_verlauf(
             anamnese=anamnese,
             therapie=therapie,
             adressatenprofil=adressatenprofil,
+            curate_variant_override=curate_variant_override,
         )
     except Exception:
         logger.exception("[generate_verlauf] Skill fehlgeschlagen")
