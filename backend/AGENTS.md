@@ -44,6 +44,15 @@ Python-spezifische Konventionen für `backend/`. Repo-weite Regeln in [`/AGENTS.
 - Platzhalter-Format: `{snake_case}`.
 - Kein Prompt als Python-String — alle Prompts als Dateien.
 
+Pflichtfelder im Frontmatter (F2):
+- `id`: Namespace-Pfad (`brief.diagnosen`, `verlauf.collect` etc.)
+- `version`: ISO-Datum als String in Quotes (`"2026-05-07"`) — verhindert YAML-Date-Coercion
+- `model`: bindender Modell-String für Client-Auflösung (z.B. `gemini-3-flash-preview`)
+- `role`: `Literal["user", "system"]`
+- `inputs`: `list[str]` aller `{placeholder}`-Slots im Body
+
+`PromptFrontmatter` nutzt `model_config = ConfigDict(extra="allow")` für optionale Felder wie `description` (curate-Varianten).
+
 ---
 
 ## Schemas (`schema.py` im jeweiligen Section-Folder)
@@ -101,3 +110,9 @@ Das aktuelle SSE-Streaming zwischen `main.py` und Frontend ist heterogen gewachs
 - Regex- oder String-Split-Parsing von LLM-Freitext-Output — immer Pydantic.
 - `skill.md` als Dateiname — Skills sind immer `skill.py` (Python-Module, keine Markdown-Beschreibungen).
 - Orchestratoren in Section-Foldern — `orchestrator.py` existiert nur auf Workflow- oder Compound-Stage-Ebene.
+
+---
+
+## Offene Punkte
+
+- **TODO**: `workflows/brief/verlauf/02_audit/` gibt heute Plain-Text zurück. Output-Schema (Pydantic-Modell) bei Gelegenheit nachziehen, analog zu `01_collect/CollectOutput`.
