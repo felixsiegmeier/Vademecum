@@ -16,7 +16,7 @@ async def extract_rule_candidates(
     last_generated: str,
     edited: str,
 ) -> ExtractionResult:
-    system_prompt = get_prompt("rule_extraction.txt", _PROMPTS_DIR)
+    system_prompt = get_prompt("rule_extraction", _PROMPTS_DIR)
     user_msg = (
         f"<original>\n{last_generated}\n</original>\n\n"
         f"<bearbeitet>\n{edited}\n</bearbeitet>"

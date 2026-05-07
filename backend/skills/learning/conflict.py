@@ -31,7 +31,7 @@ async def detect_conflict(
     try:
         response = await client.chat_completion(
             [
-                {"role": "system", "content": get_prompt("conflict_detection.txt", _PROMPTS_DIR)},
+                {"role": "system", "content": get_prompt("conflict_detection", _PROMPTS_DIR)},
                 {"role": "user", "content": user_msg},
             ],
             response_format={"type": "json_object"},

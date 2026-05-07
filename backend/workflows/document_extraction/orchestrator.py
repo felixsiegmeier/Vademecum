@@ -50,7 +50,7 @@ def _build_block1_system(patient: Patient | None) -> str:
     else:
         state_block = "<aktueller_stand>leer</aktueller_stand>"
 
-    return get_prompt("extraction_block1.txt", _PROMPTS_DIR).replace("{HEUTE}", today).replace("{STATE_BLOCK}", state_block)
+    return get_prompt("extraction_block1", _PROMPTS_DIR).replace("{HEUTE}", today).replace("{STATE_BLOCK}", state_block)
 
 
 _VERLAUF_PREVIEW_LEN = 250
@@ -76,7 +76,7 @@ def _build_block2_system(patient: Patient | None) -> str:
     """System-Prompt für Pass 2 (chronologisch) mit allen existierenden Verlaufseinträgen."""
     today = date.today().isoformat()
     verlauf_block = _compact_verlauf_overview(patient)
-    return get_prompt("extraction_block2.txt", _PROMPTS_DIR).replace("{HEUTE}", today).replace("{VERLAUF_BLOCK}", verlauf_block)
+    return get_prompt("extraction_block2", _PROMPTS_DIR).replace("{HEUTE}", today).replace("{VERLAUF_BLOCK}", verlauf_block)
 
 
 async def extract_proposals(

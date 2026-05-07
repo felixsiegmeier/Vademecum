@@ -47,10 +47,9 @@ def _get_prompt(name: str) -> str:
 
 
 def _load_adressatenprofil(name: str = "normalstation_intern") -> str:
-    for ext in (".md", ".txt"):
-        path = _ADRESSATEN_DIR / f"{name}{ext}"
-        if path.exists():
-            return path.read_text(encoding="utf-8")
+    path = _ADRESSATEN_DIR / f"{name}.md"
+    if path.exists():
+        return path.read_text(encoding="utf-8")
     raise ValueError(f"Unbekannter Adressat: '{name}'")
 
 
@@ -175,7 +174,7 @@ async def polish_section(
 ) -> str:
     """Lektor-Korrektur einer einzelnen Brief-Sektion (alle 4 Sektionen)."""
     patient_id = patient.stammdaten.id if patient else ""
-    prompt_file = "brief_verlauf_polish.txt" if section == "verlauf" else "brief_section_polish.txt"
+    prompt_file = "brief_verlauf_polish" if section == "verlauf" else "brief_section_polish"
     rules = learning_storage.load_rules(domain="brief", section=section)
     prompt = _inject_rules(
         _inject_extra_context(
@@ -202,7 +201,7 @@ async def polish_section(
 
 async def format_sap_befunde(raw_text: str, extra_context: str = "") -> str:
     filled = _inject_extra_context(
-        _get_prompt("brief_befunde_format.txt").replace("{raw_text}", raw_text),
+        _get_prompt("brief_befunde_format").replace("{raw_text}", raw_text),
         extra_context,
     )
     try:

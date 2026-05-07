@@ -43,8 +43,7 @@ def get_prompt(name: str, prompts_dir: Path) -> str:
     - Validiert Pflichtfelder und strippt Frontmatter.
     - Cacht pro aufgelöstem Pfad.
     """
-    stem = name.rsplit(".", 1)[0] if "." in name else name
-    resolved = prompts_dir / f"{stem}.md"
+    resolved = prompts_dir / f"{name.removesuffix('.md')}.md"
 
     if resolved in _PROMPT_CACHE:
         return _PROMPT_CACHE[resolved]

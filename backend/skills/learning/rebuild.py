@@ -18,7 +18,7 @@ async def rebuild_rule_candidate(
     anchor: str,
     clarification: str,
 ) -> RebuildResult:
-    system_prompt = get_prompt("rule_rebuild.txt", _PROMPTS_DIR)
+    system_prompt = get_prompt("rule_rebuild", _PROMPTS_DIR)
     user_msg = (
         f"section: {section}\n"
         f"original_rule_text: {original_rule_text}\n"
