@@ -7,7 +7,7 @@ from typing import Optional
 import yaml
 
 from agent_extraction_core import Proposal, group_proposals
-from agent_tools import TOOL_SCHEMAS
+from tools.patient_tools import TOOL_SCHEMAS
 from models.patient import Patient
 
 logger = logging.getLogger(__name__)

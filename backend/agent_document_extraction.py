@@ -18,7 +18,7 @@ from agent_extraction_core import (
     run_pass,
     run_pass_streaming,
 )
-from agent_tools import (
+from tools.patient_tools import (
     ADD_VERLAUFSEINTRAG_SCHEMA,
     DELETE_ENTRY_SCHEMA,
     TOOL_SCHEMAS,

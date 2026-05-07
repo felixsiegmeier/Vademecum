@@ -28,7 +28,7 @@ from agent_document_extraction import (
     extract_proposals,
     extract_proposals_streaming,
 )
-from agent_tools import (
+from tools.patient_tools import (
     AddVerlaufsdiagnoseArgs,
     DeleteEntryArgs,
     add_verlaufsdiagnose,

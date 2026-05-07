@@ -1,7 +1,7 @@
 import pytest
 
 import storage
-from agent_tools import (
+from tools.patient_tools import (
     TOOL_ARGS,
     TOOL_FUNCTIONS,
     TOOL_SCHEMAS,
@@ -350,7 +350,7 @@ def test_add_therapie_indikation_optional(isolated_data):
 
 def test_update_status_not_in_tool_schemas():
     """update_status darf nicht in TOOL_SCHEMAS stehen — Status ist UI-only."""
-    from agent_tools import TOOL_SCHEMAS
+    from tools.patient_tools import TOOL_SCHEMAS
     names = [t["function"]["name"] for t in TOOL_SCHEMAS]
     assert "update_status" not in names, (
         "update_status muss aus TOOL_SCHEMAS entfernt sein — Status wird nur über UI-Toggle geändert."
