@@ -623,9 +623,13 @@ def learn_meilenstein_delete_rule(rule_id: str):
 # ── Learn — Brief ─────────────────────────────────────────────────────────────
 
 _BRIEF_SECTION_PROMPT_FILES: dict[str, str] = {
-    "diagnosen": "brief_diagnosen.md",
+    "diagnosen": "prompt.md",
     "anamnese": "brief_anamnese.md",
     "therapie": "brief_therapie.md",
+}
+
+_BRIEF_SECTION_PROMPT_DIRS: dict[str, Path] = {
+    "diagnosen": Path(__file__).parent / "workflows" / "brief" / "diagnosen",
 }
 
 
@@ -635,7 +639,6 @@ def _assert_valid_brief_section(section: str) -> None:
 
 
 def _get_brief_section_system_prompt(section: str) -> str:
-    prompts_dir = Path(__file__).parent / "prompts"
     if section == "verlauf":
         # Verlauf nutzt seit c1.8 drei format-spezifische Curate-Prompts.
         # Für Display/Learning-Kontext: shared + kompakt als repräsentativer Default.
@@ -643,7 +646,8 @@ def _get_brief_section_system_prompt(section: str) -> str:
         specific = _get_prompt("brief_verlauf_curate_kompakt.txt", _PROMPTS_DIR)
         return shared + "\n\n" + specific
     filename = _BRIEF_SECTION_PROMPT_FILES[section]
-    return _get_prompt(filename, _PROMPTS_DIR)
+    prompt_dir = _BRIEF_SECTION_PROMPT_DIRS.get(section, _PROMPTS_DIR)
+    return _get_prompt(filename, prompt_dir)
 
 
 @app.post("/api/learn/brief/{section}/from-edits")

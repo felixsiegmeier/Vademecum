@@ -27,6 +27,7 @@ import learning_storage
 from llm_client import LLMClient
 from models.patient import Patient
 from utils.prompts import _PROMPT_CACHE, get_prompt  # _PROMPT_CACHE re-exported for tests
+from workflows.brief.diagnosen import skill as _diagnosen_skill
 
 logger = logging.getLogger(__name__)
 
@@ -130,27 +131,6 @@ def _inject_rules(prompt: str, rules_block: str) -> str:
     return prompt.replace("{gelernte_regeln}", rules_block)
 
 
-def _render_diagnosen(data: dict) -> str:
-    lines: list[str] = []
-    behandlung = data.get("behandlung") or []
-    if behandlung:
-        lines.append("**Behandlungsdiagnosen:**")
-        for i, item in enumerate(behandlung):
-            lines.append(f"- **{item}**" if i == 0 else f"- {item}")
-        lines.append("")
-    verlauf = data.get("verlauf") or []
-    if verlauf:
-        lines.append("**Verlaufsdiagnosen:**")
-        for item in verlauf:
-            lines.append(f"- {item}")
-        lines.append("")
-    vorbekannt = data.get("vorbekannt") or []
-    if vorbekannt:
-        lines.append("**Vorbekannte Diagnosen:**")
-        for item in vorbekannt:
-            lines.append(f"- {item}")
-    return "\n".join(lines).strip()
-
 
 def _render_therapie(data: dict) -> str:
     lines: list[str] = []
@@ -175,30 +155,12 @@ def _render_therapie(data: dict) -> str:
 
 async def generate_diagnosen(patient: Patient, extra_context: str = "") -> str:
     rules = learning_storage.load_rules(domain="brief", section="diagnosen")
-    filled = _inject_rules(
-        _inject_extra_context(
-            _get_prompt("brief_diagnosen.txt").replace("{patient_yaml}", _to_yaml(patient)),
-            extra_context,
-        ),
-        _build_rules_block(rules),
-    )
+    rules_block = _build_rules_block(rules)
     try:
-        resp = await _lite().chat_completion(
-            [{"role": "user", "content": filled}],
-            response_format={"type": "json_object"},
-            temperature=0,
-            max_tokens=1024,
-        )
+        result = await _diagnosen_skill.run(_lite(), patient, rules_block, extra_context)
     except Exception:
-        logger.exception("[generate_diagnosen] LLM-Aufruf fehlgeschlagen")
+        logger.exception("[generate_diagnosen] Skill fehlgeschlagen")
         return ""
-    raw = (resp.choices[0].message.content or "").strip()
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError:
-        logger.warning("[generate_diagnosen] Kein valides JSON: %s", raw[:300])
-        return raw
-    result = _render_diagnosen(data)
     learning_storage.save_last_output(patient.stammdaten.id, result, domain="brief", section="diagnosen")
     return result
 

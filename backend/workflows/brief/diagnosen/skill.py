@@ -1,0 +1,87 @@
+from pathlib import Path
+
+import yaml
+from pydantic import ValidationError  # noqa: F401 — callers catch this
+
+from llm_client import LLMClient
+from models.patient import Patient
+from utils.prompts import get_prompt
+from .schema import DiagnosenOutput
+
+PROMPT_FILE = "prompt.md"
+
+
+def _to_yaml(patient: Patient) -> str:
+    return yaml.safe_dump(
+        patient.model_dump(exclude_none=True, mode="json"),
+        allow_unicode=True,
+        sort_keys=False,
+        default_flow_style=False,
+        width=100,
+    )
+
+
+def _inject_rules(prompt: str, rules_block: str) -> str:
+    if not rules_block:
+        return prompt.replace("{gelernte_regeln}\n", "").replace("{gelernte_regeln}", "")
+    return prompt.replace("{gelernte_regeln}", rules_block)
+
+
+def _inject_extra_context(prompt: str, extra_context: str) -> str:
+    if not extra_context.strip():
+        return prompt.replace("{extra_context}\n", "").replace("{extra_context}", "")
+    block = (
+        "Zusätzliche Anmerkungen vom Bearbeiter, die nicht Teil der strukturierten Akte sind. "
+        "Berücksichtige sie sofern für diese Sektion relevant:\n"
+        + extra_context.strip()
+        + "\n"
+    )
+    return prompt.replace("{extra_context}", block)
+
+
+def _render_diagnosen(data: DiagnosenOutput) -> str:
+    lines: list[str] = []
+    if data.behandlung:
+        lines.append("**Behandlungsdiagnosen:**")
+        for i, item in enumerate(data.behandlung):
+            lines.append(f"- **{item}**" if i == 0 else f"- {item}")
+        lines.append("")
+    if data.verlauf:
+        lines.append("**Verlaufsdiagnosen:**")
+        for item in data.verlauf:
+            lines.append(f"- {item}")
+        lines.append("")
+    if data.vorbekannt:
+        lines.append("**Vorbekannte Diagnosen:**")
+        for item in data.vorbekannt:
+            lines.append(f"- {item}")
+    return "\n".join(lines).strip()
+
+
+async def run(
+    llm: LLMClient,
+    patient: Patient,
+    rules_block: str = "",
+    extra_context: str = "",
+) -> str:
+    """Generates the Diagnosen section of an Arztbrief from a Patient object.
+
+    Raises ValidationError if the LLM returns invalid JSON or unexpected structure.
+    """
+    prompt = get_prompt(PROMPT_FILE, Path(__file__).parent)
+    filled = _inject_rules(
+        _inject_extra_context(
+            prompt.replace("{patient_yaml}", _to_yaml(patient)),
+            extra_context,
+        ),
+        rules_block,
+    )
+    resp = await llm.chat_completion(
+        [{"role": "user", "content": filled}],
+        response_format={"type": "json_object"},
+        temperature=0,
+        max_tokens=1024,
+    )
+    raw = (resp.choices[0].message.content or "").strip()
+    data = DiagnosenOutput.model_validate_json(raw)
+    return _render_diagnosen(data)
