@@ -45,9 +45,9 @@ def test_yaml_hash_changes_on_edit(isolated_data):
 def test_delete_patient_removes_yaml(isolated_data):
     p = _make_minimal_patient()
     storage.save_patient(p)
-    assert (isolated_data / "patients" / "P-TEST.yml").exists()
+    assert (isolated_data / "patienten" / "P-TEST.yml").exists()
     storage.delete_patient("P-TEST")
-    assert not (isolated_data / "patients" / "P-TEST.yml").exists()
+    assert not (isolated_data / "patienten" / "P-TEST.yml").exists()
 
 # ---- Meilensteine und Briefe löschen --------------------------------------------
 

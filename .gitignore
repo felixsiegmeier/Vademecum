@@ -27,22 +27,22 @@ yarn-debug.log*
 yarn-error.log*
 
 # Patient data content — Verzeichnisstruktur via .gitkeep behalten, Inhalt ignorieren
-backend/data/patients/*.yml
+backend/data/patienten/*.yml
 backend/data/meilensteine/*.md
 backend/data/meilensteine/*.meta.json
 backend/data/briefe/*.json
-backend/data/briefs/*.yml
+backend/data/briefe/*.yml
+backend/data/lernlog/**
+backend/data/learning_snapshots/**
 
 # Test-PDFs und -Dokumente — echte Patientendaten, dürfen nie ins Remote
 backend/test_data/*.pdf
 backend/test_data/*.PDF
 backend/test_data/celik_*.md
 
-# Learning logs — enthalten patientenspezifische Daten, aktuell nicht auf GitHub
-backend/data/learnings/
-
 # Editor
 .vscode/
 .idea/
 *.swp
 *.swo
+data.backup.tar.gz

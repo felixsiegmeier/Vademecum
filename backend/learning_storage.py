@@ -1,14 +1,13 @@
-"""Lernlog-Storage — Multi-Domain (domain, section?)-Adressierung.
+"""Lernlog-Storage — zwei getrennte Datenschichten.
 
-Layout:
-  data/learnings/<user_id>/
-    meilenstein/
-      rules.yml
-      last/<pid>.txt
-    brief/
-      {diagnosen,anamnese,therapie,verlauf}/
-        rules.yml
-        last/<pid>.txt
+Regelmengen (user-spezifisch):
+  data/lernlog/<domain>/<section>/<user_id>.yml
+  data/lernlog/<domain>/<user_id>.yml          (falls section=None)
+
+Patient-Snapshots (nicht user-spezifisch):
+  data/learning_snapshots/<domain>/<pid>.yml
+    Brief:       {diagnosen: "...", anamnese: "...", therapie: "...", verlauf: "..."}
+    Meilenstein: {content: "..."}
 """
 
 import logging
@@ -26,7 +25,8 @@ logger = logging.getLogger(__name__)
 PATIENT_SCHEMA_VERSION = "0.4"
 SCHEMA_VERSION = "0.1"
 
-LEARNINGS_DIR = Path(__file__).parent / "data" / "learnings"
+LERNLOG_DIR = Path(__file__).parent / "data" / "lernlog"
+SNAPSHOTS_DIR = Path(__file__).parent / "data" / "learning_snapshots"
 
 # Meilenstein-Sektionen — für Regel-Grouping im System-Prompt-Builder.
 MEILENSTEIN_SECTIONS = [
@@ -84,18 +84,15 @@ def new_rule(section: str, rule_text: str) -> Rule:
 
 def _rules_path(user_id: str, domain: str, section: Optional[str] = None) -> Path:
     if section:
-        path = LEARNINGS_DIR / user_id / domain / section / "rules.yml"
+        path = LERNLOG_DIR / domain / section / f"{user_id}.yml"
     else:
-        path = LEARNINGS_DIR / user_id / domain / "rules.yml"
+        path = LERNLOG_DIR / domain / f"{user_id}.yml"
     path.parent.mkdir(parents=True, exist_ok=True)
     return path
 
 
-def _last_path(user_id: str, domain: str, section: Optional[str], patient_id: str) -> Path:
-    if section:
-        path = LEARNINGS_DIR / user_id / domain / section / "last" / f"{patient_id}.txt"
-    else:
-        path = LEARNINGS_DIR / user_id / domain / "last" / f"{patient_id}.txt"
+def _snapshot_path(domain: str, patient_id: str) -> Path:
+    path = SNAPSHOTS_DIR / domain / f"{patient_id}.yml"
     path.parent.mkdir(parents=True, exist_ok=True)
     return path
 
@@ -166,11 +163,22 @@ def save_last_output(
     domain: str = "meilenstein",
     section: Optional[str] = None,
 ) -> None:
-    """Speichert den zuletzt generierten Output atomar."""
-    path = _last_path(user_id, domain, section, patient_id)
-    tmp = path.with_suffix(".txt.tmp")
+    """Speichert den zuletzt generierten Output atomar als YAML-Snapshot.
+
+    Alle Sektionen eines Patienten landen in einer einzigen .yml-Datei:
+      {diagnosen: "...", anamnese: "...", ...}  (brief)
+      {content: "..."}                           (meilenstein)
+    """
+    path = _snapshot_path(domain, patient_id)
+    data: dict = {}
+    if path.exists():
+        with path.open(encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+    key = section if section else "content"
+    data[key] = content
+    tmp = path.with_suffix(".yml.tmp")
     with open(tmp, "w", encoding="utf-8") as f:
-        f.write(content)
+        yaml.safe_dump(data, f, allow_unicode=True, sort_keys=False, default_flow_style=False)
     os.replace(tmp, path)
 
 
@@ -181,7 +189,11 @@ def load_last_output(
     section: Optional[str] = None,
 ) -> Optional[str]:
     """Lädt den zuletzt generierten Output. None wenn nicht vorhanden."""
-    path = _last_path(user_id, domain, section, patient_id)
+    path = _snapshot_path(domain, patient_id)
     if not path.exists():
         return None
-    return path.read_text(encoding="utf-8")
+    with path.open(encoding="utf-8") as f:
+        data = yaml.safe_load(f) or {}
+    key = section if section else "content"
+    val = data.get(key)
+    return val if val else None
