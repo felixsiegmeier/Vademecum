@@ -23,31 +23,15 @@ from agent_tools import (
 )
 from llm_client import LLMClient, convert_pdf_to_image_parts, file_to_content_parts
 from models.patient import Patient
+from utils.prompts import get_prompt
+
+_PROMPTS_DIR = Path(__file__).parent / "prompts"
 
 # Pass 1: alle Tools außer add_verlaufseintrag
 _PASS1_TOOLS = [s for s in TOOL_SCHEMAS if s["function"]["name"] != "add_verlaufseintrag"]
 
 # Pass 2: nur add_verlaufseintrag + delete_entry (für Korrekturen des letzten Eintrags)
 _PASS2_TOOLS = [ADD_VERLAUFSEINTRAG_SCHEMA, DELETE_ENTRY_SCHEMA]
-
-_BLOCK1_PROMPT_CACHE: str | None = None
-_BLOCK2_PROMPT_CACHE: str | None = None
-
-
-def _load_block1_prompt() -> str:
-    global _BLOCK1_PROMPT_CACHE
-    if _BLOCK1_PROMPT_CACHE is None:
-        path = Path(__file__).parent / "prompts" / "extraction_block1.txt"
-        _BLOCK1_PROMPT_CACHE = path.read_text(encoding="utf-8")
-    return _BLOCK1_PROMPT_CACHE
-
-
-def _load_block2_prompt() -> str:
-    global _BLOCK2_PROMPT_CACHE
-    if _BLOCK2_PROMPT_CACHE is None:
-        path = Path(__file__).parent / "prompts" / "extraction_block2.txt"
-        _BLOCK2_PROMPT_CACHE = path.read_text(encoding="utf-8")
-    return _BLOCK2_PROMPT_CACHE
 
 
 def _build_block1_system(patient: Patient | None) -> str:
@@ -64,7 +48,7 @@ def _build_block1_system(patient: Patient | None) -> str:
     else:
         state_block = "<aktueller_stand>leer</aktueller_stand>"
 
-    return _load_block1_prompt().replace("{HEUTE}", today).replace("{STATE_BLOCK}", state_block)
+    return get_prompt("extraction_block1.txt", _PROMPTS_DIR).replace("{HEUTE}", today).replace("{STATE_BLOCK}", state_block)
 
 
 _VERLAUF_PREVIEW_LEN = 250
@@ -90,7 +74,7 @@ def _build_block2_system(patient: Patient | None) -> str:
     """System-Prompt für Pass 2 (chronologisch) mit allen existierenden Verlaufseinträgen."""
     today = date.today().isoformat()
     verlauf_block = _compact_verlauf_overview(patient)
-    return _load_block2_prompt().replace("{HEUTE}", today).replace("{VERLAUF_BLOCK}", verlauf_block)
+    return get_prompt("extraction_block2.txt", _PROMPTS_DIR).replace("{HEUTE}", today).replace("{VERLAUF_BLOCK}", verlauf_block)
 
 
 async def extract_proposals(

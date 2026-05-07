@@ -244,9 +244,9 @@ def test_delete_rule_endpoint_404_for_unknown(isolated_data):
 
 # ── Prompt Smoke Tests ────────────────────────────────────────────────────────
 
-_EXTRACTION_PROMPT_PATH = Path(__file__).parent.parent / "prompts" / "learning_rule_extraction.txt"
-_CONFLICT_PROMPT_PATH = Path(__file__).parent.parent / "prompts" / "learning_conflict_detection.txt"
-_REBUILD_PROMPT_PATH = Path(__file__).parent.parent / "prompts" / "learning_rule_rebuild.txt"
+_EXTRACTION_PROMPT_PATH = Path(__file__).parent.parent / "prompts" / "learning_rule_extraction.md"
+_CONFLICT_PROMPT_PATH = Path(__file__).parent.parent / "prompts" / "learning_conflict_detection.md"
+_REBUILD_PROMPT_PATH = Path(__file__).parent.parent / "prompts" / "learning_rule_rebuild.md"
 
 
 def test_extraction_prompt_contains_anonymization_clause():

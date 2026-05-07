@@ -1,3 +1,10 @@
+---
+id: brief-section-polish
+version: 2026-05-07
+model: gemini-3-flash-preview
+role: user
+inputs: [current_text, extra_context, gelernte_regeln]
+---
 AUFGABE: Korrekturlesen. Du bist Lektor, kein Stil-Coach.
 
 KORRIGIEREN (immer):

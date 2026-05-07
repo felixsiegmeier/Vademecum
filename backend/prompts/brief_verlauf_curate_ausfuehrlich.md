@@ -1,3 +1,10 @@
+---
+id: brief-verlauf-curate-ausfuehrlich
+version: 2026-05-07
+model: gemini-3-flash-preview
+role: user
+inputs: []
+---
 == FORMAT: AUSFUEHRLICH ==
 
 Du schreibst einen ausführlichen Verlaufsbericht für einen substanzreichen Aufenthalt mit Komplikationen, mehreren Therapieänderungen oder relevanter klinischer Komplexität. Der Patient lag länger auf der Intensivstation. Die Übernehmenden brauchen ein vollständiges Bild des Verlaufs, um Kontext und offene Punkte zu verstehen.

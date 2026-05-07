@@ -1,3 +1,10 @@
+---
+id: brief-verlauf-curate-minimal
+version: 2026-05-07
+model: gemini-3-flash-preview
+role: user
+inputs: []
+---
 == FORMAT: MINIMAL ==
 
 Du schreibst einen sehr kurzen Verlaufsbericht für einen kurzen, unkomplizierten Aufenthalt. Der Patient lag wenige Tage auf der Intensivstation, der Verlauf war im Wesentlichen routinemäßig. Die Übernehmenden brauchen nur die wichtigsten Eckpunkte und offene Punkte.

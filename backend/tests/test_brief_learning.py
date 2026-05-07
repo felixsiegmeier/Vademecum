@@ -213,7 +213,8 @@ def test_brief_system_prompt_verlauf_returns_combined_curate_prompt(isolated_dat
     assert len(content) > 100
     # Beide Quell-Dateien existieren und wurden kombiniert (Inhalt ist länger als jede einzelne)
     from pathlib import Path
+    from utils.prompts import get_prompt
     prompts_dir = Path(__file__).parent.parent / "prompts"
-    shared_len = len((prompts_dir / "brief_verlauf_curate_shared.txt").read_text())
-    specific_len = len((prompts_dir / "brief_verlauf_curate_kompakt.txt").read_text())
+    shared_len = len(get_prompt("brief_verlauf_curate_shared.md", prompts_dir))
+    specific_len = len(get_prompt("brief_verlauf_curate_kompakt.md", prompts_dir))
     assert len(content) >= shared_len + specific_len

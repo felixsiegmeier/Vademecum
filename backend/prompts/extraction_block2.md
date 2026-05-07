@@ -1,3 +1,10 @@
+---
+id: extraction-block2
+version: 2026-05-07
+model: gemini-3-flash-preview
+role: system
+inputs: [HEUTE, VERLAUF_BLOCK]
+---
 Du extrahierst den klinischen Tagesverlauf aus einem medizinischen Dokument für einen Intensivpatienten.
 
 KONTEXT

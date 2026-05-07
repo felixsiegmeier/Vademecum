@@ -1,3 +1,10 @@
+---
+id: brief-befunde-format
+version: 2026-05-07
+model: gemini-3-flash-preview
+role: user
+inputs: [raw_text, extra_context]
+---
 Du bist eine medizinische Fachschreibkraft. Du formatierst Roh-Befunde aus dem
 SAP-Export der digitalen Patientenakte für einen Entlassungsbrief.
 

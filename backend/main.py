@@ -48,6 +48,9 @@ from storage import (
 import brief_storage
 import agent_brief
 from brief_storage import BRIEF_SECTIONS as _BRIEF_SECTIONS
+from utils.prompts import get_prompt as _get_prompt
+
+_PROMPTS_DIR = Path(__file__).parent / "prompts"
 
 load_dotenv()
 
@@ -170,8 +173,7 @@ _MEILENSTEIN_SYSTEM_PROMPT: str | None = None
 def _get_meilenstein_system_prompt() -> str:
     global _MEILENSTEIN_SYSTEM_PROMPT
     if _MEILENSTEIN_SYSTEM_PROMPT is None:
-        prompt_path = Path(__file__).parent / "prompts" / "meilenstein_system.txt"
-        _MEILENSTEIN_SYSTEM_PROMPT = prompt_path.read_text(encoding="utf-8")
+        _MEILENSTEIN_SYSTEM_PROMPT = _get_prompt("meilenstein_system.txt", _PROMPTS_DIR)
     return _MEILENSTEIN_SYSTEM_PROMPT
 
 
@@ -238,8 +240,7 @@ _BRIEF_FIELD_LABELS = {
 def _get_brief_system_prompt() -> str:
     global _BRIEF_SYSTEM_PROMPT
     if _BRIEF_SYSTEM_PROMPT is None:
-        prompt_path = Path(__file__).parent / "prompts" / "brief_system.txt"
-        _BRIEF_SYSTEM_PROMPT = prompt_path.read_text(encoding="utf-8")
+        _BRIEF_SYSTEM_PROMPT = _get_prompt("brief_system.txt", _PROMPTS_DIR)
     return _BRIEF_SYSTEM_PROMPT
 
 
@@ -648,9 +649,9 @@ def learn_meilenstein_delete_rule(rule_id: str):
 # ── Learn — Brief ─────────────────────────────────────────────────────────────
 
 _BRIEF_SECTION_PROMPT_FILES: dict[str, str] = {
-    "diagnosen": "brief_diagnosen.txt",
-    "anamnese": "brief_anamnese.txt",
-    "therapie": "brief_therapie.txt",
+    "diagnosen": "brief_diagnosen.md",
+    "anamnese": "brief_anamnese.md",
+    "therapie": "brief_therapie.md",
 }
 
 
@@ -664,11 +665,11 @@ def _get_brief_section_system_prompt(section: str) -> str:
     if section == "verlauf":
         # Verlauf nutzt seit c1.8 drei format-spezifische Curate-Prompts.
         # Für Display/Learning-Kontext: shared + kompakt als repräsentativer Default.
-        shared = (prompts_dir / "brief_verlauf_curate_shared.txt").read_text(encoding="utf-8")
-        specific = (prompts_dir / "brief_verlauf_curate_kompakt.txt").read_text(encoding="utf-8")
+        shared = _get_prompt("brief_verlauf_curate_shared.txt", _PROMPTS_DIR)
+        specific = _get_prompt("brief_verlauf_curate_kompakt.txt", _PROMPTS_DIR)
         return shared + "\n\n" + specific
     filename = _BRIEF_SECTION_PROMPT_FILES[section]
-    return (prompts_dir / filename).read_text(encoding="utf-8")
+    return _get_prompt(filename, _PROMPTS_DIR)
 
 
 @app.post("/api/learn/brief/{section}/from-edits")

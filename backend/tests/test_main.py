@@ -844,7 +844,7 @@ def test_meilenstein_konsolidierung_mode(isolated_data):
 
 from pathlib import Path as _Path  # noqa: E402
 
-_PROMPT_PATH = _Path(__file__).parent.parent / "prompts" / "meilenstein_system.txt"
+_PROMPT_PATH = _Path(__file__).parent.parent / "prompts" / "meilenstein_system.md"
 
 
 def _prompt_text() -> str:

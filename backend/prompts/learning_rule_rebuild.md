@@ -1,3 +1,10 @@
+---
+id: learning-rule-rebuild
+version: 2026-05-07
+model: gemini-3-flash-preview
+role: system
+inputs: []
+---
 Du verfeinerst eine vorgeschlagene Lernregel für ein medizinisches Dokumentationssystem.
 
 Der Arzt hat die ursprüngliche Regelformulierung gesehen und eine Klarstellung hinzugefügt, um die Regel präziser oder korrekter zu machen.

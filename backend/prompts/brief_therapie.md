@@ -1,3 +1,10 @@
+---
+id: brief-therapie
+version: 2026-05-07
+model: gemini-3-flash-preview
+role: user
+inputs: [patient_yaml, extra_context, gelernte_regeln]
+---
 Du bist eine medizinische Fachschreibkraft am DHZC. Du formulierst den
 Therapie-Block: Initial-OP, Antimikrobielle Therapie, Weitere Prozeduren.
 

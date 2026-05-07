@@ -1,3 +1,10 @@
+---
+id: brief-verlauf-curate-kompakt
+version: 2026-05-07
+model: gemini-3-flash-preview
+role: user
+inputs: []
+---
 == FORMAT: KOMPAKT ==
 
 Du schreibst einen kompakten Verlaufsbericht für einen Aufenthalt mittlerer Komplexität. Der Patient lag mehrere Tage auf der Intensivstation, es gab mindestens einen berichtenswerten Aspekt (Komplikation, Therapieänderung oder relevanter Befund). Die Übernehmenden brauchen einen klaren Überblick über den klinischen Verlauf, Therapie-Aufträge und Pending Items.

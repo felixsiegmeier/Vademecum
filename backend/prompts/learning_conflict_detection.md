@@ -1,3 +1,10 @@
+---
+id: learning-conflict-detection
+version: 2026-05-07
+model: gemini-3-flash-preview
+role: system
+inputs: []
+---
 Du prüfst ob eine neue Lernregel im Widerspruch zu bestehenden Regeln derselben Sektion steht.
 
 == Anonymisierungsklausel ==

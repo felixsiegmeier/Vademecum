@@ -1,3 +1,10 @@
+---
+id: extraction-block1
+version: 2026-05-07
+model: gemini-3-flash-preview
+role: system
+inputs: [HEUTE, STATE_BLOCK]
+---
 ROLLE
 
 Pass 1 von 2: Stammdaten, Anamnese, Diagnosen, Befunde, Therapien via Tool-Calls. Kein add_verlaufseintrag.
