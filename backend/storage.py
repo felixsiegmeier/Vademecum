@@ -13,10 +13,6 @@ from models.patient import Patient
 DATA_DIR = Path(__file__).parent / "data"
 PATIENTS_DIR = DATA_DIR / "patienten"     # P-0001.yml, P-0002.yml, ...
 MEILENSTEINE_DIR = DATA_DIR / "meilensteine"  # P-0001.md + P-0001.meta.json
-BRIEFE_DIR = DATA_DIR / "briefe"          # P-0001.json
-
-BRIEF_FIELDS = ["diagnosen", "anamnese", "operationen_prozeduren", "konservative_therapien", "antimikrobielle_therapie", "verlauf"]
-
 
 # ── Patienten-Verwaltung ──────────────────────────────────────────────────────
 
@@ -72,7 +68,8 @@ def delete_patient(patient_id: str) -> None:
     yaml_path = PATIENTS_DIR / f"{patient_id}.yml"
     if yaml_path.exists():
         yaml_path.unlink()
-    delete_brief(patient_id)
+    import brief_storage as _brief_storage
+    _brief_storage.delete_brief(patient_id)
     delete_meilenstein(patient_id)
     from chat_storage import delete_chat
     delete_chat(patient_id)
@@ -88,18 +85,6 @@ def patient_yaml_hash(patient_id: str) -> str:
         raise FileNotFoundError(f"Patient {patient_id} not found")
     content = path.read_bytes()
     return hashlib.sha256(content).hexdigest()
-
-
-def brief_input_hash(patient_id: str) -> str:
-    """SHA-256 über YAML + Meilenstein-MD — für Brief-Staleness.
-
-    Beide Quellen zusammen, weil der Brief aus beiden generiert wird.
-    """
-    yaml_path = PATIENTS_DIR / f"{patient_id}.yml"
-    yaml_bytes = yaml_path.read_bytes() if yaml_path.exists() else b""
-    meilenstein = load_meilenstein(patient_id)
-    md_bytes = meilenstein[0].encode("utf-8") if meilenstein else b""
-    return hashlib.sha256(yaml_bytes + md_bytes).hexdigest()
 
 
 # ── Meilenstein-IO ────────────────────────────────────────────────────────────
@@ -146,46 +131,3 @@ def delete_meilenstein(patient_id: str) -> None:
     if meta_path.exists():
         meta_path.unlink()
 
-
-# ── Brief-IO ──────────────────────────────────────────────────────────────────
-# Brief = ein JSON mit 6 Textfeldern + meta (Zeitstempel + Hashes pro Feld).
-
-def empty_brief_data() -> dict:
-    """Leerer Brief-Template — wird beim ersten Generieren als Basis verwendet."""
-    return {
-        **{f: "" for f in BRIEF_FIELDS},
-        "meta": {
-            "generated_at": {f: None for f in BRIEF_FIELDS},
-            "field_hash_at_generation": {f: None for f in BRIEF_FIELDS},
-            "input_hash_at_generation": {f: None for f in BRIEF_FIELDS},
-        },
-    }
-
-
-def load_brief(patient_id: str) -> dict | None:
-    path = BRIEFE_DIR / f"{patient_id}.json"
-    if not path.exists():
-        return None
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
-def save_brief(patient_id: str, data: dict) -> None:
-    BRIEFE_DIR.mkdir(parents=True, exist_ok=True)
-    path = BRIEFE_DIR / f"{patient_id}.json"
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-
-
-def update_brief_field(patient_id: str, field: str, content: str) -> None:
-    """Überschreibt nur den Textinhalt eines Felds — meta-Hashes bleiben absichtlich alt.
-
-    Manuelles Bearbeiten eines Brief-Felds soll is_stale nicht zurücksetzen.
-    """
-    data = load_brief(patient_id) or empty_brief_data()
-    data[field] = content
-    save_brief(patient_id, data)
-
-def delete_brief(patient_id: str) -> None:
-    """Löscht die Brief-Datei eines Patienten."""
-    path = BRIEFE_DIR / f"{patient_id}.json"
-    if path.exists():
-        path.unlink()

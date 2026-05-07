@@ -28,31 +28,22 @@ from workflows.meilenstein import orchestrator as meilenstein_orchestrator
 from llm_client import LLMClient
 from models.patient import Patient, PatientSummary, Stammdaten
 from storage import (
-    brief_input_hash,
     delete_patient,
-    empty_brief_data,
     list_patient_ids,
-    load_brief,
     load_meilenstein,
     load_patient,
     next_patient_id,
     patient_yaml_hash,
-    save_brief,
-    delete_brief,
     save_meilenstein,
     delete_meilenstein,
     save_patient,
-    update_brief_field,
     update_meilenstein_content,
-    BRIEF_FIELDS
 )
 
 import brief_storage
 from workflows.brief import orchestrator as brief
 from brief_storage import BRIEF_SECTIONS as _BRIEF_SECTIONS
 from utils.prompts import get_prompt as _get_prompt
-
-_PROMPTS_DIR = Path(__file__).parent / "prompts"
 
 load_dotenv()
 
@@ -166,29 +157,6 @@ app.add_middleware(
 
 
 # ── Lazy-Loader für System-Prompts ────────────────────────────────────────────
-# Prompts liegen als .txt-Dateien auf Disk — erst beim ersten Aufruf gelesen,
-# danach im Modul-Cache gehalten, damit kein Disk-I/O pro Request entsteht.
-
-
-_BRIEF_SYSTEM_PROMPT: str | None = None
-
-_BRIEF_FIELD_LABELS = {
-    "diagnosen": "Diagnosen",
-    "anamnese": "Anamnese",
-    "operationen_prozeduren": "Operationen und Prozeduren",
-    "konservative_therapien": "Konservative Therapien",
-    "antimikrobielle_therapie": "Antimikrobielle Therapie",
-    "verlauf": "Verlauf",
-}
-
-
-def _get_brief_system_prompt() -> str:
-    global _BRIEF_SYSTEM_PROMPT
-    if _BRIEF_SYSTEM_PROMPT is None:
-        _BRIEF_SYSTEM_PROMPT = _get_prompt("brief_system.txt", _PROMPTS_DIR)
-    return _BRIEF_SYSTEM_PROMPT
-
-
 # ── Request/Response-Modelle ──────────────────────────────────────────────────
 
 class Message(BaseModel):
@@ -260,14 +228,6 @@ class RebuildRuleRequest(BaseModel):
     original_reasoning: str = ""
     anchor: str = ""
     clarification: str
-
-
-class BriefFieldUpdateRequest(BaseModel):
-    content: str
-
-
-class BriefRegenRequest(BaseModel):
-    custom_prompt: Optional[str] = None
 
 
 class BriefAgentGenerateRequest(BaseModel):
@@ -574,7 +534,7 @@ def _get_brief_section_system_prompt(section: str) -> str:
         specific = _get_prompt("kompakt.md", curate_dir)
         return shared + "\n\n" + specific
     filename = _BRIEF_SECTION_PROMPT_FILES[section]
-    prompt_dir = _BRIEF_SECTION_PROMPT_DIRS.get(section, _PROMPTS_DIR)
+    prompt_dir = _BRIEF_SECTION_PROMPT_DIRS[section]
     return _get_prompt(filename, prompt_dir)
 
 
@@ -682,189 +642,8 @@ def learn_meilenstein_last_snapshot(patient_id: str):
     return JSONResponse(content={"text": text})
 
 
-# ── Brief ─────────────────────────────────────────────────────────────────────
-# Der Brief ist der Arztbrief — aufgeteilt in 6 Abschnitte (Felder).
-# Jedes Feld kann einzeln regeneriert werden, ohne die anderen zu überschreiben.
-# Staleness wird per Hash auf YAML + Meilenstein erkannt (brief_input_hash).
-
-@app.get("/api/patients/{patient_id}/brief")
-def get_brief(patient_id: str):
-    try:
-        load_patient(patient_id)
-    except FileNotFoundError:
-        raise HTTPException(404, f"Patient {patient_id} nicht gefunden")
-
-    brief = load_brief(patient_id)
-    if brief is None:
-        raise HTTPException(404, "Kein Brief vorhanden")
-
-    # Für jedes Feld prüfen, ob die Quelldaten sich seit der Generierung geändert haben
-    current_hash = brief_input_hash(patient_id)
-    is_stale = {}
-    for field in BRIEF_FIELDS:
-        stored_hash = brief["meta"]["input_hash_at_generation"].get(field)
-        is_stale[field] = stored_hash is not None and stored_hash != current_hash
-
-    return JSONResponse(content={"data": brief, "is_stale": is_stale})
-
-
-@app.post("/api/patients/{patient_id}/brief/generate")
-async def generate_brief(patient_id: str):
-    """Generiert alle 6 Brief-Abschnitte auf einmal. LLM antwortet als JSON-Objekt."""
-    try:
-        patient = load_patient(patient_id)
-    except FileNotFoundError:
-        raise HTTPException(404, f"Patient {patient_id} nicht gefunden")
-
-    patient_yaml = yaml.safe_dump(
-        patient.model_dump(exclude_none=True, mode="json"),
-        allow_unicode=True, sort_keys=False, default_flow_style=False, width=100,
-    )
-    # Meilenstein als zusätzliche Quelle — enthält bereits vom Arzt reviewte Zusammenfassung
-    meilenstein = load_meilenstein(patient_id)
-    meilenstein_md = meilenstein[0] if meilenstein else ""
-
-    system_prompt = _get_brief_system_prompt()
-    user_msg = (
-        f"QUELLE — Patient-YAML:\n```\n{patient_yaml}\n```\n\n"
-        f"QUELLE — Meilenstein (User-reviewed Übersicht):\n```\n{meilenstein_md}\n```"
-    )
-
-    try:
-        response = await llm.chat_completion(
-            [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_msg}],
-            response_format={"type": "json_object"},
-            max_tokens=8192,
-            temperature=0,
-            parallel_tool_calls=False,
-        )
-    except RateLimitError:
-        raise HTTPException(429, "LLM Rate-Limit erreicht. Bitte kurz warten.")
-    except APIConnectionError as e:
-        raise HTTPException(503, f"LLM nicht erreichbar: {e}")
-    except APIStatusError as e:
-        raise HTTPException(502, f"LLM API Fehler {e.status_code}: {e.message}")
-
-    raw = (response.choices[0].message.content or "").strip()
-    try:
-        generated = json.loads(raw)
-    except json.JSONDecodeError:
-        raise HTTPException(502, f"Modell-Antwort kein valides JSON: {raw[:500]}")
-
-    now = datetime.now(timezone.utc).isoformat()
-    current_hash = brief_input_hash(patient_id)
-    brief = load_brief(patient_id) or empty_brief_data()
-
-    # Nur Felder übernehmen, die das LLM auch zurückgegeben hat; Metadaten immer aktualisieren
-    for field in BRIEF_FIELDS:
-        if field in generated:
-            brief[field] = generated[field]
-        field_hash = hashlib.sha256(brief[field].encode("utf-8")).hexdigest()
-        brief["meta"]["generated_at"][field] = now
-        brief["meta"]["field_hash_at_generation"][field] = field_hash
-        brief["meta"]["input_hash_at_generation"][field] = current_hash
-
-    save_brief(patient_id, brief)
-    return JSONResponse(content=brief)
-
-
-@app.post("/api/patients/{patient_id}/brief/generate/{field}")
-async def regenerate_brief_field(patient_id: str, field: str, req: BriefRegenRequest):
-    """Regeneriert einen einzelnen Brief-Abschnitt, optional mit Nutzer-Anweisung."""
-    if field not in BRIEF_FIELDS:
-        raise HTTPException(400, f"Unbekanntes Feld: {field}")
-    try:
-        patient = load_patient(patient_id)
-    except FileNotFoundError:
-        raise HTTPException(404, f"Patient {patient_id} nicht gefunden")
-
-    brief = load_brief(patient_id)
-    if brief is None:
-        raise HTTPException(404, "Brief nicht vorhanden — bitte erst initial generieren")
-
-    patient_yaml = yaml.safe_dump(
-        patient.model_dump(exclude_none=True, mode="json"),
-        allow_unicode=True, sort_keys=False, default_flow_style=False, width=100,
-    )
-    meilenstein = load_meilenstein(patient_id)
-    meilenstein_md = meilenstein[0] if meilenstein else ""
-
-    label = _BRIEF_FIELD_LABELS[field]
-    # Anderen Abschnitte als Kontext mitgeben, damit das LLM keine Inhalte doppelt schreibt
-    other_fields_text = "\n\n".join(
-        f"[{_BRIEF_FIELD_LABELS[f]}]\n{brief[f]}"
-        for f in BRIEF_FIELDS
-        if f != field and brief[f]
-    )
-
-    user_msg = (
-        f"QUELLE — Patient-YAML:\n```\n{patient_yaml}\n```\n\n"
-        f"QUELLE — Meilenstein (User-reviewed Übersicht):\n```\n{meilenstein_md}\n```\n\n"
-        f'ANFORDERUNG: Generiere ausschließlich den Abschnitt "{label}" neu.\n\n'
-        f"Bisheriger Stand:\n```\n{brief[field]}\n```\n\n"
-        f"Andere bereits erstellte Abschnitte (Kontext für DRY, NICHT regenerieren, NICHT wiederholen):\n{other_fields_text}"
-    )
-    if req.custom_prompt:
-        user_msg += (
-            f"\n\nNUTZER-ANWEISUNG (Vorrang vor Standard-Stilregeln, "
-            f"sofern Format-Verbote eingehalten):\n{req.custom_prompt}"
-        )
-
-    system_prompt = _get_brief_system_prompt()
-
-    try:
-        response = await llm.chat_completion(
-            [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_msg}],
-            max_tokens=4096,
-            temperature=0,
-            parallel_tool_calls=False,
-        )
-    except RateLimitError:
-        raise HTTPException(429, "LLM Rate-Limit erreicht. Bitte kurz warten.")
-    except APIConnectionError as e:
-        raise HTTPException(503, f"LLM nicht erreichbar: {e}")
-    except APIStatusError as e:
-        raise HTTPException(502, f"LLM API Fehler {e.status_code}: {e.message}")
-
-    new_content = (response.choices[0].message.content or "").strip()
-    now = datetime.now(timezone.utc).isoformat()
-    current_hash = brief_input_hash(patient_id)
-
-    brief[field] = new_content
-    brief["meta"]["generated_at"][field] = now
-    brief["meta"]["field_hash_at_generation"][field] = hashlib.sha256(new_content.encode("utf-8")).hexdigest()
-    brief["meta"]["input_hash_at_generation"][field] = current_hash
-
-    save_brief(patient_id, brief)
-    return JSONResponse(content=brief)
-
-
-@app.put("/api/patients/{patient_id}/brief/{field}")
-def update_brief_field_endpoint(patient_id: str, field: str, req: BriefFieldUpdateRequest):
-    """Speichert manuelle Bearbeitungen eines Brief-Felds (Autosave vom Frontend)."""
-    if field not in BRIEF_FIELDS:
-        raise HTTPException(400, f"Unbekanntes Feld: {field}")
-    try:
-        load_patient(patient_id)
-    except FileNotFoundError:
-        raise HTTPException(404, f"Patient {patient_id} nicht gefunden")
-    update_brief_field(patient_id, field, req.content)
-    return JSONResponse(content={"ok": True})
-
-
-@app.delete("/api/patients/{patient_id}/brief")
-def delete_brief_endpoint(patient_id: str):
-    brief = load_brief(patient_id)
-    if brief is None:
-        raise HTTPException(404, "Kein Brief vorhanden")
-    delete_brief(patient_id)
-    return JSONResponse(content={"ok": True})
-
-
 # ── Brief-Agent V1 ────────────────────────────────────────────────────────────
-# Neue Arztbrief-Generierung via 4 parallele + 1 sequenzieller Sub-Agent.
-# Pfad: /api/brief/{patient_id}/* (von /api/patients/{id}/brief/* getrennt).
-# Frontend-Integration folgt in BR-A2.
+# Pfad: /api/brief/{patient_id}/*
 
 @app.get("/api/brief/{patient_id}")
 async def get_brief_agent(patient_id: str):

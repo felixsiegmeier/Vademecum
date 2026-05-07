@@ -1,5 +1,6 @@
 from models.patient import Patient
 import storage
+import brief_storage
 
 # ---- Patienten-Tests: Speichern, Laden, Hash, Löschen --------------------------------------------------
 
@@ -64,10 +65,10 @@ def test_delete_patient_removes_meilensteine(isolated_data):
 def test_delete_patient_removes_brief(isolated_data):
     p = _make_minimal_patient()
     storage.save_patient(p)
-    (isolated_data / "briefe" / "P-TEST.json").write_text("{}")
-    assert (isolated_data / "briefe" / "P-TEST.json").exists()
+    brief_storage.save_brief("P-TEST", {"diagnosen": "Inhalt"})
+    assert (isolated_data / "briefs" / "P-TEST.yml").exists()
     storage.delete_patient("P-TEST")
-    assert not (isolated_data / "briefe" / "P-TEST.json").exists()
+    assert not (isolated_data / "briefs" / "P-TEST.yml").exists()
 
 def test_delete_meilenstein_removes_files(isolated_data):
     p = _make_minimal_patient()
@@ -82,7 +83,7 @@ def test_delete_meilenstein_removes_files(isolated_data):
 def test_delete_brief_removes_file(isolated_data):
     p = _make_minimal_patient()
     storage.save_patient(p)
-    storage.save_brief("P-TEST", {"field1": "Inhalt"})
-    assert (isolated_data / "briefe" / "P-TEST.json").exists()
-    storage.delete_brief("P-TEST")
-    assert not (isolated_data / "briefe" / "P-TEST.json").exists()
+    brief_storage.save_brief("P-TEST", {"diagnosen": "Inhalt"})
+    assert (isolated_data / "briefs" / "P-TEST.yml").exists()
+    brief_storage.delete_brief("P-TEST")
+    assert not (isolated_data / "briefs" / "P-TEST.yml").exists()
