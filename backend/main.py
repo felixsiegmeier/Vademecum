@@ -1,14 +1,11 @@
 import asyncio
 import csv
-import hashlib
 import io
 import json
-import re
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Literal, Optional
 
-import yaml
 from fastapi import Body, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -23,7 +20,6 @@ from workflows.document_extraction.orchestrator import extract_proposals, extrac
 from utils.tool_loop import Proposal
 from workflows.patient_chat.orchestrator import CHAT_2PASS_CUTOFF, run_single_pass_chat
 from workflows.stammdaten_extraction.orchestrator import extract_stammdaten
-from workflows.stammdaten_extraction.schema import StammdatenExtractResult
 from workflows.meilenstein import orchestrator as meilenstein_orchestrator
 from llm_client import LLMClient
 from models.patient import Patient, PatientSummary, Stammdaten

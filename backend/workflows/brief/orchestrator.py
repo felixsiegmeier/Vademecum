@@ -21,7 +21,7 @@ import yaml
 import learning_storage
 from llm_client import LLMClient
 from models.patient import Patient
-from utils.prompts import _PROMPT_CACHE, get_prompt  # _PROMPT_CACHE re-exported for tests
+from utils.prompts import _PROMPT_CACHE, get_prompt  # noqa: F401  # re-exported for tests
 from workflows.brief.anamnese import skill as _anamnese_skill
 from workflows.brief.diagnosen import skill as _diagnosen_skill
 from workflows.brief.therapie import skill as _therapie_skill
