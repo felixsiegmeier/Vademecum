@@ -10,9 +10,9 @@ from pathlib import Path
 
 import yaml
 
-from paths import BACKEND_DIR
+from paths import USER_DATA_DIR
 
-BRIEFS_DIR = BACKEND_DIR / "data" / "briefe"
+BRIEFS_DIR = USER_DATA_DIR / "briefe"
 
 BRIEF_SECTIONS = {"diagnosen", "anamnese", "therapie", "befunde", "verlauf"}
 

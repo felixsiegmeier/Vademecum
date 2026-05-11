@@ -9,7 +9,9 @@ from typing import Any, Literal, Optional
 from fastapi import Body, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
+from paths import FRONTEND_DIST_DIR
 from openai import APIConnectionError, APIStatusError, RateLimitError
 from pydantic import BaseModel, field_validator
 from workflows.brief.verlauf import validate_curate_variant as _validate_curate_variant
@@ -1240,3 +1242,8 @@ async def apply_proposals_endpoint(patient_id: str, req: ApplyProposalsRequest):
         content={"results": results},
         media_type="application/json; charset=utf-8",
     )
+
+
+# Serve built React frontend — only active when the dist folder exists (production/bundle)
+if FRONTEND_DIST_DIR.exists():
+    app.mount("/", StaticFiles(directory=str(FRONTEND_DIST_DIR), html=True), name="frontend")

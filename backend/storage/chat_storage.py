@@ -2,9 +2,9 @@ import os
 from pathlib import Path
 
 from models.chat import ChatHistory
-from paths import BACKEND_DIR
+from paths import USER_DATA_DIR
 
-_CHAT_DIR = BACKEND_DIR / "data" / "chat"
+_CHAT_DIR = USER_DATA_DIR / "chat"
 
 
 def _path(patient_id: str) -> Path:
