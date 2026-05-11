@@ -19,6 +19,7 @@ from typing import Optional
 import yaml
 from pydantic import BaseModel, field_validator
 
+from paths import BACKEND_DIR, USER_DATA_DIR
 from utils.ulid import generate_ulid
 
 logger = logging.getLogger(__name__)
@@ -27,8 +28,8 @@ PATIENT_SCHEMA_VERSION = "0.4"
 SCHEMA_VERSION = "0.1"
 
 # Regelmengen liegen als gitignorierte default.yml in den jeweiligen Section-lernlog/-Ordnern.
-LERNLOG_BASE = Path(__file__).parent.parent / "workflows"
-SNAPSHOTS_DIR = Path(__file__).parent.parent / "data" / "learning_snapshots"
+LERNLOG_BASE = BACKEND_DIR / "workflows"
+SNAPSHOTS_DIR = USER_DATA_DIR / "learning_snapshots"
 
 # Meilenstein-Sektionen — für Regel-Grouping im System-Prompt-Builder.
 MEILENSTEIN_SECTIONS = [

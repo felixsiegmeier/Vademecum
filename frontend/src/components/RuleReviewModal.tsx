@@ -33,6 +33,8 @@ interface Props {
   domain: string;
   section?: string;
   sections?: readonly string[];
+  patientId: string;
+  editedContent: string;
   onRulesSaved: () => void;
 }
 
@@ -52,6 +54,8 @@ export default function RuleReviewModal({
   response,
   domain,
   section,
+  patientId,
+  editedContent,
   onRulesSaved,
 }: Props) {
   const [cardStates, setCardStates] = useState<CardState[]>(() =>
@@ -143,7 +147,7 @@ export default function RuleReviewModal({
         return;
       }
 
-      const data = await saveLearnRules(domain, section, rulesToAdd, ruleIdsToDelete);
+      const data = await saveLearnRules(domain, section, rulesToAdd, ruleIdsToDelete, patientId, editedContent);
       toast.success(`${data.saved_count} Regel${data.saved_count !== 1 ? "n" : ""} gespeichert.`);
       onRulesSaved();
       onOpenChange(false);

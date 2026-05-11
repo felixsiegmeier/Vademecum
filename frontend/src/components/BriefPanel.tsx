@@ -58,6 +58,7 @@ export default function BriefPanel({ patientId }: Props) {
   const [learning, setLearning] = useState<Partial<Record<BriefSectionKey, boolean>>>({});
   const [learnResponse, setLearnResponse] = useState<LearnFromEditsResponse | null>(null);
   const [learnSection, setLearnSection] = useState<BriefSectionKey | null>(null);
+  const [learnEditedContent, setLearnEditedContent] = useState("");
   const [showLearnModal, setShowLearnModal] = useState(false);
 
   // Visibility panel
@@ -190,6 +191,7 @@ export default function BriefPanel({ patientId }: Props) {
       }
       setLearnResponse(data);
       setLearnSection(section);
+      setLearnEditedContent(editedContent);
       setShowLearnModal(true);
     } catch (e) {
       toast.error((e as Error).message);
@@ -353,6 +355,8 @@ export default function BriefPanel({ patientId }: Props) {
           response={learnResponse}
           domain="brief"
           section={learnSection}
+          patientId={patientId}
+          editedContent={learnEditedContent}
           onRulesSaved={() => {
             if (learnSection) {
               setLastGenerated((prev) => ({ ...prev, [learnSection]: brief?.[learnSection] ?? "" }));

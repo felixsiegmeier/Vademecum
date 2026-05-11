@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 # Inputs länger als dieser Cutoff werden über die 2-Pass-Pipeline geleitet (wie Upload).
 # Kürzere Inputs → Single-Pass mit direktem LLM-Routing (Tool-Call oder Text-Antwort).
 CHAT_2PASS_CUTOFF = 2000
+_CHAT_HISTORY_WINDOW = 20  # max recent messages passed to LLM; older messages remain in storage for audit
 
 _PROMPTS_DIR = Path(__file__).parent
 _TEMPLATE_CACHE: Template | None = None
@@ -68,8 +69,9 @@ async def run_single_pass_chat(
     - Weder noch → ([], None)
     """
     system = build_system_prompt(patient, today)
+    recent = messages[-_CHAT_HISTORY_WINDOW:]
     response = await llm.chat_completion(
-        [{"role": "system", "content": system}] + messages,
+        [{"role": "system", "content": system}] + recent,
         tools=TOOL_SCHEMAS,
         tool_choice="auto",
         temperature=0,

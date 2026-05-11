@@ -2,8 +2,9 @@ import os
 from pathlib import Path
 
 from models.chat import ChatHistory
+from paths import USER_DATA_DIR
 
-_CHAT_DIR = Path(__file__).parent.parent / "data" / "chat"
+_CHAT_DIR = USER_DATA_DIR / "chat"
 
 
 def _path(patient_id: str) -> Path:

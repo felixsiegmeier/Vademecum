@@ -2,15 +2,15 @@ import hashlib
 import json
 import os
 import re
-from pathlib import Path
 
 import yaml
 
 from models.patient import Patient
+from paths import USER_DATA_DIR
 
 # Alle Patientendaten liegen als plain-text Dateien im data/-Verzeichnis.
 # Kein Datenbankserver nötig — einfaches Dateisystem als Storage-Backend.
-DATA_DIR = Path(__file__).parent.parent / "data"
+DATA_DIR = USER_DATA_DIR
 PATIENTS_DIR = DATA_DIR / "patienten"     # P-0001.yml, P-0002.yml, ...
 MEILENSTEINE_DIR = DATA_DIR / "meilensteine"  # P-0001.md + P-0001.meta.json
 

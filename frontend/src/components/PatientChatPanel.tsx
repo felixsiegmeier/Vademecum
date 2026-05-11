@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Loader2, Paperclip, MessageSquare, Send, AlertTriangle, CheckCircle2, X, ChevronDown, ChevronRight } from "lucide-react";
+import { Loader2, Paperclip, MessageSquare, Send, AlertTriangle, CheckCircle2, X, ChevronDown, ChevronRight, Trash2 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import type {
   ApplyResponse,
@@ -11,7 +11,7 @@ import type {
   StreamEvent,
 } from "../types";
 import { STAMMDATEN_FELD_LABELS } from "../types";
-import { getChatHistory, saveChatHistory } from "../api/chat";
+import { deleteChatHistory, getChatHistory, saveChatHistory } from "../api/chat";
 import { takePendingFile } from "../pendingFileStore";
 import { parseNdjson } from "../utils/ndjson";
 import { formatSectionCounts } from "../utils/streamSection";
@@ -68,6 +68,10 @@ type HistoryEntry = ChatTextEntry | ProposalsEntry | AutoSkipEntry;
 
 // Chat-History pro Patient — bleibt beim Tab-Wechsel erhalten
 const historyStore = new Map<string, HistoryEntry[]>();
+
+export function clearPatientHistory(patientId: string) {
+  historyStore.delete(patientId);
+}
 
 // ── Hilfsfunktionen ──────────────────────────────────────────────────────────
 
@@ -140,6 +144,7 @@ export function PatientChatPanel({ patientId, patient, refreshPatient, onPatient
   const [mismatchModal, setMismatchModal] = useState<
     Array<{ feld: string; current: string; proposed: string }>
   | null>(null);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -457,6 +462,13 @@ export function PatientChatPanel({ patientId, patient, refreshPatient, onPatient
     await handleApply(true);
   }
 
+  async function handleClearHistory() {
+    setShowClearConfirm(false);
+    await deleteChatHistory(patientId);
+    historyStore.delete(patientId);
+    setHistory([]);
+  }
+
   // ── Apply-Flow ────────────────────────────────────────────────────────────
 
   async function handleApply(force = false) {
@@ -707,6 +719,19 @@ export function PatientChatPanel({ patientId, patient, refreshPatient, onPatient
 
   return (
     <div className="flex flex-col h-full relative bg-background">
+      {history.length > 0 && (
+        <div className="flex justify-end px-3 py-1 border-b">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setShowClearConfirm(true)}
+            title="Chat-Verlauf löschen"
+            className="size-7 text-muted-foreground hover:text-destructive"
+          >
+            <Trash2 className="size-3.5" />
+          </Button>
+        </div>
+      )}
       <div className="flex-1 overflow-y-auto p-4 space-y-3 pb-2">
         {history.length === 0 && (
           <p className="text-center text-sm text-muted-foreground mt-8">
@@ -826,6 +851,29 @@ export function PatientChatPanel({ patientId, patient, refreshPatient, onPatient
         </Button>
         </div>
       </div>
+
+      {/* Clear-History-Bestätigung */}
+      <Dialog open={showClearConfirm} onOpenChange={setShowClearConfirm}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Trash2 className="size-4 text-destructive" />
+              Chat-Verlauf löschen?
+            </DialogTitle>
+            <DialogDescription>
+              Der gesamte Chat-Verlauf für diesen Patienten wird unwiderruflich gelöscht.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowClearConfirm(false)}>
+              Abbrechen
+            </Button>
+            <Button variant="destructive" onClick={handleClearHistory}>
+              Löschen
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Mismatch-Modal */}
       <Dialog open={!!mismatchModal} onOpenChange={(open) => !open && setMismatchModal(null)}>

@@ -56,6 +56,7 @@ export default function MeilensteinPanel({ patientId }: Props) {
   // Learn-from-edits modal
   const [learning, setLearning] = useState(false);
   const [learnResponse, setLearnResponse] = useState<LearnFromEditsResponse | null>(null);
+  const [learnEditedContent, setLearnEditedContent] = useState("");
   const [showLearnModal, setShowLearnModal] = useState(false);
 
   // Visibility sub-panel
@@ -160,6 +161,7 @@ export default function MeilensteinPanel({ patientId }: Props) {
         return;
       }
       setLearnResponse(learnData);
+      setLearnEditedContent(data?.content ?? "");
       setShowLearnModal(true);
     } catch (e) {
       toast.error((e as Error).message);
@@ -324,6 +326,8 @@ export default function MeilensteinPanel({ patientId }: Props) {
           response={learnResponse}
           domain="meilenstein"
           sections={["Operationen & Prozeduren", "Behandlungsdiagnosen", "Relevante Nebendiagnosen", "Kardiale Funktion", "Antikoagulation", "Antimikrobielle Therapie", "Befunde", "Therapieziel / Patientenwille"]}
+          patientId={patientId}
+          editedContent={learnEditedContent}
           onRulesSaved={() => {
             setLastGeneratedContent(data?.content ?? null);
           }}
